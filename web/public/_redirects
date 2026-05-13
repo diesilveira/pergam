@@ -1,0 +1,9 @@
+# Cloudflare Pages — URL rewrites + headers
+# Syntax: <source>  <destination>  <status>
+# 200 = rewrite (URL stays the same in the browser)
+
+# Pretty share URLs: /s/<token> → view.html?t=<token>
+/s/:token   /view.html?t=:token   200
+
+# Optional: catch-all for any non-existent path → land them on home
+# /*          /index.html          404

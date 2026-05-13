@@ -1,0 +1,7 @@
+# Cloudflare Pages — response headers
+# Same security defaults as the previous Netlify config.
+
+/*
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
