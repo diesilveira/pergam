@@ -1,0 +1,8 @@
+data/
+.git/
+.gitignore
+*.md
+Makefile
+__pycache__/
+*.pyc
+.DS_Store

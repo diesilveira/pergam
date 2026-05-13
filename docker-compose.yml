@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pergam
+      POSTGRES_USER: pergam
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pergam}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pergam -d pergam"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    image: pergam:latest
+    container_name: pergam
+    restart: unless-stopped
+    ports:
+      - "${PERGAM_PORT:-1111}:1111"
+    environment:
+      GRID_HOST: "0.0.0.0"
+      GRID_PORT: "1111"
+      GRID_DB_URL: "postgresql://pergam:${POSTGRES_PASSWORD:-pergam}@db:5432/pergam"
+      GRID_PUBLIC_HOST: "${GRID_PUBLIC_HOST:-localhost}"
+      GRID_PUBLIC_PORT: "${GRID_PUBLIC_PORT:-1111}"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:1111/healthz', timeout=2).status==200 else 1)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 8s
+
+volumes:
+  db_data:

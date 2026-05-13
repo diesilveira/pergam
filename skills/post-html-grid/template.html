@@ -1,0 +1,403 @@
+<!doctype html>
+<!--
+  ============================================================================
+  post-html-grid · long-form template
+  ----------------------------------------------------------------------------
+  Reusable skeleton for specs, design docs, reports, comparison boards.
+  Includes: sticky TOC (right), Mermaid diagrams (dark theme), syntax
+  highlighting tokens, callouts, badges, severity tables. Replace the
+  REPLACE_ME blocks with your content and remove this comment.
+  ============================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REPLACE_ME · Title</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #161b22;
+    --bg3: #1c2128;
+    --bg-soft: #11161d;
+    --text: #e6edf3;
+    --text-soft: #c9d1d9;
+    --muted: #8b949e;
+    --muted2: #6e7681;
+    --accent: #58a6ff;
+    --accent2: #d2a8ff;
+    --accent3: #7ee787;
+    --border: #30363d;
+    --border-soft: #21262d;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --crit: #f85149;
+    --info: #79c0ff;
+
+    --pad-x: 2rem;
+    --toc-w: 260px;
+    --content-max: 1280px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    line-height: 1.6;
+    font-size: 14.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; transition: color .15s; }
+  a:hover { text-decoration: underline; }
+
+  code {
+    background: rgba(110, 118, 129, .15);
+    padding: .1em .4em;
+    border-radius: 4px;
+    font-size: .9em;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--accent2);
+  }
+  pre {
+    background: #0a0d12;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    overflow-x: auto;
+    margin: .7rem 0;
+    color: #d6deeb;
+  }
+  pre code { background: transparent; border: 0; padding: 0; color: inherit; }
+  /* Manual tokens — wrap source words with these classes for syntax color */
+  .tok-kw  { color: #ff7b72; font-weight: 600; }
+  .tok-typ { color: #ffa657; }
+  .tok-str { color: #a5d6ff; }
+  .tok-num { color: #79c0ff; }
+  .tok-com { color: #8b949e; font-style: italic; }
+  .tok-fn  { color: #d2a8ff; }
+  .tok-id  { color: #ffa657; }
+
+  /* ===== Page header ===== */
+  header.page-h {
+    padding: 2.5rem var(--pad-x) 1.75rem;
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(88,166,255,.07) 0%, transparent 50%),
+      radial-gradient(circle at 100% 0%, rgba(210,168,255,.05) 0%, transparent 50%),
+      var(--bg);
+  }
+  header.page-h .inner { max-width: var(--content-max); margin: 0 auto; }
+  header.page-h .crumbs {
+    color: var(--muted); font-size: .78rem;
+    margin-bottom: .4rem; letter-spacing: .04em;
+    text-transform: uppercase; font-family: ui-monospace, monospace;
+  }
+  header.page-h h1 {
+    margin: 0 0 .5rem; font-size: 2rem; color: var(--text);
+    letter-spacing: -.02em; font-weight: 700; line-height: 1.2;
+  }
+  header.page-h h1 .accent { color: var(--accent); }
+  header.page-h .sub {
+    color: var(--text-soft); font-size: 1rem;
+    max-width: 75ch; line-height: 1.55;
+  }
+  header.page-h .meta-row { margin-top: 1.2rem; display: flex; flex-wrap: wrap; gap: .45rem; }
+  header.page-h .meta-row .pill {
+    border: 1px solid var(--border); background: rgba(255,255,255,.025);
+    padding: .3rem .7rem; border-radius: 999px;
+    font-size: .76rem; color: var(--muted);
+  }
+  header.page-h .meta-row .pill strong { color: var(--text); font-weight: 600; }
+
+  /* ===== Stats ===== */
+  .stats-wrap { border-bottom: 1px solid var(--border); background: var(--bg2); }
+  .stats {
+    max-width: var(--content-max); margin: 0 auto;
+    display: flex; flex-wrap: wrap; gap: 1.75rem 2rem;
+    padding: 1rem var(--pad-x) 1.2rem;
+  }
+  .stats .stat { display: flex; flex-direction: column; gap: .15rem; }
+  .stats .big { font-size: 1.55rem; font-weight: 700; line-height: 1.1; font-feature-settings: "tnum"; }
+  .stats .lbl { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; font-weight: 500; }
+  .stats .big.ok      { color: var(--ok); }
+  .stats .big.info    { color: var(--info); }
+  .stats .big.warn    { color: var(--warn); }
+  .stats .big.accent  { color: var(--accent); }
+  .stats .big.accent2 { color: var(--accent2); }
+
+  /* ===== Layout: main + right TOC ===== */
+  .layout {
+    max-width: var(--content-max); margin: 0 auto;
+    padding: 1.75rem var(--pad-x) 3rem;
+    display: grid;
+    grid-template-columns: 1fr var(--toc-w);
+    gap: 2rem;
+    align-items: start;
+  }
+  main { min-width: 0; }
+  aside.toc {
+    position: sticky; top: 1rem; align-self: start;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1rem 1.1rem;
+    max-height: calc(100vh - 2rem); overflow-y: auto;
+  }
+  aside.toc h3 {
+    margin: 0 0 .55rem; font-size: .72rem;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); font-weight: 600;
+  }
+  aside.toc ol { list-style: none; padding: 0; margin: 0; counter-reset: tocnum; }
+  aside.toc li { counter-increment: tocnum; margin: .1rem 0; }
+  aside.toc a {
+    display: flex; align-items: baseline; gap: .55rem;
+    padding: .35rem .55rem; border-radius: 5px;
+    color: var(--text-soft); font-size: .825rem;
+    border-left: 2px solid transparent;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  aside.toc a:hover {
+    background: rgba(255,255,255,.04); color: var(--text);
+    text-decoration: none; border-left-color: var(--accent);
+  }
+  aside.toc a::before {
+    content: counter(tocnum, decimal-leading-zero);
+    font-family: ui-monospace, monospace; color: var(--muted2);
+    font-size: .72rem; min-width: 1.3em;
+  }
+
+  /* ===== Sections ===== */
+  section.sec {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.4rem 1.5rem 1.5rem;
+    margin-bottom: 1.1rem; scroll-margin-top: 1rem;
+  }
+  section.sec > h2 {
+    margin: 0 0 .15rem; font-size: 1.15rem; color: var(--text);
+    font-weight: 700; letter-spacing: -.005em;
+    display: flex; align-items: center; gap: .65rem;
+  }
+  section.sec > h2 .ord {
+    font-family: ui-monospace, monospace;
+    color: var(--muted2); font-size: .82rem; font-weight: 500;
+  }
+  section.sec > h2 .tag {
+    margin-left: auto; background: rgba(88,166,255,.1);
+    color: var(--accent); border: 1px solid rgba(88,166,255,.3);
+    padding: .15rem .6rem; border-radius: 999px;
+    font-size: .68rem; text-transform: uppercase;
+    letter-spacing: .06em; font-weight: 600;
+  }
+  section.sec > h2 .tag.ok   { background: rgba(63,185,80,.12);  color: var(--ok);   border-color: rgba(63,185,80,.3); }
+  section.sec > h2 .tag.warn { background: rgba(210,153,34,.12); color: var(--warn); border-color: rgba(210,153,34,.3); }
+  section.sec > h2 .tag.crit { background: rgba(248,81,73,.12);  color: var(--crit); border-color: rgba(248,81,73,.3); }
+  section.sec > .lead {
+    color: var(--muted); font-size: .85rem;
+    margin: 0 0 1rem; padding-bottom: .9rem;
+    border-bottom: 1px dashed var(--border-soft);
+  }
+  section.sec h3 {
+    margin: 1.2rem 0 .5rem; font-size: .92rem;
+    color: var(--accent2); font-weight: 600;
+  }
+  section.sec h3:first-of-type { margin-top: 0; }
+  section.sec h4 {
+    margin: 1rem 0 .35rem; font-size: .82rem;
+    color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  section.sec p { margin: .35rem 0; color: var(--text-soft); }
+  section.sec ul, section.sec ol { margin: .35rem 0; padding-left: 1.4rem; color: var(--text-soft); }
+  section.sec li { margin: .3rem 0; }
+  section.sec li strong { color: var(--text); }
+
+  /* ===== Splits inside a section ===== */
+  .split-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
+  .split-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 880px) { .split-2, .split-3 { grid-template-columns: 1fr; } }
+
+  /* ===== Tables ===== */
+  table { width: 100%; border-collapse: collapse; font-size: .87rem; margin: .35rem 0; }
+  th, td { text-align: left; padding: .55rem .65rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; background: rgba(255,255,255,.02); }
+  tr:hover td { background: rgba(255,255,255,.015); }
+  /* HTTP-method coloring */
+  td.method code { background: rgba(88,166,255,.12); color: var(--accent); font-weight: 600; }
+  td.method.post code   { background: rgba(63,185,80,.12);  color: var(--ok); }
+  td.method.patch code  { background: rgba(210,153,34,.12); color: var(--warn); }
+  td.method.delete code { background: rgba(248,81,73,.12);  color: var(--crit); }
+
+  /* ===== Key-list (left-aligned pairs) ===== */
+  .key-list { list-style: none; padding-left: 0; margin: .35rem 0; }
+  .key-list li {
+    display: grid; grid-template-columns: max-content 1fr; gap: .85rem;
+    padding: .35rem 0; border-bottom: 1px dashed var(--border-soft);
+  }
+  .key-list li:last-child { border-bottom: 0; }
+  .key-list .k { color: var(--muted); font-family: ui-monospace, monospace; font-size: .82rem; }
+
+  /* ===== Badges (pills) ===== */
+  .badge {
+    display: inline-block; padding: .12rem .55rem; border-radius: 999px;
+    font-size: .7rem; font-weight: 600; letter-spacing: .03em; line-height: 1.6;
+  }
+  .badge.ok     { background: rgba(63,185,80,.14);  color: var(--ok);      border: 1px solid rgba(63,185,80,.3); }
+  .badge.warn   { background: rgba(210,153,34,.14); color: var(--warn);    border: 1px solid rgba(210,153,34,.3); }
+  .badge.crit   { background: rgba(248,81,73,.14);  color: var(--crit);    border: 1px solid rgba(248,81,73,.3); }
+  .badge.info   { background: rgba(88,166,255,.14); color: var(--info);    border: 1px solid rgba(88,166,255,.3); }
+  .badge.muted  { background: rgba(139,148,158,.14); color: var(--muted);  border: 1px solid rgba(139,148,158,.3); }
+  .badge.purple { background: rgba(210,168,255,.14); color: var(--accent2); border: 1px solid rgba(210,168,255,.3); }
+
+  /* ===== Callouts ===== */
+  .callout {
+    background: rgba(88,166,255,.06); border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0; padding: .7rem 1rem;
+    margin: .65rem 0; color: var(--text-soft); font-size: .87rem;
+  }
+  .callout.warn { background: rgba(210,153,34,.06); border-color: var(--warn); }
+  .callout.ok   { background: rgba(63,185,80,.06);  border-color: var(--ok); }
+  .callout.crit { background: rgba(248,81,73,.06);  border-color: var(--crit); }
+  .callout strong { color: var(--text); }
+
+  /* ===== Mermaid container ===== */
+  .mermaid-wrap {
+    background: #0a0d12; border: 1px solid var(--border-soft);
+    border-radius: 8px; padding: 1.1rem;
+    margin: .65rem 0; overflow-x: auto; text-align: center;
+  }
+  .mermaid { display: inline-block; min-width: 100%; }
+
+  /* ===== Page footer ===== */
+  footer.page-f {
+    padding: 1.25rem var(--pad-x) 2rem;
+    border-top: 1px solid var(--border); background: var(--bg2);
+  }
+  footer.page-f .inner {
+    max-width: var(--content-max); margin: 0 auto;
+    color: var(--muted); font-size: .82rem;
+    display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;
+  }
+  footer.page-f code { color: var(--accent); background: rgba(88,166,255,.1); }
+  footer.page-f .right { margin-left: auto; }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; gap: 1rem; }
+    aside.toc { position: static; max-height: none; order: -1; }
+  }
+  @media (max-width: 600px) {
+    header.page-h, .stats, .layout, footer.page-f .inner { padding-left: 1rem; padding-right: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header class="page-h">
+  <div class="inner">
+    <div class="crumbs">REPLACE_ME · path / context</div>
+    <h1><span class="accent">REPLACE_ME</span> Title</h1>
+    <div class="sub">REPLACE_ME — one-paragraph summary that answers "what is this and why does it exist".</div>
+    <div class="meta-row">
+      <span class="pill"><strong>Date:</strong> 2026-05-12</span>
+      <span class="pill"><strong>Author:</strong> REPLACE_ME</span>
+      <span class="pill"><strong>Status:</strong> REPLACE_ME</span>
+    </div>
+  </div>
+</header>
+
+<!-- Optional stats row; delete if not relevant -->
+<div class="stats-wrap">
+  <section class="stats">
+    <div class="stat"><span class="big accent">N</span><span class="lbl">Metric A</span></div>
+    <div class="stat"><span class="big info">N</span><span class="lbl">Metric B</span></div>
+    <div class="stat"><span class="big ok">N</span><span class="lbl">Metric C</span></div>
+  </section>
+</div>
+
+<div class="layout">
+
+  <main>
+
+    <section class="sec" id="s01">
+      <h2><span class="ord">01</span> Section title<span class="tag ok">approved</span></h2>
+      <p class="lead">Optional lead paragraph that frames this section.</p>
+      <h3>Subsection</h3>
+      <ul>
+        <li>Use <code>code</code>, <strong>bold</strong>, and badges like <span class="badge ok">OK</span> <span class="badge warn">WARN</span> <span class="badge crit">CRIT</span>.</li>
+      </ul>
+
+      <!-- Mermaid diagram example -->
+      <div class="mermaid-wrap">
+        <pre class="mermaid">
+flowchart LR
+  classDef step fill:#161b22,stroke:#58a6ff,color:#e6edf3
+  classDef ok fill:#0a1f12,stroke:#3fb950,color:#7ee787
+
+  A["Input"]:::step --> B["Process"]:::step --> C["Output"]:::ok
+        </pre>
+      </div>
+
+      <div class="callout"><strong>Callout:</strong> highlight an important note here.</div>
+    </section>
+
+    <section class="sec" id="s02">
+      <h2><span class="ord">02</span> Another section</h2>
+      <div class="split-2">
+        <div>
+          <h3>Left</h3>
+          <ul><li>Item</li></ul>
+        </div>
+        <div>
+          <h3>Right</h3>
+          <ul><li>Item</li></ul>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <aside class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li><a href="#s01">Section title</a></li>
+      <li><a href="#s02">Another section</a></li>
+    </ol>
+  </aside>
+
+</div>
+
+<footer class="page-f">
+  <div class="inner">
+    <div>REPLACE_ME footer left</div>
+    <div class="right"><code>REPLACE_ME</code></div>
+  </div>
+</footer>
+
+<!-- Mermaid for diagrams. Only include if you actually use <pre class="mermaid">. -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background: '#0a0d12',
+      primaryColor: '#161b22',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#58a6ff',
+      lineColor: '#8b949e',
+      secondaryColor: '#1f2937',
+      tertiaryColor: '#0d1117',
+      fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+      fontSize: '13px',
+    },
+    flowchart: { curve: 'basis', htmlLabels: true, nodeSpacing: 40, rankSpacing: 50, padding: 10 },
+    securityLevel: 'loose',
+  });
+</script>
+
+</body>
+</html>

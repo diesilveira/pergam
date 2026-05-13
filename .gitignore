@@ -1,0 +1,9 @@
+data/*.html
+data/*.meta.json
+!data/.gitkeep
+__pycache__/
+*.pyc
+.DS_Store
+.env
+*.local.env
+remote.env
