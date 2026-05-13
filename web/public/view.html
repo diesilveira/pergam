@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared grid · pergam</title>
+<meta name="description" content="A grid shared via pergam.dev. Expires in 72 hours.">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="viewer-page">
+
+<div class="viewer-bar" id="viewer-bar">
+  <div class="vb-left">
+    <a href="/" class="vb-logo" title="pergam"><span class="logo">▮▮</span><span class="name">pergam</span></a>
+    <span class="vb-divider">·</span>
+    <strong id="vb-title">loading…</strong>
+    <span class="vb-divider">·</span>
+    <span class="muted small" id="vb-expiry"></span>
+  </div>
+  <div class="vb-right">
+    <a id="vb-download" class="btn ghost" target="_blank" rel="noopener" hidden>Download</a>
+    <a href="/" class="btn ghost">Make your own</a>
+  </div>
+</div>
+
+<iframe id="viewer-frame" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
+
+<div class="viewer-empty" id="viewer-empty" hidden>
+  <h2 id="empty-title">Not found</h2>
+  <p id="empty-msg" class="muted">This link doesn't exist or has expired.</p>
+  <a href="/" class="btn primary">Back to pergam</a>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

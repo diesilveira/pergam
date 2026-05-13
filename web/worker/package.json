@@ -1,0 +1,16 @@
+{
+  "name": "pergam-share",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker backing pergam.dev's 72-hour share endpoint.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240419.0",
+    "typescript": "^5.4.0",
+    "wrangler": "^3.50.0"
+  }
+}

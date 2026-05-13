@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Status dashboard — example</title>
+<style>
+  :root { --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --text:#e6edf3; --text-soft:#c9d1d9;
+          --muted:#8b949e; --accent:#58a6ff; --border:#30363d; --border-soft:#21262d;
+          --ok:#3fb950; --warn:#d29922; --crit:#f85149; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.55; font-size:14px; }
+  .h { padding:2rem; border-bottom:1px solid var(--border);
+       background: radial-gradient(circle at 0% 0%, rgba(88,166,255,.07) 0%, transparent 50%), var(--bg); }
+  .h h1 { margin:0; color:var(--accent); font-size:1.5rem; }
+  .h .sub { color:var(--muted); margin-top:.2rem; }
+  main { padding:1.5rem 2rem 4rem; max-width:1280px; margin:0 auto; }
+  .row { display:grid; gap:1rem; }
+  .kpis { grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); margin-bottom: 1.5rem; }
+  .kpi { background:var(--bg2); border:1px solid var(--border-soft); border-radius:8px; padding:.85rem 1rem; }
+  .kpi .k { color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
+  .kpi .v { font-size:1.55rem; font-weight:600; margin:.15rem 0; }
+  .kpi .d { font-size:.78rem; } .kpi .d.up { color:var(--ok); } .kpi .d.dn { color:var(--crit); }
+  .panel { background:var(--bg2); border:1px solid var(--border-soft); border-radius:8px; padding:1rem 1.15rem; }
+  h2 { font-size:1.05rem; margin: 0 0 .55rem; font-weight:600; }
+  .two { grid-template-columns: 1fr 1fr; margin-bottom: 1.5rem; }
+  @media (max-width:780px) { .two { grid-template-columns: 1fr; } }
+  table { border-collapse: collapse; width:100%; font-size:.86rem; }
+  th, td { padding:.45rem .55rem; border-bottom:1px solid var(--border-soft); text-align:left; vertical-align:middle; }
+  th { color:var(--muted); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
+  tbody tr:hover td { background: rgba(255,255,255,.02); }
+  td.num { text-align:right; font-family:ui-monospace,monospace; }
+  .badge { display:inline-block; padding:.05rem .5rem; border-radius:999px; font-size:.68rem;
+           border:1px solid var(--c, var(--muted)); color:var(--c, var(--muted)); text-transform:uppercase; letter-spacing:.04em; }
+  .badge.ok { --c: var(--ok); } .badge.warn { --c: var(--warn); } .badge.crit { --c: var(--crit); }
+</style></head><body>
+
+<header class="h">
+  <h1>Service health — week 19</h1>
+  <div class="sub">Mock dashboard. KPIs, latencies, error breakdown, sparkline tables · grid_type: reporte</div>
+</header>
+
+<main>
+
+  <section class="row kpis">
+    <div class="kpi"><div class="k">Uptime</div><div class="v">99.6%</div><div class="d up">+0.2 pts vs W18</div></div>
+    <div class="kpi"><div class="k">P50 latency</div><div class="v">180 ms</div><div class="d up">-12 ms</div></div>
+    <div class="kpi"><div class="k">Errors / day</div><div class="v">9</div><div class="d up">-3</div></div>
+    <div class="kpi"><div class="k">Throughput</div><div class="v">2.1 M</div><div class="d up">+8%</div></div>
+  </section>
+
+  <section class="row two">
+
+    <div class="panel">
+      <h2>Errors per day (last 14)</h2>
+      <svg viewBox="0 0 600 180" width="100%" height="180" xmlns="http://www.w3.org/2000/svg">
+        <line x1="28" y1="28"  x2="585" y2="28"  stroke="#21262d"/><text x="22" y="32"  fill="#8b949e" font-size="10" text-anchor="end" font-family="ui-monospace, monospace">30</text>
+        <line x1="28" y1="65"  x2="585" y2="65"  stroke="#21262d"/><text x="22" y="69"  fill="#8b949e" font-size="10" text-anchor="end" font-family="ui-monospace, monospace">22</text>
+        <line x1="28" y1="102" x2="585" y2="102" stroke="#21262d"/><text x="22" y="106" fill="#8b949e" font-size="10" text-anchor="end" font-family="ui-monospace, monospace">15</text>
+        <line x1="28" y1="139" x2="585" y2="139" stroke="#21262d"/><text x="22" y="143" fill="#8b949e" font-size="10" text-anchor="end" font-family="ui-monospace, monospace">7</text>
+        <line x1="28" y1="152" x2="585" y2="152" stroke="#21262d"/>
+        <path d="M 28 138 L 71 130 L 114 145 L 157 132 L 200 142 L 243 135 L 286 120 L 329 60  L 372 95 L 415 105 L 458 120 L 501 135 L 544 130 L 585 138 L 585 152 L 28 152 Z"
+              fill="rgba(248,81,73,.18)"/>
+        <path d="M 28 138 L 71 130 L 114 145 L 157 132 L 200 142 L 243 135 L 286 120 L 329 60  L 372 95 L 415 105 L 458 120 L 501 135 L 544 130 L 585 138"
+              fill="none" stroke="#f85149" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="329" cy="60" r="3.5" fill="#f85149" stroke="#0d1117" stroke-width="1.5"/>
+      </svg>
+      <p style="color:#c9d1d9;font-size:.85rem;margin:.5rem 0 0;">
+        Spike on Thursday — 28 errors from upstream poller, mitigated by 18:00 UTC.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Service health heatmap</h2>
+      <svg viewBox="0 0 460 200" width="100%" xmlns="http://www.w3.org/2000/svg">
+        <text x="0" y="14" fill="#e6edf3" font-size="11" font-weight="600">Service · day-of-week</text>
+        <text x="160" y="34" fill="#8b949e" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">Mon</text>
+        <text x="190" y="34" fill="#8b949e" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">Tue</text>
+        <text x="220" y="34" fill="#8b949e" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">Wed</text>
+        <text x="250" y="34" fill="#8b949e" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">Thu</text>
+        <text x="280" y="34" fill="#8b949e" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">Fri</text>
+        <text x="310" y="34" fill="#8b949e" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">Sat</text>
+        <text x="340" y="34" fill="#8b949e" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">Sun</text>
+<!-- rows -->
+<g><text x="140" y="58" fill="#c9d1d9" font-size="11" text-anchor="end">api</text>
+   <rect x="148" y="42" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="178" y="42" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="208" y="42" width="24" height="24" rx="2" fill="#65b94e"/>
+   <rect x="238" y="42" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="268" y="42" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="298" y="42" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="328" y="42" width="24" height="24" rx="2" fill="#3fb950"/></g>
+<g><text x="140" y="86" fill="#c9d1d9" font-size="11" text-anchor="end">workers</text>
+   <rect x="148" y="70" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="178" y="70" width="24" height="24" rx="2" fill="#85b03c"/>
+   <rect x="208" y="70" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="238" y="70" width="24" height="24" rx="2" fill="#f85149"/>
+   <rect x="268" y="70" width="24" height="24" rx="2" fill="#d29922"/>
+   <rect x="298" y="70" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="328" y="70" width="24" height="24" rx="2" fill="#3fb950"/></g>
+<g><text x="140" y="114" fill="#c9d1d9" font-size="11" text-anchor="end">indexer</text>
+   <rect x="148" y="98" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="178" y="98" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="208" y="98" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="238" y="98" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="268" y="98" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="298" y="98" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="328" y="98" width="24" height="24" rx="2" fill="#3fb950"/></g>
+<g><text x="140" y="142" fill="#c9d1d9" font-size="11" text-anchor="end">cache</text>
+   <rect x="148" y="126" width="24" height="24" rx="2" fill="#85b03c"/>
+   <rect x="178" y="126" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="208" y="126" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="238" y="126" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="268" y="126" width="24" height="24" rx="2" fill="#d29922"/>
+   <rect x="298" y="126" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="328" y="126" width="24" height="24" rx="2" fill="#3fb950"/></g>
+<g><text x="140" y="170" fill="#c9d1d9" font-size="11" text-anchor="end">poller</text>
+   <rect x="148" y="154" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="178" y="154" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="208" y="154" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="238" y="154" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="268" y="154" width="24" height="24" rx="2" fill="#3fb950"/>
+   <rect x="298" y="154" width="24" height="24" rx="2" fill="#65b94e"/>
+   <rect x="328" y="154" width="24" height="24" rx="2" fill="#3fb950"/></g>
+      </svg>
+    </div>
+
+  </section>
+
+  <section class="panel">
+    <h2>Latency by service</h2>
+    <table>
+      <thead><tr><th>Service</th><th>P50</th><th>Errors</th><th>Status</th><th>P95 trend (14d)</th></tr></thead>
+      <tbody>
+        <tr><td><strong>api</strong></td><td class="num">180 ms</td><td class="num">22</td><td><span class="badge ok">ok</span></td>
+            <td><svg width="120" height="24" viewBox="0 0 120 24"><polyline fill="none" stroke="#3fb950" stroke-width="1.5"
+              points="0,12 12,14 24,10 36,11 48,8 60,12 72,9 84,11 96,8 108,10 120,9"/></svg></td></tr>
+        <tr><td><strong>workers</strong></td><td class="num">95 ms</td><td class="num">14</td><td><span class="badge ok">ok</span></td>
+            <td><svg width="120" height="24" viewBox="0 0 120 24"><polyline fill="none" stroke="#3fb950" stroke-width="1.5"
+              points="0,15 12,14 24,16 36,12 48,18 60,15 72,13 84,14 96,15 108,13 120,12"/></svg></td></tr>
+        <tr><td><strong>indexer</strong></td><td class="num">320 ms</td><td class="num">60</td><td><span class="badge warn">warn</span></td>
+            <td><svg width="120" height="24" viewBox="0 0 120 24"><polyline fill="none" stroke="#d29922" stroke-width="1.5"
+              points="0,18 12,16 24,14 36,11 48,9 60,7 72,9 84,11 96,13 108,9 120,12"/></svg></td></tr>
+        <tr><td><strong>cache</strong></td><td class="num">12 ms</td><td class="num">4</td><td><span class="badge ok">ok</span></td>
+            <td><svg width="120" height="24" viewBox="0 0 120 24"><polyline fill="none" stroke="#3fb950" stroke-width="1.5"
+              points="0,16 12,15 24,16 36,13 48,12 60,15 72,16 84,14 96,12 108,13 120,12"/></svg></td></tr>
+        <tr><td><strong>poller</strong></td><td class="num">480 ms</td><td class="num">55</td><td><span class="badge warn">warn</span></td>
+            <td><svg width="120" height="24" viewBox="0 0 120 24"><polyline fill="none" stroke="#d29922" stroke-width="1.5"
+              points="0,16 12,14 24,12 36,10 48,8 60,7 72,9 84,11 96,9 108,8 120,10"/></svg></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+</main>
+</body></html>

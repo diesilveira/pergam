@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Research note — example</title>
+<style>
+  :root { --bg:#0d1117; --bg2:#161b22; --text:#e6edf3; --text-soft:#c9d1d9; --muted:#8b949e;
+          --accent:#58a6ff; --accent2:#d2a8ff; --border:#30363d; --border-soft:#21262d;
+          --ok:#3fb950; --warn:#d29922; --crit:#f85149; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.6; font-size:14.5px; }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+  code { background:rgba(110,118,129,.15); padding:.1em .4em; border-radius:4px;
+         font-family:ui-monospace,monospace; font-size:.9em; color:var(--accent2); }
+  .h { padding:2rem; border-bottom:1px solid var(--border);
+       background: radial-gradient(circle at 0% 0%, rgba(88,166,255,.07) 0%, transparent 50%), var(--bg); }
+  .h .crumbs { color:var(--muted); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; }
+  .h h1 { margin:.2rem 0 .35rem; font-size:1.7rem; letter-spacing:-.01em; }
+  .h .sub { color:var(--muted); max-width:70ch; }
+  .pills { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.9rem; }
+  .pill { padding:.2rem .6rem; border-radius:999px; border:1px solid var(--c, var(--border));
+          color:var(--c, var(--muted)); font-size:.75rem; }
+  main { max-width:1180px; margin:0 auto; padding:1.5rem 2rem 3rem; }
+  section { margin-bottom: 2rem; }
+  h2 { font-size:1.2rem; margin: 0 0 .8rem; font-weight:600; }
+  h3 { font-size:1rem; margin:1rem 0 .4rem; color:var(--accent2); font-weight:600; }
+  p, ul, ol, li { color: var(--text-soft); }
+  table { border-collapse:collapse; width:100%; margin:.6rem 0 1rem; font-size:.88rem; }
+  th, td { padding:.5rem .55rem; border-bottom:1px solid var(--border-soft); text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
+  tbody tr:hover td { background: rgba(255,255,255,.02); }
+  td.fit { white-space:nowrap; font-family:ui-monospace,monospace; font-size:.82em; }
+  td.name { font-weight:600; color:var(--text); }
+  .badge { display:inline-block; padding:.05rem .5rem; border-radius:999px; font-size:.68rem;
+           border:1px solid var(--c, var(--muted)); color:var(--c, var(--muted)); text-transform:uppercase; letter-spacing:.04em; }
+  .badge.ok { --c:var(--ok); } .badge.warn { --c:var(--warn); } .badge.crit { --c:var(--crit); }
+  .callout { border-left:3px solid var(--accent); background:rgba(88,166,255,.06);
+             padding:.65rem .85rem; border-radius:4px; margin:.85rem 0; }
+  .mermaid-wrap { background:#0a0d12; border:1px solid var(--border-soft); border-radius:8px;
+                  padding:1rem; margin:1rem 0; overflow-x:auto; }
+  .mermaid-wrap pre.mermaid { background:transparent; border:0; padding:0; margin:0; text-align:center; }
+  ol.refs { font-size:.88rem; }
+  ol.refs li { margin:.3rem 0; }
+</style></head><body>
+
+<header class="h">
+  <div class="crumbs">research note · evaluation · 2026-Q2</div>
+  <h1>Self-hostable analytics: Plausible vs. Umami vs. PostHog OSS</h1>
+  <p class="sub">Comparison of three open-source web analytics tools for replacing GA4 on a small SaaS. Methodology, metrics, and a final recommendation. <em>Fictional content — example pergam grid.</em></p>
+  <div class="pills">
+    <span class="pill" style="--c:#d2a8ff">investigación</span>
+    <span class="pill" style="--c:#3fb950">3 candidates</span>
+    <span class="pill" style="--c:#58a6ff">12 sources</span>
+  </div>
+</header>
+
+<main>
+
+  <section>
+    <h2>Question</h2>
+    <p>Which open-source, self-hostable analytics tool best replaces GA4 for a 5-person team, with cookieless tracking, friendly dashboards, and low ops overhead?</p>
+  </section>
+
+  <section>
+    <h2>Candidates</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>License</th><th>Lang</th><th>Storage</th><th>Repo</th></tr></thead>
+      <tbody>
+        <tr><td class="name">Plausible CE</td><td>AGPL</td><td>Elixir</td><td class="fit">Postgres + ClickHouse</td><td><a href="https://github.com/plausible/analytics" target="_blank" rel="noopener">plausible/analytics</a> ↗</td></tr>
+        <tr><td class="name">Umami</td><td>MIT</td><td>Node</td><td class="fit">Postgres or MySQL</td><td><a href="https://github.com/umami-software/umami" target="_blank" rel="noopener">umami-software/umami</a> ↗</td></tr>
+        <tr><td class="name">PostHog OSS</td><td>MIT (core)</td><td>Python + TS</td><td class="fit">Postgres + ClickHouse + Kafka</td><td><a href="https://github.com/PostHog/posthog" target="_blank" rel="noopener">PostHog/posthog</a> ↗</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Quadrant</h2>
+    <div class="mermaid-wrap"><pre class="mermaid">
+quadrantChart
+  title Simplicity vs Capability
+  x-axis "Heavy ops" --> "Light ops"
+  y-axis "Basic features" --> "Advanced features"
+  quadrant-1 "Sweet spot"
+  quadrant-2 "Powerful but heavy"
+  quadrant-3 "Skip"
+  quadrant-4 "Light but limited"
+  Plausible CE: [0.75, 0.55]
+  Umami: [0.88, 0.40]
+  PostHog OSS: [0.20, 0.92]
+    </pre></div>
+  </section>
+
+  <section>
+    <h2>Findings</h2>
+    <ul>
+      <li><strong>Plausible CE</strong> ranks best for "just analytics, no fuss." Single binary deploy, ClickHouse is the only non-trivial dep. Cookieless. Pretty defaults.</li>
+      <li><strong>Umami</strong> is the lightest. Single Node process + Postgres. UI is minimal but covers 80% of common questions. Best fit for a team that wants zero ops.</li>
+      <li><strong>PostHog OSS</strong> is the most powerful — funnels, session replay, feature flags, AB tests — but the docker-compose stack pulls Kafka and ClickHouse. Overkill at 5 people.</li>
+    </ul>
+    <div class="callout"><strong>Recommendation:</strong> Umami. If product analytics depth later becomes a need, layer PostHog Cloud on top — don't try to self-host its OSS stack at this team size.</div>
+  </section>
+
+  <section>
+    <h2>References</h2>
+    <ol class="refs">
+      <li>Plausible team. <em>Self-hosting docs</em>. <a href="https://plausible.io/docs/self-hosting" target="_blank" rel="noopener">plausible.io/docs/self-hosting</a></li>
+      <li>Umami project. <em>Installation guide</em>. <a href="https://umami.is/docs/install" target="_blank" rel="noopener">umami.is/docs/install</a></li>
+      <li>PostHog team. <em>Self-hosting considerations</em>. <a href="https://posthog.com/docs/self-host" target="_blank" rel="noopener">posthog.com/docs/self-host</a></li>
+      <li>Web Analytics for the privacy era — Mozilla. <a href="https://blog.mozilla.org" target="_blank" rel="noopener">blog.mozilla.org</a></li>
+      <li>OWASP cookie best practices. <a href="https://owasp.org" target="_blank" rel="noopener">owasp.org</a></li>
+    </ol>
+  </section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({ startOnLoad:true, theme:'dark',
+  themeVariables:{ background:'#0a0d12', primaryColor:'#161b22', primaryTextColor:'#e6edf3',
+                   primaryBorderColor:'#58a6ff', lineColor:'#8b949e' },
+  securityLevel:'loose' });
+</script>
+</body></html>

@@ -1,0 +1,16 @@
+[build]
+  publish = "public"
+
+# Pretty share URLs: /s/<token> → view.html?t=<token> on the same origin
+[[redirects]]
+  from = "/s/:token"
+  to   = "/view.html?t=:token"
+  status = 200
+
+# Robots: index landing only, not shared views (noindex meta is also set in HTML)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options       = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "strict-origin-when-cross-origin"

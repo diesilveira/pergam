@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pergam — publish HTML grids your AI builds</title>
+<meta name="description" content="A tiny self-hostable HTTP service that stores HTML reports, dashboards, and design docs. Use with Claude Code, drop a file, or self-host.">
+<meta property="og:title" content="pergam">
+<meta property="og:description" content="Publish HTML grids your AI builds. Self-host or use the free public service.">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="landing">
+
+<header class="topbar">
+  <div class="brand"><span class="logo">▮▮</span><span class="name">pergam</span></div>
+  <nav>
+    <a href="#use">Use</a>
+    <a href="#gallery">Gallery</a>
+    <a href="#faq">FAQ</a>
+    <a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">GitHub ↗</a>
+  </nav>
+</header>
+
+<!-- Hero ------------------------------------------------------------- -->
+<section class="hero">
+  <h1>Publish HTML grids your AI builds.</h1>
+  <p class="lead">
+    A tiny self-hostable HTTP service that stores HTML reports, dashboards,
+    and design docs at stable, versioned URLs. The companion Claude Code
+    skill turns a prompt into a shareable link.
+  </p>
+  <div class="cta">
+    <a href="#use" class="btn primary">Get started</a>
+    <a href="https://github.com/diesilveira/pergam" class="btn ghost" target="_blank" rel="noopener">Star on GitHub</a>
+  </div>
+</section>
+
+<!-- Three paths ------------------------------------------------------ -->
+<section class="paths" id="use">
+  <article class="path">
+    <h2>1 · Use with Claude Code</h2>
+    <p>The intended flow. Drop the skill in <code>~/.claude/skills/</code> and ask Claude to "armá un grid HTML de X". The skill writes the HTML, posts here, and returns a URL.</p>
+<pre><code>git clone https://github.com/diesilveira/pergam
+cp -r pergam/skills/post-html-grid ~/.claude/skills/
+
+<span class="tok-com"># point it at the free public service (72h TTL):</span>
+export PERGAM_URL=https://api.pergam.dev
+
+<span class="tok-com"># or at your own self-hosted instance:</span>
+export PERGAM_URL=http://localhost:1111</code></pre>
+    <p class="hint">Then any future "publish this as a grid" in Claude Code lands here.</p>
+  </article>
+
+  <article class="path">
+    <h2>2 · Drag a file</h2>
+    <p>If you already have an HTML file (from Claude, from your build, anywhere) — drop it on this card and you get a public link in two seconds.</p>
+    <div class="dropzone" id="dropzone">
+      <input id="file-input" type="file" accept=".html,.htm,text/html" hidden>
+      <p class="dz-prompt"><strong>Drop an .html file</strong><br><span class="muted small">or click to choose · max 512 KB</span></p>
+      <div class="dz-progress" id="dz-progress" hidden>Uploading…</div>
+    </div>
+    <p class="hint">Link expires in 72 hours. Rate-limited per IP. No login.</p>
+  </article>
+
+  <article class="path">
+    <h2>3 · Self-host</h2>
+    <p>One <code>docker compose up</code> and you have your own pergam with Postgres, versioning, no TTL, and full ownership. Suitable for teams behind a VPN.</p>
+<pre><code>git clone https://github.com/diesilveira/pergam
+cd pergam
+docker compose up -d
+open http://localhost:1111</code></pre>
+    <p class="hint">Read <a href="https://github.com/diesilveira/pergam#deployment" target="_blank" rel="noopener">the deployment notes</a> for a VPN-only setup.</p>
+  </article>
+</section>
+
+<!-- Result modal ----------------------------------------------------- -->
+<div class="modal" id="result-modal" hidden>
+  <div class="modal-card">
+    <header><h3>Link generated</h3><button class="icon close" aria-label="close">✕</button></header>
+    <div class="modal-body">
+      <p class="muted">Anyone with this link can view the grid for the next 72 hours.</p>
+      <div class="url-row">
+        <input id="result-url" type="text" readonly>
+        <button id="result-copy" class="primary">Copy</button>
+      </div>
+      <p class="muted small" id="result-expiry"></p>
+    </div>
+    <footer>
+      <a id="result-open" target="_blank" rel="noopener" class="btn ghost">Open ↗</a>
+      <button class="close primary">Done</button>
+    </footer>
+  </div>
+</div>
+
+<!-- Gallery ---------------------------------------------------------- -->
+<section class="gallery" id="gallery">
+  <h2>What it looks like</h2>
+  <p class="lead">Examples of grids the Claude skill produces — open in a new tab.</p>
+  <div class="gallery-grid">
+    <a class="card" href="/library/pr-review-board.html" target="_blank" rel="noopener">
+      <h3>PR review board</h3>
+      <p>Card grid, severity chips, expandable findings per PR. <code>reporte</code>.</p>
+    </a>
+    <a class="card" href="/library/spec-doc.html" target="_blank" rel="noopener">
+      <h3>Spec / design doc</h3>
+      <p>Sticky TOC, Mermaid diagrams, syntax color, callouts. <code>plan</code>.</p>
+    </a>
+    <a class="card" href="/library/status-dashboard.html" target="_blank" rel="noopener">
+      <h3>Status dashboard</h3>
+      <p>KPIs, SVG line charts, heatmap, sparkline tables. <code>reporte</code>.</p>
+    </a>
+    <a class="card" href="/library/investigacion.html" target="_blank" rel="noopener">
+      <h3>Research note</h3>
+      <p>Comparative tables, external links, citations, quadrant chart. <code>investigacion</code>.</p>
+    </a>
+  </div>
+</section>
+
+<!-- FAQ -------------------------------------------------------------- -->
+<section class="faq" id="faq">
+  <h2>FAQ</h2>
+  <details>
+    <summary>Who's this for?</summary>
+    <p>Devs and small teams whose AI coding assistant generates a steady stream of HTML artifacts — PR review boards, status dashboards, evaluation reports, design specs with Mermaid — that today die in chat scrollback.</p>
+  </details>
+  <details>
+    <summary>Why not just paste into Notion / Confluence?</summary>
+    <p>Those strip CSS, break Mermaid, mangle dark themes, and require accounts. pergam keeps the artifact exactly as the AI rendered it.</p>
+  </details>
+  <details>
+    <summary>Is the public service safe? What about the embedded HTML?</summary>
+    <p>Grids are served from a sandboxed iframe on a different origin (<code>api.pergam.dev</code>) with a strict CSP that blocks everything except inline CSS and Mermaid from jsDelivr. Visitors are isolated. The 72-hour TTL also limits the blast radius of any abuse.</p>
+  </details>
+  <details>
+    <summary>What about rate limits?</summary>
+    <p>The public service caps each IP at 10 shares per hour and 60 reads per minute. Body size cap is 512 KB. Plenty for normal use, prevents one user from filling the worker quota.</p>
+  </details>
+  <details>
+    <summary>Can I keep grids forever?</summary>
+    <p>Yes — self-host. Public service is for ephemeral sharing. Self-host gives you a Postgres-backed, versioned, immutable history with no TTL.</p>
+  </details>
+  <details>
+    <summary>What does the skill cost?</summary>
+    <p>Nothing. It's a markdown file in this repo. The AI's API costs are separate (whatever you pay for your Claude Code / Cursor / etc).</p>
+  </details>
+</section>
+
+<footer class="footbar">
+  <span class="muted">pergam · MIT licensed · no telemetry · no accounts</span>
+  <span class="spacer"></span>
+  <a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">github</a>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

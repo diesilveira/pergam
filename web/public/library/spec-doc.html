@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Spec — example</title>
+<style>
+  :root { --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --text:#e6edf3; --text-soft:#c9d1d9;
+          --muted:#8b949e; --muted2:#6e7681; --accent:#58a6ff; --accent2:#d2a8ff;
+          --border:#30363d; --border-soft:#21262d; --ok:#3fb950; --warn:#d29922; --crit:#f85149;
+          --max:1180px; --toc:240px; }
+  * { box-sizing:border-box; } html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.6; font-size:14.5px; }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+  code { background:rgba(110,118,129,.15); padding:.1em .4em; border-radius:4px;
+         font-family:ui-monospace,monospace; font-size:.9em; color:var(--accent2); }
+  pre { background:#0a0d12; border:1px solid var(--border-soft); border-radius:8px;
+        padding:12px 14px; font-family:ui-monospace,monospace; font-size:12.5px; line-height:1.55;
+        overflow-x:auto; margin:.7rem 0; color:#d6deeb; }
+  pre code { background:transparent; padding:0; color:inherit; }
+  .h { padding:2.25rem 2rem 1.5rem; border-bottom:1px solid var(--border);
+       background: radial-gradient(circle at 0% 0%, rgba(88,166,255,.07) 0%, transparent 50%),
+                   radial-gradient(circle at 100% 0%, rgba(210,168,255,.05) 0%, transparent 50%), var(--bg); }
+  .h .inner { max-width:var(--max); margin:0 auto; }
+  .h .crumbs { color:var(--muted); font-size:.75rem; letter-spacing:.05em; text-transform:uppercase; font-family:ui-monospace,monospace; }
+  .h h1 { margin:.25rem 0; font-size:1.7rem; letter-spacing:-.01em; font-weight:600; }
+  .h .sub { color:var(--muted); max-width:70ch; }
+  .layout { max-width:var(--max); margin:0 auto; padding:1.5rem 2rem 3rem;
+            display:grid; grid-template-columns:1fr var(--toc); gap:2.5rem; }
+  main { min-width:0; counter-reset:sec; }
+  aside { position:sticky; top:1rem; max-height:calc(100vh - 2rem); overflow-y:auto;
+          border-left:1px solid var(--border-soft); padding-left:1.25rem; }
+  aside h3 { margin:0 0 .6rem; font-size:.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  aside ol { list-style:none; padding:0; margin:0; counter-reset:tocc; }
+  aside li { counter-increment:tocc; margin:.15rem 0; font-size:.82rem; }
+  aside li a { color:var(--text-soft); }
+  aside li a::before { content:counter(tocc, decimal-leading-zero) "  "; color:var(--muted2);
+                       font-family:ui-monospace,monospace; font-size:.85em; }
+  aside li a:hover { color:var(--accent); }
+  section.sec { margin:0 0 2rem; scroll-margin-top:1rem; }
+  section.sec h2 { display:flex; gap:.6rem; margin:0 0 .9rem; font-size:1.25rem; }
+  section.sec h2 .ord { color:var(--muted2); font-family:ui-monospace,monospace; font-size:.85rem; counter-increment:sec; }
+  section.sec h3 { margin:1.2rem 0 .5rem; font-size:1.05rem; color:var(--accent2); }
+  section.sec p { color:var(--text-soft); }
+  .callout { border-left:3px solid var(--accent); background:rgba(88,166,255,.06);
+             padding:.65rem .85rem; border-radius:4px; margin:.85rem 0; }
+  .callout.warn { border-left-color:var(--warn); background:rgba(210,153,34,.07); }
+  table { border-collapse:collapse; width:100%; margin:.6rem 0 1rem; font-size:.88rem; }
+  th, td { padding:.5rem .55rem; border-bottom:1px solid var(--border-soft); text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
+  .mermaid-wrap { background:#0a0d12; border:1px solid var(--border-soft); border-radius:8px;
+                  padding:1rem; margin:1rem 0; overflow-x:auto; }
+  .mermaid-wrap pre.mermaid { background:transparent; border:0; padding:0; margin:0; text-align:center; }
+  @media (max-width:980px) { .layout { grid-template-columns:1fr; } aside { position:static; max-height:none; border-left:0; border-bottom:1px solid var(--border-soft); padding-left:0; padding-bottom:1rem; order:-1; } }
+</style></head><body>
+
+<header class="h"><div class="inner">
+  <div class="crumbs">spec · auth refactor · 2026-Q2</div>
+  <h1>Migrate session storage from cookies to JWT</h1>
+  <p class="sub">Step-by-step plan to swap the auth backbone from server-side session cookies to stateless signed tokens, with a rollback path and a 2-week shadow period. <em>This is an example pergam grid — fictional content.</em></p>
+</div></header>
+
+<div class="layout"><main>
+
+  <section class="sec" id="s01"><h2><span class="ord">01</span> Goal</h2>
+    <p>Replace the current Rails-style session cookie with short-lived JWTs (15-min access + 7-day refresh) so we can scale the auth service horizontally without sticky sessions.</p>
+    <div class="callout"><strong>Non-goal:</strong> introducing OAuth providers. Out of scope for this iteration.</div>
+  </section>
+
+  <section class="sec" id="s02"><h2><span class="ord">02</span> Architecture</h2>
+    <div class="mermaid-wrap"><pre class="mermaid">
+flowchart LR
+  classDef client fill:#161b22,stroke:#58a6ff,color:#e6edf3
+  classDef edge   fill:#1f1a0a,stroke:#d29922,color:#ffa657
+  classDef app    fill:#0a1f12,stroke:#3fb950,color:#7ee787
+  classDef store  fill:#1c2128,stroke:#8b949e,color:#c9d1d9
+
+  user["Browser"]:::client
+  cdn["Edge (CDN)"]:::edge
+  api["API gateway<br/>verifies JWT"]:::app
+  auth["auth-service<br/>issues + refreshes"]:::app
+  cache["KV cache<br/>refresh tokens"]:::store
+
+  user --> cdn --> api
+  api -. on 401 .-> auth
+  auth <--> cache
+  auth -- "access + refresh" --> user
+    </pre></div>
+  </section>
+
+  <section class="sec" id="s03"><h2><span class="ord">03</span> Phases</h2>
+    <table>
+      <thead><tr><th>Phase</th><th>Owner</th><th>Effort</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1 — Issue JWT alongside cookies</strong></td><td>alice</td><td>3 days</td><td>Dual-write. No user-visible change.</td></tr>
+        <tr><td><strong>2 — API gateway accepts both</strong></td><td>bob</td><td>2 days</td><td>Either auth source works. Metrics on use.</td></tr>
+        <tr><td><strong>3 — Frontend switches to JWT</strong></td><td>alice</td><td>4 days</td><td>JWT preferred; cookies still emitted for fallback.</td></tr>
+        <tr><td><strong>4 — Shadow 14 days</strong></td><td>—</td><td>14 days</td><td>Watch for token-refresh edge cases at scale.</td></tr>
+        <tr><td><strong>5 — Stop emitting cookies</strong></td><td>bob</td><td>1 day</td><td>Cleanup. PR removes the dual-write code.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="sec" id="s04"><h2><span class="ord">04</span> Token format</h2>
+    <pre><code>{
+  "iss": "auth.example.com",
+  "sub": "u_a1b2c3d4",
+  "iat": 1715900000,
+  "exp": 1715900900,
+  "roles": ["user", "billing"],
+  "tenant": "acme-corp"
+}</code></pre>
+    <p>Signed with ES256 (P-256). Public key rotated quarterly; both current and previous accepted during rotation.</p>
+  </section>
+
+  <section class="sec" id="s05"><h2><span class="ord">05</span> Rollback</h2>
+    <p>The dual-write phase makes rollback trivial: at any point through phase 4, the API gateway can prefer cookies again with a single config flag. The cleanup phase (5) is the last step <em>only</em> after the shadow period passes without incident.</p>
+  </section>
+
+  <section class="sec" id="s06"><h2><span class="ord">06</span> Risks</h2>
+    <ul>
+      <li><strong>Refresh-token theft</strong> — mitigated by IP+UA fingerprint mismatch detection (rotate on mismatch, invalidate old).</li>
+      <li><strong>Clock skew</strong> — accept tokens with <code>nbf</code> up to 30s in the future to tolerate small drifts.</li>
+      <li><strong>Logout sync</strong> — cookies invalidate server-side; JWT requires a deny-list in cache for 15 min after explicit logout.</li>
+    </ul>
+  </section>
+
+</main><aside>
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#s01">Goal</a></li>
+    <li><a href="#s02">Architecture</a></li>
+    <li><a href="#s03">Phases</a></li>
+    <li><a href="#s04">Token format</a></li>
+    <li><a href="#s05">Rollback</a></li>
+    <li><a href="#s06">Risks</a></li>
+  </ol>
+</aside></div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({
+  startOnLoad:true, theme:'dark',
+  themeVariables:{ background:'#0a0d12', primaryColor:'#161b22', primaryTextColor:'#e6edf3',
+                   primaryBorderColor:'#58a6ff', lineColor:'#8b949e' },
+  flowchart:{ curve:'basis', htmlLabels:true, nodeSpacing:35, rankSpacing:45 },
+  securityLevel:'loose',
+});
+</script>
+</body></html>
