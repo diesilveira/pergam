@@ -15,6 +15,7 @@
   <div class="brand"><span class="logo">▮▮</span><span class="name">pergam</span></div>
   <nav>
     <a href="#use">Use</a>
+    <a href="#compare">vs alternatives</a>
     <a href="#gallery">Gallery</a>
     <a href="#faq">FAQ</a>
     <a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">GitHub ↗</a>
@@ -37,40 +38,82 @@
 
 <!-- Three paths ------------------------------------------------------ -->
 <section class="paths" id="use">
-  <article class="path">
+
+  <article class="path featured">
+    <div class="path-tag">primary flow</div>
     <h2>1 · Use with Claude Code</h2>
-    <p>The intended flow. Drop the skill in <code>~/.claude/skills/</code> and ask Claude to "armá un grid HTML de X". The skill writes the HTML, posts here, and returns a URL.</p>
+    <p>The reason pergam exists. Drop the skill once, then ask Claude to "armá un grid HTML de X" inside any project. The skill writes the HTML, posts it here, and returns a shareable URL — <strong>no manual upload, no copy-paste, no leaving the terminal</strong>.</p>
 <pre><code>git clone https://github.com/diesilveira/pergam
 cp -r pergam/skills/post-html-grid ~/.claude/skills/
 
-<span class="tok-com"># point it at the free public service (72h TTL):</span>
+<span class="tok-com"># Public 72h share (free, rate-limited, ephemeral):</span>
 export PERGAM_URL=https://api.pergam.dev
 
-<span class="tok-com"># or at your own self-hosted instance:</span>
+<span class="tok-com"># OR self-hosted (private, durable, versioned — see option 2):</span>
 export PERGAM_URL=http://localhost:1111</code></pre>
-    <p class="hint">Then any future "publish this as a grid" in Claude Code lands here.</p>
+    <p>Every future "publish this as a grid" in Claude Code lands here automatically, with the right metadata (title, type, your email as author). Iterating? Same id, new version — full history.</p>
+    <p class="hint">Designed for PR review boards, status dashboards, spec docs with Mermaid, research notes — anything your AI generates as a self-contained HTML report.</p>
   </article>
 
   <article class="path">
-    <h2>2 · Drag a file</h2>
-    <p>If you already have an HTML file (from Claude, from your build, anywhere) — drop it on this card and you get a public link in two seconds.</p>
+    <h2>2 · Self-host (teams &amp; durability)</h2>
+    <p>One <code>docker compose up</code> and you have your own pergam with Postgres, versioning, immutable history, and zero TTL. Behind your VPN, on your internal domain, owned by your team.</p>
+<pre><code>git clone https://github.com/diesilveira/pergam
+cd pergam
+docker compose up -d
+open http://localhost:1111</code></pre>
+    <p>What you get over the public service:</p>
+    <ul>
+      <li><strong>No expiration</strong> — grids live forever in your Postgres</li>
+      <li><strong>Versioning</strong> — re-POST with same id → v2, v3, …; `/view` is always latest, `/v1/view` is specific</li>
+      <li><strong>Index with filters</strong> by type, author, title substring</li>
+      <li><strong>Private by default</strong> — your team's network is the trust boundary</li>
+    </ul>
+    <p class="hint">Read the <a href="https://github.com/diesilveira/pergam#deployment" target="_blank" rel="noopener">deployment notes</a> for a VPN-only setup or to put oauth2-proxy in front.</p>
+  </article>
+
+  <article class="path">
+    <h2>3 · Drag a file (one-off)</h2>
+    <p class="muted small">If you already have an HTML file from somewhere else and just want a quick public URL.</p>
     <div class="dropzone" id="dropzone">
       <input id="file-input" type="file" accept=".html,.htm,text/html" hidden>
       <p class="dz-prompt"><strong>Drop an .html file</strong><br><span class="muted small">or click to choose · max 512 KB</span></p>
       <div class="dz-progress" id="dz-progress" hidden>Uploading…</div>
     </div>
-    <p class="hint">Link expires in 72 hours. Rate-limited per IP. No login.</p>
+    <p class="hint">Link expires in 72h. Rate-limited per IP. No login. Use option 1 if you'd rather not touch a file at all.</p>
   </article>
 
-  <article class="path">
-    <h2>3 · Self-host</h2>
-    <p>One <code>docker compose up</code> and you have your own pergam with Postgres, versioning, no TTL, and full ownership. Suitable for teams behind a VPN.</p>
-<pre><code>git clone https://github.com/diesilveira/pergam
-cd pergam
-docker compose up -d
-open http://localhost:1111</code></pre>
-    <p class="hint">Read <a href="https://github.com/diesilveira/pergam#deployment" target="_blank" rel="noopener">the deployment notes</a> for a VPN-only setup.</p>
-  </article>
+</section>
+
+<!-- vs alternatives -------------------------------------------------- -->
+<section class="compare" id="compare">
+  <h2>How is this different from a generic HTML pastebin?</h2>
+  <p class="lead">Several free services let you upload an HTML file and get a public URL. They're fine for one-off shares. Pergam is built for the case where <strong>the AI agent makes the artifact</strong>, you want <strong>history</strong>, and your team needs to <strong>self-host behind a VPN</strong>.</p>
+  <div class="compare-table-wrap">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Anonymous HTML hosts<br><span class="th-sub">(hostmyclaudehtml, paste.rs, etc.)</span></th>
+          <th>pergam</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Upload HTML → public URL</td><td>✓</td><td>✓</td></tr>
+        <tr><td>No signup required</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Free</td><td>✓</td><td>✓</td></tr>
+        <tr class="diff"><td>Claude Code skill (AI posts directly, no file upload)</td><td>—</td><td><strong>✓</strong></td></tr>
+        <tr class="diff"><td>Documented programmatic API</td><td>—</td><td><strong>✓</strong></td></tr>
+        <tr class="diff"><td>Self-host (Docker + Postgres)</td><td>—</td><td><strong>✓</strong></td></tr>
+        <tr class="diff"><td>Versioning (same id, immutable history)</td><td>—</td><td><strong>✓</strong></td></tr>
+        <tr class="diff"><td>Filterable index by author / type / title</td><td>—</td><td><strong>✓</strong></td></tr>
+        <tr class="diff"><td>Open source (MIT)</td><td>—</td><td><strong>✓</strong></td></tr>
+        <tr class="diff"><td>Starter template library</td><td>—</td><td><strong>✓</strong></td></tr>
+        <tr><td>QR code for share URL</td><td>Some do</td><td>Not yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">Pick a generic host if you just need a one-shot public link. Pick pergam if you live in Claude Code, iterate on the same artifacts, or want to share inside your team without leaking content to a third-party service.</p>
 </section>
 
 <!-- Result modal ----------------------------------------------------- -->

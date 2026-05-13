@@ -133,6 +133,7 @@ body.landing { overflow-x: hidden; }
   background: var(--bg2); border: 1px solid var(--border-soft);
   border-radius: 10px; padding: 1.25rem 1.35rem;
   display: flex; flex-direction: column; gap: .6rem;
+  position: relative;
 }
 .path h2 {
   margin: 0; font-size: 1.05rem; font-weight: 600;
@@ -140,6 +141,25 @@ body.landing { overflow-x: hidden; }
 }
 .path p { margin: 0; color: var(--text-soft); font-size: .92rem; }
 .path pre { margin-top: .3rem; }
+.path ul { margin: .2rem 0 0; padding-left: 1.1rem; color: var(--text-soft); font-size: .9rem; }
+.path ul li { margin: .15rem 0; }
+
+/* Featured path (the primary flow) gets a tinted background + accent border */
+.path.featured {
+  background:
+    linear-gradient(180deg, rgba(88,166,255,.06) 0%, rgba(88,166,255,.02) 100%),
+    var(--bg2);
+  border-color: rgba(88,166,255,.45);
+  box-shadow: 0 0 0 1px rgba(88,166,255,.08), 0 6px 24px rgba(88,166,255,.05);
+}
+.path.featured h2 { color: var(--text); }
+.path .path-tag {
+  position: absolute; top: -10px; left: 1.2rem;
+  background: var(--accent); color: #0a0d12;
+  font-size: .65rem; font-weight: 600;
+  padding: .15rem .55rem; border-radius: 999px;
+  letter-spacing: .04em; text-transform: uppercase;
+}
 
 .dropzone {
   border: 2px dashed var(--border);
@@ -157,6 +177,48 @@ body.landing { overflow-x: hidden; }
 }
 .dropzone.uploading { opacity: .6; pointer-events: none; }
 .dz-prompt strong { color: var(--text); }
+
+/* ──────────────── vs alternatives ──────────────── */
+.compare {
+  max-width: var(--max); margin: 0 auto;
+  padding: 2rem 2rem 1rem;
+}
+.compare h2 { margin: 0 0 .35rem; font-size: 1.5rem; font-weight: 600; letter-spacing: -.01em; }
+.compare .lead { color: var(--muted); margin: 0 0 1.1rem; max-width: 75ch; }
+.compare-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--bg2);
+}
+.compare-table {
+  width: 100%; border-collapse: collapse; font-size: .92rem;
+}
+.compare-table thead th {
+  background: var(--bg3);
+  color: var(--text); font-weight: 600;
+  padding: .85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.compare-table thead th:first-child { width: 42%; }
+.compare-table thead th:not(:first-child) { width: 29%; }
+.compare-table thead .th-sub {
+  display: block; color: var(--muted); font-size: .78rem;
+  font-weight: 400; margin-top: .15rem;
+}
+.compare-table tbody td {
+  padding: .55rem 1rem;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-soft);
+}
+.compare-table tbody tr:last-child td { border-bottom: 0; }
+.compare-table tbody tr:hover td { background: rgba(255,255,255,.015); }
+.compare-table tr.diff { color: var(--accent); }
+.compare-table tr.diff td:first-child { color: var(--text); }
+.compare-table tr.diff strong { color: var(--accent); }
+.compare-table tbody td:first-child { color: var(--text); }
+.compare-table tbody td:not(:first-child) { text-align: center; font-family: ui-monospace, monospace; font-size: .95em; }
 
 .gallery {
   max-width: var(--max); margin: 0 auto;
