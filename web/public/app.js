@@ -173,23 +173,55 @@
   // ────────────────────────────────────────────────────────────────
   //  GitHub star count — only shown once we cross the threshold.
   //  Anything below that stays hidden to avoid "1 ⭐" embarrassment.
+  //  Cached in localStorage for 15 min so repeat visitors don't burn
+  //  through the unauthenticated GH API budget (60 req/h per IP).
   // ────────────────────────────────────────────────────────────────
   const STAR_THRESHOLD = 9;
+  const STAR_CACHE_KEY = "pergam:gh:stars";
+  const STAR_CACHE_TTL_MS = 15 * 60 * 1000;
+
   const starSlots = document.querySelectorAll("[data-gh-stars]");
   if (starSlots.length) {
-    fetch("https://api.github.com/repos/diesilveira/pergam", {
-      headers: { Accept: "application/vnd.github+json" },
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((repo) => {
-        const n = repo?.stargazers_count;
-        if (typeof n === "number" && n >= STAR_THRESHOLD) {
-          starSlots.forEach((el) => {
-            el.textContent = String(n);
-            el.hidden = false;
-          });
-        }
+    const cached = readStarCache();
+    if (cached !== null) {
+      paintStars(cached);
+    } else {
+      fetch("https://api.github.com/repos/diesilveira/pergam", {
+        headers: { Accept: "application/vnd.github+json" },
       })
-      .catch(() => { /* silent: leave the slot hidden */ });
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((repo) => {
+          const n = repo?.stargazers_count;
+          if (typeof n === "number") {
+            writeStarCache(n);
+            paintStars(n);
+          }
+        })
+        .catch(() => { /* silent: leave the slot hidden */ });
+    }
+  }
+
+  function readStarCache() {
+    try {
+      const raw = localStorage.getItem(STAR_CACHE_KEY);
+      if (!raw) return null;
+      const { count, ts } = JSON.parse(raw);
+      if (typeof count !== "number" || typeof ts !== "number") return null;
+      if (Date.now() - ts > STAR_CACHE_TTL_MS) return null;
+      return count;
+    } catch { return null; }
+  }
+  function writeStarCache(count) {
+    try {
+      localStorage.setItem(STAR_CACHE_KEY,
+        JSON.stringify({ count, ts: Date.now() }));
+    } catch { /* quota / disabled / private mode — silent */ }
+  }
+  function paintStars(n) {
+    if (n < STAR_THRESHOLD) return;
+    starSlots.forEach((el) => {
+      el.textContent = String(n);
+      el.hidden = false;
+    });
   }
 })();
