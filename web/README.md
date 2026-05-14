@@ -99,7 +99,7 @@ For the `www` subdomain, repeat with `www.pergam.dev` or add a redirect rule.
 
 - Open `https://pergam.dev` → landing renders
 - Drag-drop a small `.html` → modal shows `pergam.dev/s/<token>` URL
-- Open that URL in a new tab → grid renders inside an iframe with banner above
+- Open that URL in a new tab → the pergam renders inside an iframe with banner above
 - `curl https://api.pergam.dev/healthz` → `{"ok":true}`
 - "Make your own" link returns to landing
 
@@ -118,7 +118,7 @@ The skill will POST to that URL instead of `http://localhost:1111`.
 | --------------------------------- | -------------- | --------------------------------------------- |
 | `pergam.dev/`                     | CF Pages       | Landing page · drag-drop upload · gallery     |
 | `pergam.dev/s/<token>`            | CF Pages       | Rewrites to `view.html?t=<token>` (200, same path) |
-| `pergam.dev/library/*.html`       | CF Pages       | Example grids linked from the landing         |
+| `pergam.dev/library/*.html`       | CF Pages       | Example pergams linked from the landing       |
 | `api.pergam.dev/share`            | CF Worker      | POST → store HTML in KV with 72h TTL          |
 | `api.pergam.dev/s/<token>`        | CF Worker      | GET → HTML with strict CSP for safe rendering |
 | `api.pergam.dev/s/<token>/meta`   | CF Worker      | GET → JSON metadata (title, expires_at, …)    |

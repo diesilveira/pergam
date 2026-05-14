@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
-"""grid-layouts server — postgres-backed, versioned, immutable.
+"""pergam server — postgres-backed, versioned, immutable.
 
 Versioning model
 ----------------
-Each logical grid is identified by `id` (random 8-hex). It has one or more
+Each logical pergam is identified by `id` (random 8-hex). It has one or more
 `version` rows (monotonically increasing from 1). The public surface always
 defaults to the latest version of an id.
 
-POST /grid contract
--------------------
+POST /pergam contract
+---------------------
 Body JSON:
   {
-    "title":       "...",            required
-    "html":        "...",            required
-    "grid_type":   "plan|investigacion|informe|reporte|otro",  required
-    "author":      "<email>",        required
-    "id":          "abc12345"        optional — present → version++
+    "title":   "...",            required
+    "html":    "...",            required
+    "type":    "plan|investigacion|informe|reporte|otro",  required
+    "author":  "<email>",        required
+    "id":      "abc12345"        optional — present → version++
   }
-Returns: {"id": "...", "version": <int>, "view_url": "...", "title": "..."}
+Returns: {"id": "...", "version": <int>, "view_url": "...", "title": "...",
+          "type": "...", "author": "..."}
 
 Endpoints
 ---------
-  POST   /grid                 create new grid or bump version
+  POST   /pergam               create new pergam or bump version
   GET    /                     index (latest version per id; ?type= ?author= ?q=)
   GET    /{id}/view            render latest version
   GET    /{id}/v{n}/view       render specific version
@@ -29,15 +30,15 @@ Endpoints
   GET    /{id}/v{n}/raw        raw HTML (specific)
   GET    /{id}/versions        JSON list of versions for an id
   GET    /healthz              liveness probe
-  (DELETE removed — grids are immutable)
+  (DELETE removed — pergams are immutable)
 
-Env
----
-  GRID_HOST         bind host   (default 0.0.0.0)
-  GRID_PORT         bind port   (default 1111)
-  GRID_DB_URL       postgres connection string   (required)
-  GRID_PUBLIC_HOST  host for returned URLs       (default localhost)
-  GRID_PUBLIC_PORT  port for returned URLs       (default GRID_PORT)
+Env (12-factor)
+---------------
+  HOST           bind host                     (default 0.0.0.0)
+  PORT           bind port                     (default 1111)
+  DATABASE_URL   postgres connection string    (required)
+  PUBLIC_HOST    host for returned URLs        (default localhost)
+  PUBLIC_PORT    port for returned URLs        (default PORT)
 """
 
 from __future__ import annotations
@@ -73,8 +74,8 @@ def _new_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-class GridHandler(http.server.BaseHTTPRequestHandler):
-    server_version = "grid-layouts/2.0"
+class PergamHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "pergam/2.0"
     pool: ConnectionPool
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
@@ -82,7 +83,7 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
 
     # ----- POST -----
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/grid":
+        if urlparse(self.path).path != "/pergam":
             self.send_error(404, "Not Found")
             return
 
@@ -103,8 +104,8 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
             return
 
         html = data.get("html", "")
-        title = (data.get("title") or "Grid").strip()
-        grid_type = (data.get("grid_type") or "").strip().lower()
+        title = (data.get("title") or "Pergam").strip()
+        pergam_type = (data.get("type") or "").strip().lower()
         author = (data.get("author") or "").strip()
         existing_id = (data.get("id") or "").strip()
 
@@ -114,10 +115,10 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
         if not author:
             self.send_error(400, "Missing author")
             return
-        if grid_type not in _VALID_TYPES:
+        if pergam_type not in _VALID_TYPES:
             self.send_error(
                 400,
-                f"grid_type must be one of {sorted(_VALID_TYPES)}",
+                f"type must be one of {sorted(_VALID_TYPES)}",
             )
             return
         if existing_id and not _ID_RE.match(existing_id):
@@ -129,39 +130,39 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
         with self.pool.connection() as conn:
             if existing_id:
                 row = conn.execute(
-                    "SELECT COALESCE(MAX(version), 0) FROM grids WHERE id = %s",
+                    "SELECT COALESCE(MAX(version), 0) FROM pergams WHERE id = %s",
                     (existing_id,),
                 ).fetchone()
                 next_version = (row[0] or 0) + 1
-                grid_id = existing_id
+                pergam_id = existing_id
             else:
                 next_version = 1
-                grid_id = _new_id()
+                pergam_id = _new_id()
                 while conn.execute(
-                    "SELECT 1 FROM grids WHERE id = %s LIMIT 1", (grid_id,)
+                    "SELECT 1 FROM pergams WHERE id = %s LIMIT 1", (pergam_id,)
                 ).fetchone():
-                    grid_id = _new_id()
+                    pergam_id = _new_id()
 
             conn.execute(
                 """
-                INSERT INTO grids (id, version, title, html, grid_type, author, bytes)
+                INSERT INTO pergams (id, version, title, html, type, author, bytes)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (grid_id, next_version, title, html, grid_type, author, bytes_count),
+                (pergam_id, next_version, title, html, pergam_type, author, bytes_count),
             )
 
-        public_host = os.environ.get("GRID_PUBLIC_HOST", "localhost")
-        public_port = int(os.environ.get("GRID_PUBLIC_PORT", self.server.server_address[1]))
+        public_host = os.environ.get("PUBLIC_HOST", "localhost")
+        public_port = int(os.environ.get("PUBLIC_PORT", self.server.server_address[1]))
         scheme = "https" if str(public_port) == "443" else "http"
         host_str = public_host if str(public_port) in ("80", "443") else f"{public_host}:{public_port}"
-        view_url = f"{scheme}://{host_str}/{grid_id}/view"
+        view_url = f"{scheme}://{host_str}/{pergam_id}/view"
 
         response = json.dumps({
-            "id": grid_id,
+            "id": pergam_id,
             "version": next_version,
             "view_url": view_url,
             "title": title,
-            "grid_type": grid_type,
+            "type": pergam_type,
             "author": author,
         })
         self._send(201, "application/json", response.encode("utf-8"))
@@ -188,40 +189,40 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
 
         # /{id}/view or /{id}/raw  (latest)
         if len(parts) == 2 and parts[1] in ("view", "raw") and _ID_RE.match(parts[0]):
-            self._serve_grid(parts[0], None, raw=(parts[1] == "raw"))
+            self._serve_pergam(parts[0], None, raw=(parts[1] == "raw"))
             return
 
         # /{id}/v{n}/view or /{id}/v{n}/raw  (specific version)
         if len(parts) == 3 and parts[2] in ("view", "raw") and _ID_RE.match(parts[0]):
             m = _VERSION_RE.match(parts[1])
             if m:
-                self._serve_grid(parts[0], int(m.group(1)), raw=(parts[2] == "raw"))
+                self._serve_pergam(parts[0], int(m.group(1)), raw=(parts[2] == "raw"))
                 return
 
         self.send_error(404, "Not Found")
 
     # ----- DELETE intentionally not implemented (immutable) -----
     def do_DELETE(self) -> None:
-        self.send_error(405, "Grids are immutable")
+        self.send_error(405, "Pergams are immutable")
 
     # --------------------------------------------------------------
     # rendering
     # --------------------------------------------------------------
-    def _serve_grid(self, grid_id: str, version: int | None, *, raw: bool) -> None:
+    def _serve_pergam(self, pergam_id: str, version: int | None, *, raw: bool) -> None:
         with self.pool.connection() as conn:
             if version is None:
                 row = conn.execute(
-                    "SELECT html, version FROM grids WHERE id = %s ORDER BY version DESC LIMIT 1",
-                    (grid_id,),
+                    "SELECT html, version FROM pergams WHERE id = %s ORDER BY version DESC LIMIT 1",
+                    (pergam_id,),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT html, version FROM grids WHERE id = %s AND version = %s",
-                    (grid_id, version),
+                    "SELECT html, version FROM pergams WHERE id = %s AND version = %s",
+                    (pergam_id, version),
                 ).fetchone()
 
         if not row:
-            self.send_error(404, "Grid not found")
+            self.send_error(404, "Pergam not found")
             return
 
         html_text, _ver = row
@@ -229,25 +230,25 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
         ctype = "text/html; charset=utf-8" if not raw else "text/plain; charset=utf-8"
         self._send(200, ctype, payload)
 
-    def _render_versions_json(self, grid_id: str) -> None:
+    def _render_versions_json(self, pergam_id: str) -> None:
         with self.pool.connection() as conn:
             rows = conn.execute(
                 """
-                SELECT version, title, grid_type, author, bytes, created_at
-                FROM grids WHERE id = %s ORDER BY version DESC
+                SELECT version, title, type, author, bytes, created_at
+                FROM pergams WHERE id = %s ORDER BY version DESC
                 """,
-                (grid_id,),
+                (pergam_id,),
             ).fetchall()
 
         if not rows:
-            self.send_error(404, "Grid not found")
+            self.send_error(404, "Pergam not found")
             return
 
         out = [
             {
                 "version": r[0],
                 "title": r[1],
-                "grid_type": r[2],
+                "type": r[2],
                 "author": r[3],
                 "bytes": r[4],
                 "created_at": r[5].isoformat(),
@@ -263,14 +264,14 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
         text_query = query.get("q", [None])[0] or None
 
         sql = """
-            SELECT l.id, l.version, l.title, l.grid_type, l.author, l.created_at, l.bytes,
-                   (SELECT count(*) FROM grids g WHERE g.id = l.id) AS total_versions
-            FROM grids_latest l
+            SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
+                   (SELECT count(*) FROM pergams p WHERE p.id = l.id) AS total_versions
+            FROM pergams_latest l
             WHERE 1=1
         """
         params: list[Any] = []
         if type_filter:
-            sql += " AND l.grid_type = %s"
+            sql += " AND l.type = %s"
             params.append(type_filter)
         if author_filter:
             sql += " AND l.author = %s"
@@ -283,12 +284,12 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
         with self.pool.connection() as conn:
             rows = conn.execute(sql, params).fetchall()
             type_counts = conn.execute(
-                "SELECT grid_type, count(*) FROM grids_latest GROUP BY grid_type ORDER BY 2 DESC, 1"
+                "SELECT type, count(*) FROM pergams_latest GROUP BY type ORDER BY 2 DESC, 1"
             ).fetchall()
             author_counts = conn.execute(
-                "SELECT author, count(*) FROM grids_latest GROUP BY author ORDER BY 2 DESC, 1"
+                "SELECT author, count(*) FROM pergams_latest GROUP BY author ORDER BY 2 DESC, 1"
             ).fetchall()
-            total = conn.execute("SELECT count(*) FROM grids_latest").fetchone()[0]
+            total = conn.execute("SELECT count(*) FROM pergams_latest").fetchone()[0]
 
         # ---- filter pill URLs that preserve the OTHER active filters ----
         from urllib.parse import urlencode
@@ -330,39 +331,39 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
 
         body_rows = []
         for r in rows:
-            (gid, ver, title, gtype, author, created, _bytes, totalv) = r
-            grid_versions = (
+            (pid, ver, title, ptype, author, created, _bytes, totalv) = r
+            pergam_versions = (
                 f'<details><summary>v{ver}</summary>'
-                f'<a href="/{gid}/versions" class="muted">api</a> · '
+                f'<a href="/{pid}/versions" class="muted">api</a> · '
                 + " · ".join(
-                    f'<a href="/{gid}/v{i}/view">v{i}</a>'
+                    f'<a href="/{pid}/v{i}/view">v{i}</a>'
                     for i in range(totalv, 0, -1)
                 )
                 + "</details>"
             )
             author_href = html_lib.escape(link(override_author=author, clear_author=False))
-            type_href = html_lib.escape(link(override_type=gtype, clear_type=False))
+            type_href = html_lib.escape(link(override_type=ptype, clear_type=False))
             body_rows.append(
                 f"<tr>"
-                f'<td><code>{html_lib.escape(gid)}</code></td>'
-                f'<td><a href="/{gid}/view"><strong>{html_lib.escape(title)}</strong></a></td>'
-                f'<td><a class="type t-{html_lib.escape(gtype)}" href="{type_href}" title="filter by type">{html_lib.escape(gtype)}</a></td>'
+                f'<td><code>{html_lib.escape(pid)}</code></td>'
+                f'<td><a href="/{pid}/view"><strong>{html_lib.escape(title)}</strong></a></td>'
+                f'<td><a class="type t-{html_lib.escape(ptype)}" href="{type_href}" title="filter by type">{html_lib.escape(ptype)}</a></td>'
                 f'<td class="muted"><a href="{author_href}" class="author-cell" title="filter by author">{html_lib.escape(author)}</a></td>'
-                f"<td>{grid_versions}</td>"
+                f"<td>{pergam_versions}</td>"
                 f'<td class="muted">{created.strftime("%Y-%m-%d %H:%M")}</td>'
                 f"</tr>"
             )
-        body = "\n".join(body_rows) or '<tr><td colspan="6" class="muted">No grids match.</td></tr>'
+        body = "\n".join(body_rows) or '<tr><td colspan="6" class="muted">No pergams match.</td></tr>'
 
         showing = len(rows)
         showing_note = (
             f"showing {showing} of {total}"
             if (type_filter or author_filter or text_query) and showing != total
-            else f"{total} grids"
+            else f"{total} pergams"
         )
 
         html = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>grid-layouts — index</title>
+<html lang="en"><head><meta charset="utf-8"><title>pergam — index</title>
 <style>
   :root {{
     --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128;
@@ -431,7 +432,7 @@ class GridHandler(http.server.BaseHTTPRequestHandler):
     .search-form input {{ width:100%; }}
   }}
 </style></head><body>
-<h1>grid-layouts</h1>
+<h1>pergam</h1>
 <div class="stats">{showing_note} · postgres-backed · immutable, versioned</div>
 
 <div class="toolbar">
@@ -476,21 +477,21 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 def main() -> int:
-    db_url = os.environ.get("GRID_DB_URL")
+    db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        print("ERROR: GRID_DB_URL is required", file=sys.stderr)
+        print("ERROR: DATABASE_URL is required", file=sys.stderr)
         return 2
 
-    host = os.environ.get("GRID_HOST", DEFAULT_HOST)
-    port = int(os.environ.get("GRID_PORT", DEFAULT_PORT))
+    host = os.environ.get("HOST", DEFAULT_HOST)
+    port = int(os.environ.get("PORT", DEFAULT_PORT))
 
     pool = ConnectionPool(db_url, min_size=1, max_size=8, kwargs={"autocommit": True}, open=True)
     pool.wait(timeout=10.0)
-    GridHandler.pool = pool
+    PergamHandler.pool = pool
 
-    with ThreadingHTTPServer((host, port), GridHandler) as httpd:
+    with ThreadingHTTPServer((host, port), PergamHandler) as httpd:
         print(
-            f"grid-layouts listening on http://{host}:{port}  (db connected)",
+            f"pergam listening on http://{host}:{port}  (db connected)",
             flush=True,
         )
         try:

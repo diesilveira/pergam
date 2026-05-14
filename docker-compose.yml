@@ -23,11 +23,11 @@ services:
     ports:
       - "${PERGAM_PORT:-1111}:1111"
     environment:
-      GRID_HOST: "0.0.0.0"
-      GRID_PORT: "1111"
-      GRID_DB_URL: "postgresql://pergam:${POSTGRES_PASSWORD:-pergam}@db:5432/pergam"
-      GRID_PUBLIC_HOST: "${GRID_PUBLIC_HOST:-localhost}"
-      GRID_PUBLIC_PORT: "${GRID_PUBLIC_PORT:-1111}"
+      HOST: "0.0.0.0"
+      PORT: "1111"
+      DATABASE_URL: "postgresql://pergam:${POSTGRES_PASSWORD:-pergam}@db:5432/pergam"
+      PUBLIC_HOST: "${PUBLIC_HOST:-localhost}"
+      PUBLIC_PORT: "${PUBLIC_PORT:-1111}"
     depends_on:
       db:
         condition: service_healthy
