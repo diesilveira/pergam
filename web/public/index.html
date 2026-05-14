@@ -8,7 +8,7 @@
   <meta name="description" content="A ~300 LOC self-hostable service that turns every HTML report, dashboard, or spec your AI generates into a permanent, versioned URL. MIT, no telemetry, one docker compose away.">
 
   <meta property="og:title"       content="pergam — immutable parchment for what your AI builds">
-  <meta property="og:description" content="Publish HTML grids your AI builds. Permanent, versioned URLs. Self-hostable. MIT.">
+  <meta property="og:description" content="Publish pergams your AI builds — HTML reports, dashboards, specs — at permanent, versioned URLs. Self-hostable. MIT.">
   <meta property="og:type"        content="website">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -128,7 +128,7 @@
         <div class="trust__item"><div class="trust__k">~300<span class="unit">LOC</span></div><div class="trust__l">Server</div></div>
         <div class="trust__item"><div class="trust__k">0<span class="unit">deps</span></div><div class="trust__l">Outside stdlib</div></div>
         <div class="trust__item"><div class="trust__k">1<span class="unit">table</span></div><div class="trust__l">Postgres schema</div></div>
-        <div class="trust__item"><div class="trust__k">∞<span class="unit">versions</span></div><div class="trust__l">Per grid id</div></div>
+        <div class="trust__item"><div class="trust__k">∞<span class="unit">versions</span></div><div class="trust__l">Per pergam id</div></div>
         <div class="trust__item"><div class="trust__k">MIT</div><div class="trust__l">License</div></div>
       </div>
     </aside>
@@ -145,7 +145,7 @@
           <article class="how-card">
             <div class="how-card__num">STEP · 01</div>
             <h3>AI generates HTML</h3>
-            <p>Claude, Codex, Cursor — whatever your assistant — produces a self-contained HTML grid: a PR review board, a status dashboard, a spec with Mermaid.</p>
+            <p>Claude, Codex, Cursor — whatever your assistant — produces a self-contained pergam: a PR review board, a status dashboard, a spec with Mermaid.</p>
             <div class="how-card__illu">
               <svg viewBox="0 0 240 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <defs>
@@ -170,7 +170,7 @@
           <article class="how-card">
             <div class="how-card__num">STEP · 02</div>
             <h3>Skill auto-POSTs</h3>
-            <p>The companion Claude Code skill packages the HTML with title, type, and your email, then pushes to <code>POST /grid</code> — no manual upload, no copy-paste.</p>
+            <p>The companion Claude Code skill packages the HTML with title, type, and your email, then pushes to <code>POST /pergam</code> — no manual upload, no copy-paste.</p>
             <div class="how-card__illu">
               <svg viewBox="0 0 240 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <rect x="14" y="20" width="92" height="90" rx="8" fill="none" stroke="#1e2333"/>
@@ -181,7 +181,7 @@
                 <path d="M114 65 L138 65 L132 60 M138 65 L132 70" stroke="#5ee7ff" stroke-width="1.5" fill="none"/>
                 <rect x="148" y="20" width="78" height="90" rx="8" fill="none" stroke="#1e2333"/>
                 <text x="156" y="40" fill="#9aa3b8" font-family="JetBrains Mono" font-size="9">POST</text>
-                <text x="156" y="55" fill="#5ee7ff" font-family="JetBrains Mono" font-size="9">/grid</text>
+                <text x="156" y="55" fill="#5ee7ff" font-family="JetBrains Mono" font-size="9">/pergam</text>
                 <text x="156" y="80" fill="#56d364" font-family="JetBrains Mono" font-size="9">→ 201</text>
                 <text x="156" y="95" fill="#9aa3b8" font-family="JetBrains Mono" font-size="9">Created</text>
               </svg>
@@ -257,7 +257,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><line x1="21" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
             </div>
             <h4>Filterable index</h4>
-            <p>Find your grids by author, type, or title substring. The index is just another HTML page — opinionated, fast, no JS framework.</p>
+            <p>Find your pergams by author, type, or title substring. The index is just another HTML page — opinionated, fast, no JS framework.</p>
           </article>
 
           <article class="feat">
@@ -276,8 +276,8 @@
     <section id="gallery" class="section section--bordered" aria-labelledby="gallery-title">
       <div class="container">
         <p class="section__eyebrow">What the skill produces</p>
-        <h2 id="gallery-title" class="section__title">Real grids, not <span class="serif">screenshots.</span></h2>
-        <p class="section__lead">Four example grids — the kind your AI will land on pergam every week. Click any card to open the full thing in a new tab.</p>
+        <h2 id="gallery-title" class="section__title">Real pergams, not <span class="serif">screenshots.</span></h2>
+        <p class="section__lead">Four pergams — the kind your AI will land here every week. Click any card to open the full thing in a new tab.</p>
 
         <div class="showcase-grid">
 
@@ -290,7 +290,7 @@
                 <rect width="500" height="220" fill="#0d1117"/>
                 <rect x="0" y="0" width="500" height="48" fill="url(#prHeader)"/>
                 <text x="20" y="28" fill="#7aa2ff" font-family="Inter" font-size="14" font-weight="700">PR review board</text>
-                <text x="20" y="42" fill="#8b949e" font-family="Inter" font-size="10">4 open PRs · grid_type: reporte</text>
+                <text x="20" y="42" fill="#8b949e" font-family="Inter" font-size="10">4 open PRs · type: reporte</text>
                 <rect x="20" y="60" width="62" height="16" rx="8" fill="#3fb95015" stroke="#3fb950" stroke-opacity=".5"/>
                 <text x="51" y="71" fill="#3fb950" font-size="9" font-family="Inter" text-anchor="middle">2 APPROVE</text>
                 <rect x="90" y="60" width="74" height="16" rx="8" fill="#d2992215" stroke="#d29922" stroke-opacity=".5"/>
@@ -328,7 +328,7 @@
                 <h3>PR review board</h3>
                 <span class="show-card__type">reporte</span>
               </div>
-              <p>Card grid, severity chips, expandable findings per PR.</p>
+              <p>Card layout, severity chips, expandable findings per PR.</p>
               <span class="show-card__open">
                 Open example
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M7 17L17 7M9 7h8v8"/></svg>
@@ -341,7 +341,7 @@
               <svg viewBox="0 0 500 220" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <rect width="500" height="220" fill="#0d1117"/>
                 <text x="20" y="28" fill="#5ee7ff" font-family="Inter" font-size="14" font-weight="700">Status dashboard · Q3</text>
-                <text x="20" y="42" fill="#8b949e" font-family="Inter" font-size="10">KPIs · 13 weeks · grid_type: reporte</text>
+                <text x="20" y="42" fill="#8b949e" font-family="Inter" font-size="10">KPIs · 13 weeks · type: reporte</text>
                 <g transform="translate(20,60)">
                   <rect width="105" height="64" rx="6" fill="#161b22" stroke="#30363d"/>
                   <text x="12" y="20" fill="#8b949e" font-family="Inter" font-size="9">MRR</text>
@@ -435,7 +435,7 @@
               <svg viewBox="0 0 500 220" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <rect width="500" height="220" fill="#0d1117"/>
                 <text x="20" y="28" fill="#f0d28a" font-family="Instrument Serif" font-style="italic" font-size="18">Research · vector DB comparison</text>
-                <text x="20" y="44" fill="#8b949e" font-family="Inter" font-size="10">5 candidates · grid_type: investigacion</text>
+                <text x="20" y="44" fill="#8b949e" font-family="Inter" font-size="10">5 candidates · type: investigacion</text>
                 <g transform="translate(20,60)">
                   <rect width="280" height="150" rx="6" fill="#161b22" stroke="#30363d"/>
                   <line x1="0" y1="24"  x2="280" y2="24"  stroke="#30363d"/>
@@ -526,7 +526,7 @@ git <span class="tok-cmd">clone</span> https://github.com/diesilveira/pergam
 <span class="tok-cmd">export</span> PERGAM_URL=<span class="tok-str">"http://localhost:1111"</span>
 
 <span class="tok-com"># 3. Inside any project, ask Claude:</span>
-<span class="tok-com">#    "armá un grid HTML de X y publicalo"</span>
+<span class="tok-com">#    "armá un pergam de X y publicalo"</span>
 <span class="tok-com"># → returns view_url, ready to share.</span></pre>
           </article>
 
@@ -596,10 +596,10 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
           </details>
           <details>
             <summary>Is the public service safe? What about the embedded HTML?</summary>
-            <p>Grids are served from a sandboxed iframe on a different origin (<code>api.pergam.dev</code>) with a strict CSP that blocks everything except inline CSS and Mermaid from jsDelivr. Visitors are isolated. The 72-hour TTL also limits the blast radius of any abuse.</p>
+            <p>Pergams are served from a sandboxed iframe on a different origin (<code>api.pergam.dev</code>) with a strict CSP that blocks everything except inline CSS and Mermaid from jsDelivr. Visitors are isolated. The 72-hour TTL also limits the blast radius of any abuse.</p>
           </details>
           <details>
-            <summary>Can I keep grids forever?</summary>
+            <summary>Can I keep pergams forever?</summary>
             <p>Yes — self-host. Public service is for ephemeral sharing. Self-host gives you a Postgres-backed, versioned, immutable history with no TTL.</p>
           </details>
           <details>
@@ -608,7 +608,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
           </details>
           <details>
             <summary>How is it different from Vercel preview URLs or GitHub Pages?</summary>
-            <p>Those need a repo and a deploy step. pergam is a single <code>POST /grid</code> with a body of HTML — that's the whole contract. It's designed for the throwaway-but-shareable case in between "screenshot in Slack" and "real deploy."</p>
+            <p>Those need a repo and a deploy step. pergam is a single <code>POST /pergam</code> with a body of HTML — that's the whole contract. It's designed for the throwaway-but-shareable case in between "screenshot in Slack" and "real deploy."</p>
           </details>
         </div>
       </div>
@@ -624,7 +624,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
         <button class="modal__close-icon close" type="button" aria-label="Close">✕</button>
       </header>
       <div class="modal__body">
-        <p>Anyone with this link can view the grid for the next 72 hours.</p>
+        <p>Anyone with this link can view the pergam for the next 72 hours.</p>
         <div class="url-row">
           <input id="result-url" type="text" readonly aria-label="Shareable URL">
           <button id="result-copy" type="button">Copy</button>

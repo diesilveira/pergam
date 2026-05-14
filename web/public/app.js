@@ -49,11 +49,11 @@
         return r.json();
       })
       .then((meta) => {
-        document.title = `${meta.title || "Shared grid"} · pergam`;
-        titleEl.textContent = meta.title || "Untitled grid";
+        document.title = `${meta.title || "Shared pergam"} · pergam`;
+        titleEl.textContent = meta.title || "Untitled pergam";
         expiryEl.textContent = `expires ${fmtExpiry(meta.expires_at)} · ${fmtSize(meta.bytes)}`;
         dl.href = `${API}/s/${encodeURIComponent(token)}/raw`;
-        dl.download = `${(meta.title || "grid").replace(/[^a-z0-9-_]+/gi, "_")}.html`;
+        dl.download = `${(meta.title || "pergam").replace(/[^a-z0-9-_]+/gi, "_")}.html`;
         dl.hidden = false;
         frame.src = `${API}/s/${encodeURIComponent(token)}`;
       })
@@ -113,7 +113,7 @@
         const res = await fetch(`${API}/share`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ html, title, grid_type: "otro", author: "anonymous" }),
+          body: JSON.stringify({ html, title, type: "otro", author: "anonymous" }),
         });
         if (res.status === 429) throw new Error("Rate limited. Try again in an hour.");
         if (res.status === 413) throw new Error("File too large.");

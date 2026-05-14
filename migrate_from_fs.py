@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""One-shot migration of filesystem-backed grids into Postgres.
+"""One-shot migration of filesystem-backed pergams into Postgres.
 
 Reads ./data/{id}.html and ./data/{id}.meta.json, inserts each as version=1
-with the given author and grid_type. Idempotent: skips ids that already
+with the given author and type. Idempotent: skips ids that already
 exist in the DB.
 
 Usage:
-    GRID_DB_URL=postgresql://user:pass@host:5432/pergam \
+    DATABASE_URL=postgresql://user:pass@host:5432/pergam \
     AUTHOR=you@example.com \
-    GRID_TYPE=otro \
+    TYPE=otro \
     python3 migrate_from_fs.py
 """
 
@@ -23,24 +23,24 @@ DATA_DIR = Path(__file__).parent / "data"
 
 
 def main() -> int:
-    db_url = os.environ.get("GRID_DB_URL")
+    db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        print("ERROR: GRID_DB_URL required", file=sys.stderr)
+        print("ERROR: DATABASE_URL required", file=sys.stderr)
         return 2
     author = os.environ.get("AUTHOR", "you@example.com")
-    grid_type = os.environ.get("GRID_TYPE", "otro")
+    pergam_type = os.environ.get("TYPE", "otro")
 
     inserted = skipped = errors = 0
     with psycopg.connect(db_url, autocommit=True) as conn:
         for html_file in sorted(DATA_DIR.glob("*.html")):
-            grid_id = html_file.stem
-            meta_file = DATA_DIR / f"{grid_id}.meta.json"
+            pergam_id = html_file.stem
+            meta_file = DATA_DIR / f"{pergam_id}.meta.json"
 
             exists = conn.execute(
-                "SELECT 1 FROM grids WHERE id=%s LIMIT 1", (grid_id,)
+                "SELECT 1 FROM pergams WHERE id=%s LIMIT 1", (pergam_id,)
             ).fetchone()
             if exists:
-                print(f"  skip {grid_id} (exists)")
+                print(f"  skip {pergam_id} (exists)")
                 skipped += 1
                 continue
 
@@ -52,20 +52,20 @@ def main() -> int:
                         meta = json.loads(meta_file.read_text(encoding="utf-8"))
                     except json.JSONDecodeError:
                         pass
-                title = meta.get("title", grid_id)
+                title = meta.get("title", pergam_id)
                 bytes_count = meta.get("bytes", len(html.encode("utf-8")))
 
                 conn.execute(
                     """
-                    INSERT INTO grids (id, version, title, html, grid_type, author, bytes, created_at)
+                    INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)
                     VALUES (%s, 1, %s, %s, %s, %s, %s, COALESCE(%s::timestamptz, now()))
                     """,
-                    (grid_id, title, html, grid_type, author, bytes_count, meta.get("created_at")),
+                    (pergam_id, title, html, pergam_type, author, bytes_count, meta.get("created_at")),
                 )
-                print(f"  insert {grid_id}  '{title[:60]}'  ({bytes_count} bytes)")
+                print(f"  insert {pergam_id}  '{title[:60]}'  ({bytes_count} bytes)")
                 inserted += 1
             except Exception as exc:  # noqa: BLE001
-                print(f"  ERROR {grid_id}: {exc}", file=sys.stderr)
+                print(f"  ERROR {pergam_id}: {exc}", file=sys.stderr)
                 errors += 1
 
     print(f"\nDone. inserted={inserted} skipped={skipped} errors={errors}")

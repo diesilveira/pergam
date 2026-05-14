@@ -2,9 +2,9 @@
 
 > Immutable parchment for what your AI builds.
 
-`pergam` is a tiny, self-hostable HTTP service that **stores and serves HTML "grids"** — dashboards, reports, design docs, comparison boards, anything you can express as a self-contained HTML page. Every grid is content-addressable by `(id, version)`, born immutable, and viewable at a stable URL.
+`pergam` is a tiny, self-hostable HTTP service that **stores and serves HTML pergams** — dashboards, reports, design docs, comparison boards, anything you can express as a self-contained HTML page. Every pergam is content-addressable by `(id, version)`, born immutable, and viewable at a stable URL.
 
-It's designed to be the place an AI agent presses "ship" and gets back a URL your team will actually open. Pair it with the companion [Claude Code skill](#claude-code-skill) and one prompt becomes one shareable artifact.
+It's designed to be the place an AI agent presses "ship" and gets back a URL your team will actually open. Pair it with the companion [Claude Code skill](#claude-code-skill) and one prompt becomes one shareable artifact — "che, te paso un pergam".
 
 ## Why
 
@@ -25,16 +25,16 @@ open http://localhost:1111/
 
 That's it. The compose file bundles Postgres so you don't need anything else.
 
-Publish a first grid:
+Publish a first pergam:
 
 ```bash
-curl -sS -X POST http://localhost:1111/grid \
+curl -sS -X POST http://localhost:1111/pergam \
   -H 'Content-Type: application/json' \
   -d '{
-    "title":     "Hello",
-    "html":      "<!doctype html><h1>Hello, pergam</h1>",
-    "grid_type": "otro",
-    "author":    "you@example.com"
+    "title":  "Hello",
+    "html":   "<!doctype html><h1>Hello, pergam</h1>",
+    "type":   "otro",
+    "author": "you@example.com"
   }'
 # -> {"id":"a1b2c3d4","version":1,"view_url":"http://localhost:1111/a1b2c3d4/view"}
 ```
@@ -43,32 +43,32 @@ Open the `view_url` in a browser.
 
 ## Endpoints
 
-| Method | Path                  | Description                                                          |
-| ------ | --------------------- | -------------------------------------------------------------------- |
-| `POST`   | `/grid`               | Body `{title, html, grid_type, author, id?}`. Returns `{id, version, view_url, title, grid_type, author}`. Omit `id` for a new grid; include it to bump the version of an existing one. |
+| Method   | Path                  | Description                                                          |
+| -------- | --------------------- | -------------------------------------------------------------------- |
+| `POST`   | `/pergam`             | Body `{title, html, type, author, id?}`. Returns `{id, version, view_url, title, type, author}`. Omit `id` for a new pergam; include it to bump the version of an existing one. |
 | `GET`    | `/`                   | HTML index. Filters: `?type=<type>`, `?author=<email>`, `?q=<title-substring>`. |
 | `GET`    | `/{id}/view`          | Render the latest version.                                           |
 | `GET`    | `/{id}/v{n}/view`     | Render a specific version.                                           |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
 | `GET`    | `/{id}/v{n}/raw`      | Raw HTML source (specific version).                                  |
-| `GET`    | `/{id}/versions`      | JSON: `[{version, title, grid_type, author, bytes, created_at}, …]`. |
+| `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
 | `GET`    | `/healthz`            | Liveness probe.                                                      |
-| `DELETE` | `/{id}`               | **405 Method Not Allowed** — grids are immutable.                    |
+| `DELETE` | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |
 
 ## Versioning model
 
-Every grid has a logical `id` (random 8-hex) and a monotonically increasing `version`. The public surface defaults to the latest version of an id:
+Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `version`. The public surface defaults to the latest version of an id:
 
-- `POST /grid` with no `id` → new grid, `version=1`
-- `POST /grid` with an existing `id` → same id, `version + 1`
+- `POST /pergam` with no `id` → new pergam, `version=1`
+- `POST /pergam` with an existing `id` → same id, `version + 1`
 - `GET /{id}/view` → latest version
 - `GET /{id}/v3/view` → version 3 specifically
 
-Grids cannot be deleted. To "supersede" a grid, post a new version with the same id.
+Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id.
 
-## Grid types
+## Pergam types
 
-The `grid_type` field is required and free-form `text`, but a recommended taxonomy keeps filters useful:
+The `type` field is required and free-form `text`, but a recommended taxonomy keeps filters useful:
 
 | Type            | When to pick it                                                       |
 | --------------- | --------------------------------------------------------------------- |
@@ -80,15 +80,17 @@ The `grid_type` field is required and free-form `text`, but a recommended taxono
 
 ## Configuration
 
-| Env var            | Default                | Description                                  |
-| ------------------ | ---------------------- | -------------------------------------------- |
-| `GRID_DB_URL`      | bundled `db` service   | Postgres connection string.                  |
-| `GRID_HOST`        | `0.0.0.0`              | Bind host inside the container.              |
-| `GRID_PORT`        | `1111`                 | Bind port inside the container.              |
-| `GRID_PUBLIC_HOST` | `localhost`            | Host used in returned `view_url`s.           |
-| `GRID_PUBLIC_PORT` | `1111`                 | Port used in returned `view_url`s.           |
-| `POSTGRES_PASSWORD`| `pergam`               | Password for the bundled `db` service.       |
-| `PERGAM_PORT`      | `1111`                 | Host-side published port.                    |
+App env vars follow 12-factor conventions (no `PERGAM_*` prefix inside the container — the container *is* pergam):
+
+| Env var             | Default                | Description                                  |
+| ------------------- | ---------------------- | -------------------------------------------- |
+| `DATABASE_URL`      | bundled `db` service   | Postgres connection string.                  |
+| `HOST`              | `0.0.0.0`              | Bind host inside the container.              |
+| `PORT`              | `1111`                 | Bind port inside the container.              |
+| `PUBLIC_HOST`       | `localhost`            | Host used in returned `view_url`s.           |
+| `PUBLIC_PORT`       | `1111`                 | Port used in returned `view_url`s.           |
+| `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
+| `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
 
 See `.env.example` for the full set.
 
@@ -105,22 +107,22 @@ pergam/
 ├── migrate_from_fs.py   import legacy ./data/*.html files
 ├── .env.example
 └── skills/
-    └── post-html-grid/  Claude Code skill (see below)
+    └── post-pergam/     Claude Code skill (see below)
 ```
 
 ## Claude Code skill
 
-`skills/post-html-grid/` contains a [Claude Code](https://claude.com/claude-code) skill that knows how to talk to pergam. To install it:
+`skills/post-pergam/` contains a [Claude Code](https://claude.com/claude-code) skill that knows how to talk to pergam. To install it:
 
 ```bash
 # user-level (available in every project)
-cp -r skills/post-html-grid ~/.claude/skills/
+cp -r skills/post-pergam ~/.claude/skills/
 
 # OR project-level (committed to a repo, available only there)
-cp -r skills/post-html-grid <your-repo>/.claude/skills/
+cp -r skills/post-pergam <your-repo>/.claude/skills/
 ```
 
-The skill reads the user's email from the Claude Code session, picks a `grid_type` from context, and decides whether to publish as a new grid or a new version of an existing one. See `skills/post-html-grid/SKILL.md` for the full contract.
+The skill reads the user's email from the Claude Code session, picks a `type` from context, and decides whether to publish as a new pergam or a new version of an existing one. See `skills/post-pergam/SKILL.md` for the full contract.
 
 ## Deployment
 
@@ -150,7 +152,7 @@ No telemetry. No external network calls. The server only reads/writes its own Po
 
 ## Contributing
 
-Open an issue first if you want to propose a non-trivial change. PRs welcome for bug fixes, performance improvements, additional grid-type recommendations, and skill enhancements.
+Open an issue first if you want to propose a non-trivial change. PRs welcome for bug fixes, performance improvements, additional type-taxonomy recommendations, and skill enhancements.
 
 ## License
 

@@ -2,8 +2,8 @@ FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    GRID_HOST=0.0.0.0 \
-    GRID_PORT=1111
+    HOST=0.0.0.0 \
+    PORT=1111
 
 WORKDIR /app
 
@@ -12,9 +12,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY server.py /app/server.py
 
-RUN useradd --no-create-home --shell /usr/sbin/nologin --uid 10001 grid && \
-    chown -R grid:grid /app
-USER grid
+RUN useradd --no-create-home --shell /usr/sbin/nologin --uid 10001 pergam && \
+    chown -R pergam:pergam /app
+USER pergam
 
 EXPOSE 1111
 

@@ -20,7 +20,7 @@ export interface Env {
 interface ShareRecord {
   html: string;
   title: string;
-  grid_type: string;
+  type: string;
   author: string;
   bytes: number;
   created_at: string;
@@ -102,8 +102,8 @@ export default {
       }
 
       const html = String(body?.html || "");
-      const title = String(body?.title || "Shared grid").slice(0, 200);
-      const grid_type = String(body?.grid_type || "otro").slice(0, 40);
+      const title = String(body?.title || "Shared pergam").slice(0, 200);
+      const pergam_type = String(body?.type || "otro").slice(0, 40);
       const author = String(body?.author || "anonymous").slice(0, 200);
 
       if (!html.trim()) {
@@ -123,7 +123,7 @@ export default {
       const record: ShareRecord = {
         html,
         title,
-        grid_type,
+        type: pergam_type,
         author,
         bytes,
         created_at: new Date(now).toISOString(),
@@ -158,7 +158,7 @@ export default {
         return json(
           {
             title: rec.title,
-            grid_type: rec.grid_type,
+            type: rec.type,
             author: rec.author,
             bytes: rec.bytes,
             created_at: rec.created_at,

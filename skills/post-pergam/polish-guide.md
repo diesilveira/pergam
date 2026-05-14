@@ -1,6 +1,6 @@
-# Polish guide for grid HTML
+# Polish guide for pergam HTML
 
-Concrete techniques that turn a "functional" grid into one that's pleasant to read. Use whichever apply — not every HTML needs all of these.
+Concrete techniques that turn a "functional" pergam into one that's pleasant to read. Use whichever apply — not every HTML needs all of these.
 
 ## When to reach for the full template
 
@@ -11,7 +11,7 @@ Use `template.html` (sibling file) as a starting skeleton when:
 - You have **diagrams** (flows, architecture, state machines) — Mermaid renders them better than ASCII art.
 - You'll show **code or schemas** that benefit from manual syntax color.
 
-For small comparison grids (3–6 PR cards, leaderboard, simple status board), keep the existing card-grid style — the template is overkill.
+For small comparison pergams (3–6 PR cards, leaderboard, simple status board), keep the existing card-layout style — the template is overkill.
 
 ## Layout
 
