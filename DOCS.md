@@ -61,16 +61,19 @@ See `.env.example` for the full set.
 
 ```
 pergam/
-├── server.py            ~300 LOC stdlib http.server + psycopg
-├── Dockerfile           python:3.13-slim, runs as uid 10001
-├── docker-compose.yml   app + bundled postgres + healthchecks
-├── schema.sql           postgres init script (runs on first boot)
-├── Makefile             up / down / restart / logs / ps / health / clean
-├── requirements.txt     psycopg[binary], psycopg-pool
-├── migrate_from_fs.py   import legacy ./data/*.html files
-├── .env.example
-└── skills/
-    └── post-pergam/     Claude Code skill (see below)
+├── src/pergam/
+│   └── server.py            ~500 LOC stdlib http.server + psycopg
+├── db/
+│   └── schema.sql           postgres init script (runs on first boot)
+├── scripts/
+│   └── migrate_from_fs.py   import legacy ./data/*.html files
+├── skills/post-pergam/      Claude Code skill (see below)
+├── web/                     public landing + Cloudflare Worker
+├── Dockerfile               python:3.13-slim, runs as uid 10001
+├── docker-compose.yml       app + bundled postgres + healthchecks
+├── Makefile                 up / down / restart / logs / ps / health / clean
+├── requirements.txt         psycopg[binary], psycopg-pool
+└── .env.example
 ```
 
 ## Claude Code skill
