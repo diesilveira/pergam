@@ -480,10 +480,16 @@ code {
   align-items: center;
 }
 .hero__title {
-  font-size: clamp(40px, 5.8vw, 76px);
-  line-height: 1.02;
+  font-size: clamp(34px, 5.8vw, 76px);
+  line-height: 1.05;
   letter-spacing: -.035em;
   margin: 18px 0 22px;
+  text-wrap: balance;
+}
+/* On narrow viewports drop the forced break so the title flows naturally
+   instead of stranding "parchment" alone on its own line. */
+@media (max-width: 640px) {
+  .hero__title br { display: none; }
 }
 .hero__title .serif {
   background: linear-gradient(120deg, var(--warm), #fff 60%, var(--accent-2));
