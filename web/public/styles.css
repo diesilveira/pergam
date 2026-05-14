@@ -83,7 +83,12 @@
 /* ─── 02 · Reset & base ───────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  /* belt-and-suspenders: body.landing already clips, but iOS Safari
+     occasionally leaks transformed/rotated descendants past it. */
+  overflow-x: hidden;
+}
 
 body {
   background: var(--bg);
@@ -893,7 +898,10 @@ code {
   color: inherit;
 }
 .show-card__preview {
-  height: 220px;
+  /* Match the SVG's intrinsic 500x220 aspect so the slice-mode
+     preserveAspectRatio doesn't crop the sides when the card
+     narrows on mobile. Height is derived from the container width. */
+  aspect-ratio: 500 / 220;
   border-bottom: 1px solid var(--line);
   position: relative;
   overflow: hidden;
@@ -1209,6 +1217,13 @@ body.viewer-page {
 
 @media (max-width: 720px) {
   .topnav a:not(.topnav__star) { display: none; }
+}
+
+@media (max-width: 640px) {
+  /* The 3D rotateY on the hero terminal mockup creates visible
+     horizontal drift when the card is near full-width on mobile —
+     remove it (and the rotateX) below this breakpoint. */
+  .mock-card { transform: none; }
 }
 
 @media (max-width: 540px) {
