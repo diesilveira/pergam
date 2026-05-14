@@ -83,12 +83,7 @@
 /* ─── 02 · Reset & base ───────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
-html {
-  scroll-behavior: smooth;
-  /* belt-and-suspenders: body.landing already clips, but iOS Safari
-     occasionally leaks transformed/rotated descendants past it. */
-  overflow-x: hidden;
-}
+html { scroll-behavior: smooth; }
 
 body {
   background: var(--bg);
@@ -100,8 +95,11 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Page-wide background painted once on the landing only */
-body.landing { overflow-x: hidden; }
+/* Page-wide background painted once on the landing only.
+   `overflow-x: clip` (vs. `hidden`) prevents iOS Safari from creating
+   a horizontal scroll context that swallows touch gestures and locks
+   vertical scrolling on swipe. Falls back to default on Safari <16. */
+body.landing { overflow-x: clip; }
 body.landing::before {
   content: "";
   position: fixed; inset: 0;
