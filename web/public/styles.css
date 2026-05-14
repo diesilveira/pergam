@@ -1102,6 +1102,7 @@ body.viewer-page {
   text-align: center;
   padding: 24px;
 }
+.viewer-empty[hidden] { display: none; }
 .viewer-empty h2 { font-size: 26px; margin: 0 0 8px; }
 .viewer-empty p  { color: var(--ink-soft); margin: 0 0 18px; }
 
