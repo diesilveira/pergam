@@ -15,10 +15,10 @@ services:
       timeout: 3s
       retries: 10
 
-  app:
+  pergam-local:
     build: .
     image: pergam:latest
-    container_name: pergam
+    container_name: pergam-local
     restart: unless-stopped
     ports:
       - "${PERGAM_PORT:-1111}:1111"
