@@ -9,7 +9,7 @@
  *
  * Storage: Cloudflare Workers KV with native TTL (72h).
  * Rate limit: per-IP counters in KV with 1h TTL.
- * Body size: 512 KB max.
+ * Body size: 128 KB max.
  */
 
 export interface Env {
@@ -33,7 +33,7 @@ const TTL_SECONDS = 72 * 60 * 60;          // 72h
 const RATE_WINDOW = 60 * 60;               // 1h
 const RATE_POST   = 10;                    // /share per hour per IP
 const RATE_GET    = 240;                   // /s/* per hour per IP
-const MAX_BYTES   = 512 * 1024;            // 512 KB
+const MAX_BYTES   = 128 * 1024;            // 128 KB — protects KV free tier write units
 
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/1/l/i/o
 function newToken(len = 10): string {
