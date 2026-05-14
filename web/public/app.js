@@ -224,4 +224,34 @@
       el.hidden = false;
     });
   }
+
+  // ────────────────────────────────────────────────────────────────
+  //  Copy-to-clipboard buttons on quickstart code blocks.
+  //  innerText strips the syntax-highlight <span> wrappers, leaving
+  //  plain shell-runnable text. After a successful copy the icon
+  //  swaps to a green checkmark for ~1.4s.
+  // ────────────────────────────────────────────────────────────────
+  document.querySelectorAll(".copy-btn").forEach((btn) => {
+    const code = btn.parentElement.querySelector("pre.code");
+    if (!code) return;
+    const iconCopy = btn.querySelector(".copy-btn__icon");
+    const iconDone = btn.querySelector(".copy-btn__check");
+
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(code.innerText);
+        btn.classList.add("copied");
+        iconCopy.hidden = true;
+        iconDone.hidden = false;
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          iconCopy.hidden = false;
+          iconDone.hidden = true;
+        }, 1400);
+      } catch {
+        // Clipboard API can throw if the page isn't focused or perms
+        // are denied. Stay silent — the user can still select-all.
+      }
+    });
+  });
 })();
