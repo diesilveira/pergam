@@ -1,20 +1,32 @@
 /**
  * pergam-share — Cloudflare Worker.
  *
- *   POST /share         → store HTML, return { token, view_url, expires_at }
+ *   POST /share          → store HTML, return { token, view_url, expires_at }
  *   GET  /s/:token       → render HTML (text/html, strict CSP)
  *   GET  /s/:token/raw   → render HTML (text/plain, for download / debug)
- *   GET  /s/:token/meta  → { title, expires_at, bytes, views }
+ *   GET  /s/:token/meta  → { title, expires_at, bytes, … }
  *   GET  /healthz        → { ok: true }
  *
  * Storage: Cloudflare Workers KV with native TTL (72h).
- * Rate limit: per-IP counters in KV with 1h TTL.
+ * Rate limits:
+ *   - POST /share: 1 per 60s per IP (CF binding, no KV) +
+ *                  5 per hour per IP (KV counter) +
+ *                  100 per day total (KV counter, global cap)
+ *   - GET  /s/*:   60 per 60s per IP on cache misses (CF binding)
  * Body size: 128 KB max.
  */
 
+// Local type — the project's @cloudflare/workers-types is older than the
+// RateLimit binding addition, so we declare the surface we use.
+interface RateLimit {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Env {
   KV: KVNamespace;
-  ALLOWED_ORIGIN?: string; // e.g. https://pergam.dev
+  RL_POST_COOLDOWN: RateLimit;
+  RL_GET: RateLimit;
+  ALLOWED_ORIGIN?: string;
 }
 
 interface ShareRecord {
@@ -26,14 +38,14 @@ interface ShareRecord {
   created_at: string;
   expires_at: string;
   ip: string;
-  views: number;
 }
 
-const TTL_SECONDS = 72 * 60 * 60;          // 72h
-const RATE_WINDOW = 60 * 60;               // 1h
-const RATE_POST   = 10;                    // /share per hour per IP
-const RATE_GET    = 240;                   // /s/* per hour per IP
-const MAX_BYTES   = 128 * 1024;            // 128 KB — protects KV free tier write units
+const TTL_SECONDS         = 72 * 60 * 60;   // 72h
+const RATE_WINDOW         = 60 * 60;        // 1h window for per-IP hourly counter
+const RATE_POST_HOURLY    = 5;              // /share per hour per IP
+const RATE_GLOBAL_DAILY   = 100;            // /share per UTC day, all IPs
+const MAX_BYTES           = 128 * 1024;     // 128 KB — protects KV free tier write units
+const CACHE_MAX_AGE       = 300;            // 5 min edge cache for GET /s/:token
 
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/1/l/i/o
 function newToken(len = 10): string {
@@ -54,26 +66,42 @@ function cors(env: Env): Record<string, string> {
     "Vary": "Origin",
   };
 }
-function json(data: unknown, status = 200, env: Env, extra: Record<string, string> = {}) {
+function json(data: unknown, status: number, env: Env, extra: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8", ...cors(env), ...extra },
   });
 }
 
-async function rateCheck(env: Env, ip: string, kind: "post" | "get"): Promise<boolean> {
-  const key = `rl:${kind}:${ip}`;
+// YYYYMMDD in UTC. Daily quota rolls over at 00:00 UTC.
+function isoDay(): string {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+// Per-IP hourly counter. Best-effort (read-modify-write, TOCTOU acceptable
+// at our scale). Returns true if the request fits under the hourly cap.
+async function hourlyHit(env: Env, ip: string): Promise<boolean> {
+  const key = `rl:posth:${ip}`;
   const cur = parseInt((await env.KV.get(key)) || "0", 10);
-  const limit = kind === "post" ? RATE_POST : RATE_GET;
-  if (cur >= limit) return false;
+  if (cur >= RATE_POST_HOURLY) return false;
   await env.KV.put(key, String(cur + 1), { expirationTtl: RATE_WINDOW });
   return true;
+}
+
+async function readGlobal(env: Env): Promise<number> {
+  return parseInt((await env.KV.get(`g:share:${isoDay()}`)) || "0", 10);
+}
+async function bumpGlobal(env: Env): Promise<void> {
+  const key = `g:share:${isoDay()}`;
+  const cur = parseInt((await env.KV.get(key)) || "0", 10);
+  // 48h TTL gives buffer around UTC-day rollover.
+  await env.KV.put(key, String(cur + 1), { expirationTtl: 48 * 60 * 60 });
 }
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
-    const ip = req.headers.get("cf-connecting-ip") || "unknown";
+    const ip  = req.headers.get("cf-connecting-ip") || "unknown";
 
     // CORS preflight
     if (req.method === "OPTIONS") {
@@ -86,12 +114,52 @@ export default {
 
     // ─── POST /share ─────────────────────────────────────────────
     if (req.method === "POST" && url.pathname === "/share") {
+      // Origin gate: if the browser sends an Origin header, it must match
+      // ALLOWED_ORIGIN. Server-to-server calls (no Origin) still pass —
+      // this only filters casual web-to-web abuse from other pages.
+      const origin = req.headers.get("Origin");
+      if (origin && env.ALLOWED_ORIGIN && origin !== env.ALLOWED_ORIGIN) {
+        return json({ error: "origin not allowed" }, 403, env);
+      }
+
+      const ct = req.headers.get("Content-Type") || "";
+      if (!ct.toLowerCase().startsWith("application/json")) {
+        return json({ error: "content-type must be application/json" }, 415, env);
+      }
+
+      // Defense-in-depth: reject before reading body if declared length
+      // exceeds the cap. The post-parse byte count is the real gate.
       const lenStr = req.headers.get("Content-Length");
-      if (lenStr && parseInt(lenStr, 10) > MAX_BYTES) {
+      if (!lenStr) {
+        return json({ error: "content-length required" }, 411, env);
+      }
+      const declaredLen = parseInt(lenStr, 10);
+      if (Number.isNaN(declaredLen) || declaredLen > MAX_BYTES) {
         return json({ error: "payload too large", limit_bytes: MAX_BYTES }, 413, env);
       }
-      if (!(await rateCheck(env, ip, "post"))) {
-        return json({ error: "rate limit", limit_per_hour: RATE_POST }, 429, env);
+
+      // 1) 60s cooldown per IP (CF binding — no KV touched).
+      //    Stops repeat POSTs from the same IP before any other work.
+      const cd = await env.RL_POST_COOLDOWN.limit({ key: ip });
+      if (!cd.success) {
+        return json(
+          { error: "rate limit", retry_after_seconds: 60 },
+          429, env, { "Retry-After": "60" },
+        );
+      }
+
+      // 2) Global daily cap. Read-only at this point; we only increment
+      //    after the share is successfully stored.
+      if ((await readGlobal(env)) >= RATE_GLOBAL_DAILY) {
+        return json({ error: "global daily cap reached, try tomorrow" }, 429, env);
+      }
+
+      // 3) Per-IP hourly cap.
+      if (!(await hourlyHit(env, ip))) {
+        return json(
+          { error: "hourly rate limit", limit_per_hour: RATE_POST_HOURLY },
+          429, env,
+        );
       }
 
       let body: any;
@@ -101,10 +169,10 @@ export default {
         return json({ error: "invalid JSON" }, 400, env);
       }
 
-      const html = String(body?.html || "");
-      const title = String(body?.title || "Shared pergam").slice(0, 200);
+      const html        = String(body?.html || "");
+      const title       = String(body?.title || "Shared pergam").slice(0, 200);
       const pergam_type = String(body?.type || "otro").slice(0, 40);
-      const author = String(body?.author || "anonymous").slice(0, 200);
+      const author      = String(body?.author || "anonymous").slice(0, 200);
 
       if (!html.trim()) {
         return json({ error: "missing html" }, 400, env);
@@ -129,9 +197,9 @@ export default {
         created_at: new Date(now).toISOString(),
         expires_at: expiresAt,
         ip,
-        views: 0,
       };
       await env.KV.put(`s:${token}`, JSON.stringify(record), { expirationTtl: TTL_SECONDS });
+      await bumpGlobal(env);
 
       const publicHost = env.ALLOWED_ORIGIN || `https://${url.host}`;
       return json(
@@ -142,44 +210,57 @@ export default {
     }
 
     // ─── GET /s/:token{,/raw,/meta} ──────────────────────────────
-    const m = url.pathname.match(/^\/s\/([a-z0-9]{4,40})(\/raw|\/meta)?$/);
+    // Tightened min length to 8 chars (our tokens are 10) — at 4 chars
+    // the keyspace was ~900k which is brute-forceable.
+    const m = url.pathname.match(/^\/s\/([a-z0-9]{8,40})(\/raw|\/meta)?$/);
     if (req.method === "GET" && m) {
       const [, token, sub] = m;
 
-      if (!(await rateCheck(env, ip, "get"))) {
-        return json({ error: "rate limit", limit_per_hour: RATE_GET }, 429, env);
+      // Cache: try the edge cache first. Hits return immediately without
+      // touching the rate limiter or KV. /raw is skipped because the
+      // Content-Disposition filename is per-record.
+      const cache = caches.default;
+      if (sub !== "/raw") {
+        const cached = await cache.match(req);
+        if (cached) return cached;
+      }
+
+      // Rate limit on cache miss only. Hot pergams (viral links) burn
+      // ~zero rate budget because the edge serves them.
+      const rl = await env.RL_GET.limit({ key: ip });
+      if (!rl.success) {
+        return json(
+          { error: "rate limit", retry_after_seconds: 60 },
+          429, env, { "Retry-After": "60" },
+        );
       }
 
       const raw = await env.KV.get(`s:${token}`);
       if (!raw) return json({ error: "not found or expired" }, 404, env);
       const rec = JSON.parse(raw) as ShareRecord;
 
+      let response: Response;
+
       if (sub === "/meta") {
-        return json(
-          {
+        response = new Response(
+          JSON.stringify({
             title: rec.title,
             type: rec.type,
             author: rec.author,
             bytes: rec.bytes,
             created_at: rec.created_at,
             expires_at: rec.expires_at,
-            views: rec.views,
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": `public, max-age=${CACHE_MAX_AGE}`,
+              ...cors(env),
+            },
           },
-          200,
-          env
         );
-      }
-
-      // increment views (fire-and-forget; not a hot path)
-      rec.views = (rec.views || 0) + 1;
-      // recompute TTL so we don't extend it accidentally
-      const remaining = Math.max(
-        60,
-        Math.floor((new Date(rec.expires_at).getTime() - Date.now()) / 1000)
-      );
-      await env.KV.put(`s:${token}`, JSON.stringify(rec), { expirationTtl: remaining });
-
-      if (sub === "/raw") {
+      } else if (sub === "/raw") {
         return new Response(rec.html, {
           status: 200,
           headers: {
@@ -188,34 +269,38 @@ export default {
             ...cors(env),
           },
         });
+      } else {
+        // /s/:token → render HTML. Strict CSP: inline CSS + Mermaid CDN only.
+        // Intentionally no X-Frame-Options here — CSP's frame-ancestors
+        // allowlist (pergam.dev) is the gate; XFO would override it and
+        // block legitimate embedding.
+        const csp = [
+          "default-src 'none'",
+          "style-src 'unsafe-inline' https://cdn.jsdelivr.net",
+          "script-src 'unsafe-inline' https://cdn.jsdelivr.net",
+          "img-src 'self' data: https:",
+          "font-src data: https://cdn.jsdelivr.net",
+          "connect-src https://cdn.jsdelivr.net",
+          "frame-ancestors 'self' https://pergam.dev",
+          "base-uri 'none'",
+        ].join("; ");
+
+        response = new Response(rec.html, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Content-Security-Policy": csp,
+            "Referrer-Policy": "no-referrer",
+            "Cache-Control": `public, max-age=${CACHE_MAX_AGE}`,
+            ...cors(env),
+          },
+        });
       }
 
-      // /s/:token → render. Strict CSP: inline CSS + Mermaid CDN only.
-      const csp = [
-        "default-src 'none'",
-        "style-src 'unsafe-inline' https://cdn.jsdelivr.net",
-        "script-src 'unsafe-inline' https://cdn.jsdelivr.net",
-        "img-src 'self' data: https:",
-        "font-src data: https://cdn.jsdelivr.net",
-        "connect-src https://cdn.jsdelivr.net",
-        "frame-ancestors 'self' https://pergam.dev",
-        "base-uri 'none'",
-      ].join("; ");
-
-      // Note: intentionally no X-Frame-Options header here. CSP's
-      // frame-ancestors allows pergam.dev to embed this in an iframe;
-      // adding X-Frame-Options: SAMEORIGIN would override that and
-      // break the viewer (pergam.dev embedding api.pergam.dev content).
-      return new Response(rec.html, {
-        status: 200,
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Content-Security-Policy": csp,
-          "Referrer-Policy": "no-referrer",
-          "Cache-Control": "private, max-age=300",
-          ...cors(env),
-        },
-      });
+      // Store in the edge cache. clone() because the body stream can
+      // only be consumed once.
+      await cache.put(req, response.clone());
+      return response;
     }
 
     return json({ error: "not found" }, 404, env);
