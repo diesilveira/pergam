@@ -9,7 +9,7 @@ Usage:
     DATABASE_URL=postgresql://user:pass@host:5432/pergam \
     AUTHOR=you@example.com \
     TYPE=otro \
-    python3 migrate_from_fs.py
+    python3 scripts/migrate_from_fs.py
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 import psycopg
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 def main() -> int:
