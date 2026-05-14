@@ -229,6 +229,29 @@ code, pre, kbd { font-family: var(--font-mono); }
   color: var(--ink);
 }
 
+/* Star-count pill: lives inside Star-on-GitHub buttons, hidden until JS
+   confirms the repo has crossed the threshold (see app.js). */
+.gh-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(8, 16, 30, .22);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.gh-stars[hidden] { display: none; }
+.gh-stars::before {
+  content: "★";
+  color: #f1e05a;
+  font-size: 11px;
+  line-height: 1;
+}
+
 /* 5b · chips */
 .chip {
   display: inline-flex;

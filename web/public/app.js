@@ -169,4 +169,27 @@
     if (!modal.hidden) { /* shouldn't happen, fall through */ }
     alert(msg);
   }
+
+  // ────────────────────────────────────────────────────────────────
+  //  GitHub star count — only shown once we cross the threshold.
+  //  Anything below that stays hidden to avoid "1 ⭐" embarrassment.
+  // ────────────────────────────────────────────────────────────────
+  const STAR_THRESHOLD = 9;
+  const starSlots = document.querySelectorAll("[data-gh-stars]");
+  if (starSlots.length) {
+    fetch("https://api.github.com/repos/diesilveira/pergam", {
+      headers: { Accept: "application/vnd.github+json" },
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((repo) => {
+        const n = repo?.stargazers_count;
+        if (typeof n === "number" && n >= STAR_THRESHOLD) {
+          starSlots.forEach((el) => {
+            el.textContent = String(n);
+            el.hidden = false;
+          });
+        }
+      })
+      .catch(() => { /* silent: leave the slot hidden */ });
+  }
 })();
