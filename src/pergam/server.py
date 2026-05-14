@@ -289,7 +289,18 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             author_counts = conn.execute(
                 "SELECT author, count(*) FROM pergams_latest GROUP BY author ORDER BY 2 DESC, 1"
             ).fetchall()
-            total = conn.execute("SELECT count(*) FROM pergams_latest").fetchone()[0]
+            (total_pergams, total_authors, total_versions, total_bytes,
+             new_pergams_7d, new_versions_7d) = conn.execute(
+                """
+                SELECT
+                  (SELECT count(*) FROM pergams_latest),
+                  (SELECT count(DISTINCT author) FROM pergams_latest),
+                  (SELECT count(*) FROM pergams),
+                  (SELECT COALESCE(SUM(bytes), 0) FROM pergams),
+                  (SELECT count(*) FROM pergams_latest WHERE created_at >= now() - interval '7 days'),
+                  (SELECT count(*) FROM pergams         WHERE created_at >= now() - interval '7 days')
+                """
+            ).fetchone()
 
         # ---- filter pill URLs that preserve the OTHER active filters ----
         from urllib.parse import urlencode
@@ -329,135 +340,346 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             if (type_filter or author_filter or text_query) else ""
         )
 
+        # ---- humanise sizes & dates ----
+        def human_bytes(n: int) -> tuple[str, str]:
+            if n < 1024:           return (f"{n}", "B")
+            if n < 1024 * 1024:    return (f"{n/1024:.0f}", "KB")
+            if n < 1024**3:        return (f"{n/(1024*1024):.1f}", "MB")
+            return (f"{n/(1024**3):.2f}", "GB")
+
+        from datetime import datetime as _dt, timezone as _tz
+        _now = _dt.now(_tz.utc)
+        def human_age(ts) -> str:
+            delta = _now - ts
+            secs = int(delta.total_seconds())
+            if secs < 60:      return "just now"
+            if secs < 3600:    return f"{secs // 60}m ago"
+            if secs < 86400:
+                hrs = secs // 3600
+                return "today" if hrs < 12 else f"{hrs}h ago"
+            days = secs // 86400
+            if days < 30:      return f"{days}d ago"
+            if days < 365:     return f"{days // 30}mo ago"
+            return f"{days // 365}y ago"
+
+        # ---- avatar gradient picked deterministically from author string ----
+        _avatar_grads = [
+            ("#f85149", "#f0d28a"),  # red → yellow
+            ("#5ee7ff", "#7aa2ff"),  # cyan → blue
+            ("#f0d28a", "#f59f5a"),  # yellow → orange
+            ("#56d364", "#5ee7ff"),  # green → cyan
+            ("#b692ff", "#7aa2ff"),  # purple → blue
+            ("#f59f5a", "#f85149"),  # orange → red
+        ]
+        def avatar(author: str) -> str:
+            # simple deterministic hash
+            h = 0
+            for ch in author:
+                h = (h * 131 + ord(ch)) & 0xFFFFFFFF
+            a, b = _avatar_grads[h % len(_avatar_grads)]
+            local = author.split("@")[0] if "@" in author else author
+            initials = "".join(p[0] for p in re.split(r"[.\-_+ ]+", local) if p)[:2].upper() or "?"
+            return (
+                f'<span class="avatar" aria-hidden="true" '
+                f'style="background:linear-gradient(135deg,{a},{b})">{html_lib.escape(initials)}</span>'
+            )
+
+        # ---- list rows ----
+        # Each row is a <div> (not <a>) because it contains interactive
+        # children (<details>, inner <a>s); the HTML parser would otherwise
+        # reparent them out of an enclosing <a>. A click handler below
+        # navigates to /{id}/view when the click is outside any inner anchor
+        # or details element.
         body_rows = []
         for r in rows:
             (pid, ver, title, ptype, author, created, _bytes, totalv) = r
-            pergam_versions = (
-                f'<details><summary>v{ver}</summary>'
-                f'<a href="/{pid}/versions" class="muted">api</a> · '
+            author_href = html_lib.escape(link(override_author=author, clear_author=False))
+            type_href = html_lib.escape(link(override_type=ptype, clear_type=False))
+            short_author = author.split("@")[0] if "@" in author else author
+            versions_block = (
+                f'<details class="vers"><summary>v{ver}</summary>'
+                f'<div class="vers__list">'
                 + " · ".join(
                     f'<a href="/{pid}/v{i}/view">v{i}</a>'
                     for i in range(totalv, 0, -1)
                 )
-                + "</details>"
+                + f' · <a href="/{pid}/versions" class="muted">json</a>'
+                + "</div></details>"
             )
-            author_href = html_lib.escape(link(override_author=author, clear_author=False))
-            type_href = html_lib.escape(link(override_type=ptype, clear_type=False))
             body_rows.append(
-                f"<tr>"
-                f'<td><code>{html_lib.escape(pid)}</code></td>'
-                f'<td><a href="/{pid}/view"><strong>{html_lib.escape(title)}</strong></a></td>'
-                f'<td><a class="type t-{html_lib.escape(ptype)}" href="{type_href}" title="filter by type">{html_lib.escape(ptype)}</a></td>'
-                f'<td class="muted"><a href="{author_href}" class="author-cell" title="filter by author">{html_lib.escape(author)}</a></td>'
-                f"<td>{pergam_versions}</td>"
-                f'<td class="muted">{created.strftime("%Y-%m-%d %H:%M")}</td>'
-                f"</tr>"
+                f'<div class="row" data-href="/{pid}/view" tabindex="0" role="link">'
+                f'  <a class="row__title" href="/{pid}/view">{html_lib.escape(title)}</a>'
+                f'  <code class="row__id">{html_lib.escape(pid)}</code>'
+                f'  <a class="type t-{html_lib.escape(ptype)}" '
+                f'     href="{type_href}" title="filter by type">{html_lib.escape(ptype)}</a>'
+                f'  <a class="row__author" href="{author_href}" title="filter by author">'
+                f'    {avatar(author)}<span class="row__author-name">{html_lib.escape(short_author)}</span>'
+                f'  </a>'
+                f'  <span class="row__version">{versions_block}</span>'
+                f'  <time class="row__date" datetime="{created.isoformat()}" '
+                f'        title="{created.strftime("%Y-%m-%d %H:%M UTC")}">{human_age(created)}</time>'
+                f'</div>'
             )
-        body = "\n".join(body_rows) or '<tr><td colspan="6" class="muted">No pergams match.</td></tr>'
-
-        showing = len(rows)
-        showing_note = (
-            f"showing {showing} of {total}"
-            if (type_filter or author_filter or text_query) and showing != total
-            else f"{total} pergams"
+        body = "\n".join(body_rows) or (
+            '<div class="empty">No pergams match. '
+            '<a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">'
+            'POST one to <code>/pergam</code></a> to get started.</div>'
         )
 
+        showing = len(rows)
+        filtered = bool(type_filter or author_filter or text_query)
+        showing_note = (
+            f"showing {showing} of {total_pergams}"
+            if filtered and showing != total_pergams
+            else f"{total_pergams} pergams · {total_authors} authors · {total_versions} versions"
+        )
+
+        # stat-card delta helper
+        def delta(n: int) -> str:
+            return f'<span class="stat__delta">▲{n}</span>' if n > 0 else ""
+
+        bytes_val, bytes_unit = human_bytes(total_bytes)
+
+        # topbar pieces
+        public_host = os.environ.get("PUBLIC_HOST", "localhost")
+        public_port = os.environ.get("PUBLIC_PORT", str(self.server.server_address[1]))
+        host_display = public_host if public_port in ("80", "443") else f"{public_host}:{public_port}"
+
         html = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>pergam — index</title>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pergam · index</title>
 <style>
   :root {{
-    --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128;
-    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --border:#30363d;
+    --bg:#0b0d12; --surface:#11151c; --surface-hi:#161b25; --border:#1f2632;
+    --text:#e6edf3; --muted:#8b96a7; --muted-2:#6b7686;
+    --accent:#5ee7ff; --accent-soft:rgba(94,231,255,.12);
+    --ok:#56d364; --warn:#f0d28a; --danger:#f85149;
+    --t-plan:#f0d28a; --t-investigacion:#b692ff; --t-informe:#56d364;
+    --t-reporte:#5ee7ff; --t-otro:#8b96a7;
   }}
-  body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-         background:var(--bg); color:var(--text); margin:0; padding:2rem; font-size:14px; line-height:1.55; }}
-  h1 {{ color:var(--accent); margin:0 0 .25rem; font-size:1.5rem; }}
-  .stats {{ color:var(--muted); margin:0 0 1rem; font-size:.85rem; }}
+  * {{ box-sizing:border-box; }}
+  html, body {{ background:var(--bg); color:var(--text); margin:0;
+                font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+                font-size:14px; line-height:1.5; }}
+  a {{ color:inherit; text-decoration:none; }}
+  code, .mono {{ font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace; }}
 
-  /* Filter bar layout */
-  .toolbar {{ display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1.25rem;
-              padding-bottom:.85rem; border-bottom:1px solid var(--border); }}
-  .filter-group {{ flex:1; min-width:240px; }}
-  .filter-group .label {{ color:var(--muted); font-size:.7rem; text-transform:uppercase;
-                          letter-spacing:.06em; margin-bottom:.3rem; font-weight:600; }}
-  .pills {{ display:flex; gap:.35rem; flex-wrap:wrap; }}
-  .pills a {{ display:inline-flex; align-items:center; gap:.35rem;
-              padding:.25rem .65rem; border-radius:999px;
+  /* ── topbar ─────────────────────────────────────────────────────────── */
+  .topbar {{ display:flex; align-items:center; gap:.75rem; padding:.55rem 1rem;
+             background:#0e1218; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }}
+  .topbar__logo {{ display:flex; align-items:center; gap:.45rem; font-weight:600; }}
+  .topbar__logo .blocks {{ color:var(--accent); font-family:'JetBrains Mono',monospace; font-weight:700; letter-spacing:-2px; }}
+  .topbar__pill {{ font-size:.65rem; font-weight:700; letter-spacing:.08em;
+                   color:var(--accent); background:var(--accent-soft);
+                   border:1px solid rgba(94,231,255,.4); border-radius:999px;
+                   padding:.15rem .55rem; }}
+  .topbar__url {{ display:inline-flex; align-items:center; gap:.4rem;
+                  background:var(--bg); border:1px solid var(--border); border-radius:5px;
+                  padding:.25rem .55rem; font-size:.78rem; color:var(--text);
+                  font-family:'JetBrains Mono',monospace; min-width:0; max-width:32ch;
+                  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .topbar__dot {{ width:6px; height:6px; border-radius:50%; background:var(--ok); flex:0 0 6px;
+                  box-shadow:0 0 6px rgba(86,211,100,.6); }}
+  .topbar__nav {{ margin-left:auto; display:flex; align-items:center; gap:1rem; font-size:.82rem; }}
+  .topbar__nav a {{ color:var(--muted-2); }}
+  .topbar__nav a:hover {{ color:var(--text); }}
+  .topbar__nav a.active {{ color:var(--accent); font-weight:600; }}
+
+  /* ── layout ─────────────────────────────────────────────────────────── */
+  .wrap {{ max-width:1200px; margin:0 auto; padding:1.5rem 1.25rem 3rem; }}
+  .title-row h1 {{ margin:0; font-size:1.4rem; font-weight:700; letter-spacing:-.01em; }}
+  .title-row .sub {{ color:var(--muted); font-size:.82rem; margin-top:.15rem; }}
+
+  /* ── stat cards ─────────────────────────────────────────────────────── */
+  .stats-grid {{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr));
+                 gap:.75rem; margin:1.1rem 0 1.4rem; }}
+  .stat {{ background:var(--surface); border:1px solid var(--border); border-radius:8px;
+           padding:.7rem .85rem; position:relative; }}
+  .stat__value {{ font-size:1.55rem; font-weight:700; letter-spacing:-.01em; line-height:1.1; }}
+  .stat__value .unit {{ font-size:.85rem; color:var(--muted); font-weight:600; margin-left:.15rem; }}
+  .stat__label {{ font-size:.62rem; font-weight:700; letter-spacing:.08em;
+                  color:var(--muted); margin-top:.3rem; }}
+  .stat__delta {{ position:absolute; top:.7rem; right:.85rem;
+                  color:var(--ok); font-size:.7rem; font-weight:600; }}
+
+  /* ── filters row ────────────────────────────────────────────────────── */
+  .toolbar {{ display:flex; gap:1rem; flex-wrap:wrap; align-items:center;
+              padding:.75rem .9rem; background:var(--surface); border:1px solid var(--border);
+              border-radius:8px; margin-bottom:1rem; }}
+  .filter-group {{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; min-width:0; }}
+  .filter-group .label {{ color:var(--muted); font-size:.65rem; font-weight:700;
+                          letter-spacing:.08em; text-transform:uppercase; }}
+  .pills {{ display:flex; gap:.3rem; flex-wrap:wrap; }}
+  .pills a {{ display:inline-flex; align-items:center; gap:.3rem;
+              padding:.18rem .55rem; border-radius:999px;
               border:1px solid var(--border); color:var(--muted);
-              font-size:.78rem; text-decoration:none;
-              background:var(--bg2); transition:all .12s ease; }}
+              background:var(--bg); font-size:.74rem; transition:all .12s ease; }}
   .pills a:hover {{ border-color:var(--accent); color:var(--accent); }}
   .pills a.active {{ border-color:var(--accent); color:var(--accent);
-                      background:rgba(88,166,255,.12); font-weight:600; }}
-  .pills a .cnt {{ color:var(--muted); font-family:ui-monospace,monospace; font-size:.72em; }}
+                     background:var(--accent-soft); font-weight:600; }}
+  .pills a .cnt {{ color:var(--muted-2); font-family:'JetBrains Mono',monospace; font-size:.7em; }}
   .pills a.active .cnt {{ color:var(--accent); }}
 
-  .clear {{ display:inline-block; padding:.25rem .65rem; border-radius:999px;
-            border:1px dashed var(--muted); color:var(--muted); font-size:.74rem;
-            text-decoration:none; margin-left:.35rem; }}
-  .clear:hover {{ color:#f85149; border-color:#f85149; }}
+  .clear {{ display:inline-block; padding:.18rem .55rem; border-radius:999px;
+            border:1px dashed var(--muted-2); color:var(--muted); font-size:.7rem; }}
+  .clear:hover {{ color:var(--danger); border-color:var(--danger); }}
 
   .search-form {{ margin-left:auto; }}
-  .search-form input {{ background:var(--bg2); color:var(--text); border:1px solid var(--border);
-                        border-radius:6px; padding:.4rem .6rem; font-size:.85rem; min-width:240px; }}
+  .search-form input {{ background:var(--bg); color:var(--text); border:1px solid var(--border);
+                        border-radius:6px; padding:.35rem .6rem; font-size:.8rem; min-width:240px;
+                        font-family:inherit; }}
+  .search-form input::placeholder {{ color:var(--muted-2); }}
   .search-form input:focus {{ outline:none; border-color:var(--accent); }}
 
-  table {{ border-collapse: collapse; width:100%; }}
-  th, td {{ padding:.5rem .75rem; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }}
-  th {{ color:var(--muted); font-weight:600; font-size:.72rem; text-transform: uppercase; letter-spacing:.05em; }}
-  tr:hover td {{ background: rgba(255,255,255,.02); }}
-  a {{ color:var(--accent); text-decoration:none; }}
-  a:hover {{ text-decoration:underline; }}
-  code {{ background:var(--bg2); padding:.1rem .35rem; border-radius:3px; font-size:.85em; }}
-  .muted {{ color:var(--muted); font-size:.85em; }}
-  details summary {{ cursor:pointer; color:var(--muted); }}
-  details[open] summary {{ color: var(--accent); }}
-  details ul {{ list-style:none; padding-left:0; margin:.3rem 0 0; }}
+  /* ── list panel ─────────────────────────────────────────────────────── */
+  .list {{ background:var(--surface); border:1px solid var(--border); border-radius:8px;
+           overflow:hidden; }}
+  .row {{ display:grid;
+          grid-template-columns: minmax(0,1fr) auto auto auto auto auto;
+          align-items:center; gap:.9rem;
+          padding:.7rem .95rem; border-bottom:1px solid var(--border);
+          transition:background .12s ease; cursor:pointer; }}
+  .row:last-child {{ border-bottom:none; }}
+  .row:hover {{ background:var(--surface-hi); }}
+  .row__title {{ font-weight:600; color:var(--text); min-width:0;
+                 overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .row__id {{ color:var(--muted-2); font-size:.72rem; background:var(--bg);
+              border:1px solid var(--border); border-radius:4px;
+              padding:.1rem .4rem; }}
 
-  .type {{ display:inline-block; padding:.05rem .55rem; border-radius:999px; font-size:.7rem;
-          border:1px solid; text-transform: uppercase; letter-spacing:.04em; }}
-  .type:hover {{ text-decoration:none; opacity:.85; }}
-  .t-plan         {{ color:#79c0ff; border-color:#79c0ff; }}
-  .t-investigacion{{ color:#d2a8ff; border-color:#d2a8ff; }}
-  .t-informe      {{ color:#7ee787; border-color:#7ee787; }}
-  .t-reporte      {{ color:#ffa657; border-color:#ffa657; }}
-  .t-otro         {{ color:#8b949e; border-color:#8b949e; }}
+  .type {{ display:inline-block; padding:.1rem .55rem; border-radius:4px;
+          font-family:'JetBrains Mono',monospace; font-size:.68rem; font-weight:600;
+          letter-spacing:.02em; cursor:pointer; user-select:none; }}
+  .t-plan          {{ color:var(--t-plan);          background:rgba(240,210,138,.1);  border:1px solid rgba(240,210,138,.4); }}
+  .t-investigacion {{ color:var(--t-investigacion); background:rgba(182,146,255,.1);  border:1px solid rgba(182,146,255,.4); }}
+  .t-informe       {{ color:var(--t-informe);       background:rgba(86,211,100,.1);   border:1px solid rgba(86,211,100,.4); }}
+  .t-reporte       {{ color:var(--t-reporte);       background:rgba(94,231,255,.1);   border:1px solid rgba(94,231,255,.4); }}
+  .t-otro          {{ color:var(--t-otro);          background:rgba(139,150,167,.1);  border:1px solid rgba(139,150,167,.4); }}
 
-  .author-cell {{ color:var(--muted) !important; }}
-  .author-cell:hover {{ color:var(--accent) !important; text-decoration:none; }}
+  .row__author {{ display:inline-flex; align-items:center; gap:.45rem;
+                  color:var(--muted); font-size:.78rem; cursor:pointer; }}
+  .row__author:hover {{ color:var(--text); }}
+  .row__author-name {{ max-width:14ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .avatar {{ width:22px; height:22px; border-radius:50%;
+             display:inline-flex; align-items:center; justify-content:center;
+             font-family:'JetBrains Mono',monospace; font-size:.6rem; font-weight:700;
+             color:#0b0d12; flex:0 0 22px; }}
 
-  @media (max-width:780px) {{
-    .toolbar {{ flex-direction:column; align-items:stretch; }}
-    .search-form {{ margin-left:0; }}
-    .search-form input {{ width:100%; }}
+  .row__version .vers > summary {{ cursor:pointer; list-style:none;
+                                   color:var(--accent); font-family:'JetBrains Mono',monospace;
+                                   font-size:.78rem; font-weight:700; }}
+  .row__version .vers > summary::-webkit-details-marker {{ display:none; }}
+  .row__version .vers__list {{ margin-top:.35rem; font-size:.72rem;
+                                color:var(--muted); font-family:'JetBrains Mono',monospace; }}
+  .row__version .vers__list a {{ color:var(--accent); }}
+  .row__version .vers__list a:hover {{ text-decoration:underline; }}
+
+  .row__date {{ color:var(--muted); font-size:.78rem; min-width:6ch; text-align:right; }}
+
+  .empty {{ padding:2rem; text-align:center; color:var(--muted); font-size:.9rem; }}
+  .empty a {{ color:var(--accent); }}
+  .empty a:hover {{ text-decoration:underline; }}
+  .empty code {{ background:var(--bg); border:1px solid var(--border);
+                 padding:.05rem .35rem; border-radius:4px; font-size:.85em; }}
+
+  /* ── responsive ─────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {{
+    .stats-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
+    .row {{ grid-template-columns: 1fr auto;
+            grid-template-areas:
+              "title   date"
+              "type    version"
+              "author  id"; }}
+    .row__title  {{ grid-area:title; }}
+    .row__date   {{ grid-area:date; text-align:right; }}
+    .type        {{ grid-area:type;  justify-self:start; }}
+    .row__version{{ grid-area:version; justify-self:end; }}
+    .row__author {{ grid-area:author; }}
+    .row__id     {{ grid-area:id;    justify-self:end; }}
+    .search-form {{ margin-left:0; width:100%; }}
+    .search-form input {{ width:100%; min-width:0; }}
+    .topbar__url {{ display:none; }}
+  }}
+  @media (max-width: 520px) {{
+    .stats-grid {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
+    .topbar__pill {{ display:none; }}
   }}
 </style></head><body>
-<h1>pergam</h1>
-<div class="stats">{showing_note} · postgres-backed · immutable, versioned</div>
 
-<div class="toolbar">
-  <div class="filter-group">
-    <div class="label">Type</div>
-    <div class="pills">{type_filter_links}</div>
-  </div>
-  <div class="filter-group">
-    <div class="label">Author</div>
-    <div class="pills">{author_filter_links}</div>
-  </div>
-  <form class="search-form" method="get">
-    <input type="search" name="q" placeholder="search title…" value="{html_lib.escape(text_query or '')}" autocomplete="off">
-    <input type="hidden" name="type" value="{html_lib.escape(type_filter or '')}">
-    <input type="hidden" name="author" value="{html_lib.escape(author_filter or '')}">
-  </form>
-  {clear_link}
-</div>
+<header class="topbar">
+  <span class="topbar__logo"><span class="blocks">▮▮</span> pergam</span>
+  <span class="topbar__pill">SELF-HOSTED</span>
+  <span class="topbar__url"><span class="topbar__dot"></span>{html_lib.escape(host_display)}</span>
+  <nav class="topbar__nav">
+    <a href="/" class="active">Index</a>
+    <a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">API</a>
+  </nav>
+</header>
 
-<table>
-  <thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Author</th><th>Versions</th><th>Latest</th></tr></thead>
-  <tbody>
+<main class="wrap">
+  <div class="title-row">
+    <h1>Index</h1>
+    <div class="sub">{showing_note}</div>
+  </div>
+
+  <section class="stats-grid" aria-label="Instance stats">
+    <div class="stat">
+      <div class="stat__value">{total_pergams}</div>
+      <div class="stat__label">PERGAMS</div>
+      {delta(new_pergams_7d)}
+    </div>
+    <div class="stat">
+      <div class="stat__value">{total_authors}</div>
+      <div class="stat__label">AUTHORS</div>
+    </div>
+    <div class="stat">
+      <div class="stat__value">{total_versions}</div>
+      <div class="stat__label">VERSIONS</div>
+      {delta(new_versions_7d)}
+    </div>
+    <div class="stat">
+      <div class="stat__value">{bytes_val}<span class="unit">{bytes_unit}</span></div>
+      <div class="stat__label">PAYLOAD</div>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    <div class="filter-group">
+      <span class="label">Type</span>
+      <div class="pills">{type_filter_links}</div>
+    </div>
+    <div class="filter-group">
+      <span class="label">Author</span>
+      <div class="pills">{author_filter_links}</div>
+    </div>
+    <form class="search-form" method="get">
+      <input type="search" name="q" placeholder="search title…" value="{html_lib.escape(text_query or '')}" autocomplete="off">
+      <input type="hidden" name="type" value="{html_lib.escape(type_filter or '')}">
+      <input type="hidden" name="author" value="{html_lib.escape(author_filter or '')}">
+    </form>
+    {clear_link}
+  </div>
+
+  <section class="list" aria-label="Pergams">
     {body}
-  </tbody>
-</table>
+  </section>
+</main>
+
+<script>
+  // Make the whole row navigable, but defer to inner <a> and <details>
+  // so the type pill, author chip, and version dropdown still work.
+  document.querySelectorAll('.row[data-href]').forEach(row => {{
+    const go = () => window.location.assign(row.getAttribute('data-href'));
+    row.addEventListener('click', ev => {{
+      if (ev.target.closest('a, details, summary, input, button')) return;
+      go();
+    }});
+    row.addEventListener('keydown', ev => {{
+      if (ev.key === 'Enter' && ev.target === row) go();
+    }});
+  }});
+</script>
 </body></html>"""
         self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
 
