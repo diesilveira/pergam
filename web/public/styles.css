@@ -909,6 +909,16 @@ code {
   overflow: hidden;
   background: #0d1117;
 }
+/* Wide variant: spans both columns. Used for the meta server-view card
+   that contextualizes the other 4. The preview stays at its natural
+   44% aspect ratio so the SVG (viewBox 500x220) renders without
+   cropping, just at double scale — giving the card a hero feel. */
+.show-card--wide {
+  grid-column: 1 / -1;
+}
+@media (max-width: 760px) {
+  .show-card--wide { grid-column: auto; }
+}
 .show-card__preview svg {
   position: absolute;
   inset: 0;
