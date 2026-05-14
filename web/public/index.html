@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <title>pergam — immutable parchment for what your AI builds</title>
-  <meta name="description" content="A ~300 LOC self-hostable service that turns every HTML report, dashboard, or spec your AI generates into a permanent, versioned URL. MIT, no telemetry, one docker compose away.">
+  <meta name="description" content="A tiny self-hostable service that turns every HTML report, dashboard, or spec your AI generates into a permanent, versioned URL. MIT, no telemetry, one docker compose away.">
 
   <meta property="og:title"       content="pergam — immutable parchment for what your AI builds">
   <meta property="og:description" content="Publish pergams your AI builds — HTML reports, dashboards, specs — at permanent, versioned URLs. Self-hostable. MIT.">
@@ -49,7 +49,7 @@
         <div>
           <span class="chip">
             <span class="chip__dot" aria-hidden="true"></span>
-            MIT · v0.1 · ~300 LOC of Python stdlib
+            MIT · v0.1 · self-hostable
           </span>
 
           <h1 id="hero-title" class="hero__title">
@@ -58,7 +58,7 @@
           </h1>
 
           <p class="hero__sub">
-            A tiny self-hostable service that turns every HTML report, dashboard, or design doc your AI generates into a <strong>permanent, versioned URL</strong> your team can open. One Python file. One Postgres table. One <code>docker compose up</code>.
+            A tiny self-hostable service that turns every HTML report, dashboard, or design doc your AI generates into a <strong>permanent, versioned URL</strong> your team can open. One Python file. One <code>docker compose up</code>.
           </p>
 
           <div class="cta-row">
@@ -125,9 +125,7 @@
     <!-- ─── Trust strip ──────────────────────────────────── -->
     <aside class="trust" aria-label="Project stats">
       <div class="container trust__row">
-        <div class="trust__item"><div class="trust__k">~300<span class="unit">LOC</span></div><div class="trust__l">Server</div></div>
         <div class="trust__item"><div class="trust__k">0<span class="unit">deps</span></div><div class="trust__l">Outside stdlib</div></div>
-        <div class="trust__item"><div class="trust__k">1<span class="unit">table</span></div><div class="trust__l">Postgres schema</div></div>
         <div class="trust__item"><div class="trust__k">∞<span class="unit">versions</span></div><div class="trust__l">Per pergam id</div></div>
         <div class="trust__item"><div class="trust__k">MIT</div><div class="trust__l">License</div></div>
       </div>
@@ -413,7 +411,7 @@
                 <text x="312" y="120" fill="#5ee7ff" font-family="Inter" font-size="10" text-anchor="middle">pergam</text>
                 <line x1="342" y1="116" x2="394" y2="116" stroke="#f0d28a" stroke-width="1.5" marker-end="url(#arr2)"/>
                 <rect x="394" y="100" width="60" height="32" rx="6" fill="#f0d28a" fill-opacity=".15" stroke="#f0d28a" stroke-opacity=".5"/>
-                <text x="424" y="120" fill="#f0d28a" font-family="Inter" font-size="10" text-anchor="middle">Postgres</text>
+                <text x="424" y="120" fill="#f0d28a" font-family="Inter" font-size="10" text-anchor="middle">Storage</text>
                 <text x="312" y="166" fill="#8b949e" font-family="Inter" font-size="9" text-anchor="middle">fig 1 · request path</text>
               </svg>
             </div>
@@ -539,7 +537,7 @@ git <span class="tok-cmd">clone</span> https://github.com/diesilveira/pergam
 git <span class="tok-cmd">clone</span> https://github.com/diesilveira/pergam
 <span class="tok-cmd">cd</span> pergam
 
-<span class="tok-com"># 2. Bring up app + Postgres</span>
+<span class="tok-com"># 2. Bring up the stack</span>
 docker <span class="tok-cmd">compose</span> up -d --build
 
 <span class="tok-com"># 3. Verify and open</span>
@@ -600,7 +598,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
           </details>
           <details>
             <summary>Can I keep pergams forever?</summary>
-            <p>Yes — self-host. Public service is for ephemeral sharing. Self-host gives you a Postgres-backed, versioned, immutable history with no TTL.</p>
+            <p>Yes — self-host. Public service is for ephemeral sharing. Self-host gives you a versioned, immutable history with no TTL.</p>
           </details>
           <details>
             <summary>What does the skill cost?</summary>
