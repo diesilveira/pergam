@@ -1205,8 +1205,19 @@ body.viewer-page {
   .feat-grid  { grid-template-columns: repeat(2, 1fr); }
 }
 
-@media (max-width: 820px) {
-  .trust__row { grid-template-columns: repeat(2, 1fr); }
+/* Trust strip: 3 narrow cols stay readable down to ~420px; below that,
+   stack each item vertically and center to avoid the orphan 2+1 layout. */
+@media (max-width: 480px) {
+  .trust__row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .trust__item {
+    align-items: center;
+    text-align: center;
+    border-left: 0;
+    padding: 6px 0;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1222,6 +1233,14 @@ body.viewer-page {
      horizontal drift when the card is near full-width on mobile —
      remove it (and the rotateX) below this breakpoint. */
   .mock-card { transform: none; }
+
+  /* Hero CTAs ("Star on GitHub" + "Read the quickstart →") don't
+     fit horizontally below ~640px and wrap to two lines. Centre
+     the wrapped items so they look intentional rather than
+     left-orphaned. Applies to .cta-row generally so the bottom
+     gh-cta button group also stays centred (it already had its
+     own override; now it matches). */
+  .cta-row { justify-content: center; }
 }
 
 @media (max-width: 540px) {
