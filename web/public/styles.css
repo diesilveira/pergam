@@ -294,6 +294,50 @@ code, pre, kbd { font-family: var(--font-mono); }
 .code .tok-arg { color: var(--warm); }
 .code .tok-str { color: #b8e890; }
 
+/* Code block + copy button.
+   The wrapper is the positioning context for the absolutely-placed
+   button in the top-right. Subtle by default; brighter on hover;
+   flashes green for ~1.4s after a successful copy. */
+.code-wrap { position: relative; }
+.copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  opacity: .55;
+  transition: opacity .15s ease, color .15s ease,
+              background .2s ease, border-color .2s ease,
+              transform .2s ease;
+}
+.code-wrap:hover .copy-btn,
+.copy-btn:focus-visible {
+  opacity: 1;
+  outline: none;
+}
+.copy-btn:hover {
+  background: rgba(122, 162, 255, .12);
+  border-color: rgba(122, 162, 255, .4);
+  color: var(--ink);
+}
+.copy-btn.copied {
+  opacity: 1;
+  background: rgba(86, 211, 100, .14);
+  border-color: rgba(86, 211, 100, .5);
+  color: #56d364;
+  transform: scale(1.08);
+}
+.copy-btn svg[hidden] { display: none; }
+
 /* inline code */
 code {
   font-size: .9em;
