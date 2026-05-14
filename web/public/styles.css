@@ -906,55 +906,57 @@ code {
 
 
 /* ─── 14 · Landing · drop strip ───────────────────────────── */
-.drop-strip {
-  margin-top: 40px;
-  padding: 24px 26px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  background: rgba(255, 255, 255, .015);
-}
-.drop-strip__txt {
-  flex: 1;
-  min-width: 240px;
-}
-.drop-strip__txt h3 {
-  font-size: 15px;
-  font-weight: 600;
-}
-.drop-strip__txt p {
-  margin: 4px 0 0;
-  color: var(--ink-soft);
-  font-size: 13.5px;
-}
 .dropzone {
-  flex: 0 0 240px;
-  padding: 16px;
-  border: 1px dashed var(--line);
-  border-radius: 10px;
+  margin-top: 40px;
+  padding: 64px 28px;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, .02);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   text-align: center;
   cursor: pointer;
-  font-size: 12.5px;
   color: var(--ink-soft);
-  background: rgba(0, 0, 0, .2);
-  transition: border-color .15s, background .15s;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
 }
 .dropzone:hover,
+.dropzone:focus-visible,
 .dropzone.drag {
-  border-color: rgba(122, 162, 255, .45);
-  background: rgba(122, 162, 255, .05);
+  border-color: rgba(122, 162, 255, .65);
+  background: rgba(122, 162, 255, .06);
+  outline: none;
 }
+.dropzone.drag { transform: scale(1.005); }
 .dropzone.uploading { opacity: .6; pointer-events: none; }
-.dropzone strong {
-  color: var(--ink);
-  display: block;
-  margin-bottom: 2px;
+.dz-icon {
+  color: var(--ink-faint);
+  transition: color .15s ease, transform .15s ease;
 }
-.dropzone .dz-prompt { margin: 0; }
+.dropzone:hover .dz-icon,
+.dropzone.drag .dz-icon {
+  color: rgba(122, 162, 255, .9);
+  transform: translateY(-2px);
+}
+.dz-prompt {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -.01em;
+}
+.dz-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.dz-progress {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--accent);
+}
 
 
 /* ─── 15 · Landing · github CTA ───────────────────────────── */

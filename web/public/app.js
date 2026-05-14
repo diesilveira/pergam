@@ -7,7 +7,7 @@
   // https://api.pergam.dev. For local dev, override by setting
   // window.PERGAM_API in a <script> tag before this file.
   const API = (window.PERGAM_API || "https://api.pergam.dev").replace(/\/+$/, "");
-  const MAX_BYTES = 512 * 1024;
+  const MAX_BYTES = 128 * 1024;
 
   // ─── tiny DOM helpers ───────────────────────────────────────────
   const $ = (sel, root = document) => root.querySelector(sel);
