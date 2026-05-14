@@ -202,12 +202,15 @@ export default {
         "base-uri 'none'",
       ].join("; ");
 
+      // Note: intentionally no X-Frame-Options header here. CSP's
+      // frame-ancestors allows pergam.dev to embed this in an iframe;
+      // adding X-Frame-Options: SAMEORIGIN would override that and
+      // break the viewer (pergam.dev embedding api.pergam.dev content).
       return new Response(rec.html, {
         status: 200,
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Content-Security-Policy": csp,
-          "X-Frame-Options": "SAMEORIGIN",
           "Referrer-Policy": "no-referrer",
           "Cache-Control": "private, max-age=300",
           ...cors(env),

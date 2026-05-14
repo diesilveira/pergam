@@ -3,7 +3,9 @@
 # 200 = rewrite (URL stays the same in the browser)
 
 # Pretty share URLs: /s/<token> → view.html?t=<token>
-/s/:token   /view.html?t=:token   200
+# Note: rewrite target uses /view (no .html) to avoid CF Pages' clean-URLs
+# auto-redirect from /view.html → /view, which drops the query string.
+/s/:token   /view?t=:token   200
 
 # Optional: catch-all for any non-existent path → land them on home
 # /*          /index.html          404

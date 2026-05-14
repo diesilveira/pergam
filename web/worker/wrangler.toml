@@ -2,19 +2,20 @@ name = "pergam-share"
 main = "src/index.ts"
 compatibility_date = "2026-04-01"
 
+# Worker is exposed at api.pergam.dev. The custom_domain flag tells
+# Cloudflare to manage the DNS record automatically.
+routes = [
+  { pattern = "api.pergam.dev", custom_domain = true }
+]
+
 # Bind the KV namespace. Create it with:
-#   wrangler kv:namespace create pergam_shares
+#   wrangler kv namespace create pergam_shares
 # then paste the id below.
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_WITH_KV_ID"
+id = "5ef569bfb5a2461b91959bb0b97f6075"
 
 # Production environment.
 # Set ALLOWED_ORIGIN to your frontend origin to restrict CORS.
 [vars]
 ALLOWED_ORIGIN = "https://pergam.dev"
-
-# When you set up a custom domain (api.pergam.dev), uncomment the route below.
-# routes = [
-#   { pattern = "api.pergam.dev/*", custom_domain = true }
-# ]
