@@ -2,6 +2,13 @@
 # Syntax: <source>  <destination>  <status>
 # 200 = rewrite (URL stays the same in the browser)
 
+# SEO-indexable static snapshots (first-match wins, so list BEFORE the
+# /s/:token catch-all). Each snapshot is a real file under /s/ with its own
+# SEO head — see web/public/s/<id>.html. These are pergams we explicitly
+# want Googlebot/LLM agents to index, instead of going through the viewer
+# (which hardcodes <meta name="robots" content="noindex">).
+/s/evdecisionuy   /s/evdecisionuy.html   200
+
 # Pretty share URLs: /s/<token> → view.html?t=<token>
 # Note: rewrite target uses /view (no .html) to avoid CF Pages' clean-URLs
 # auto-redirect from /view.html → /view, which drops the query string.
