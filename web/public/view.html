@@ -26,7 +26,16 @@
   </div>
 </div>
 
-<iframe id="viewer-frame" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
+<div class="abuse-banner" id="abuse-banner" hidden role="alert">
+  <span class="abuse-banner__icon" aria-hidden="true">⚠</span>
+  <div class="abuse-banner__text">
+    <strong id="abuse-banner-title">Don't enter sensitive data here.</strong>
+    <span id="abuse-banner-msg">pergam never asks for passwords, payment details, or personal data. This is user-submitted content.</span>
+  </div>
+  <button class="abuse-banner__close" id="abuse-banner-close" type="button" aria-label="Dismiss warning">×</button>
+</div>
+
+<iframe id="viewer-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
 
 <div class="viewer-empty" id="viewer-empty" hidden>
   <h2 id="empty-title">Not found</h2>

@@ -47,6 +47,24 @@ const RATE_GLOBAL_DAILY   = 100;            // /share per UTC day, all IPs
 const MAX_BYTES           = 128 * 1024;     // 128 KB — protects KV free tier write units
 const CACHE_MAX_AGE       = 300;            // 5 min edge cache for GET /s/:token
 
+// Prepended to every served pergam. Intercepts form submits and focus
+// on password inputs, blocks them, and postMessages the parent
+// (pergam.dev) so it can render an abuse-warning banner. Registers
+// listeners in the capture phase on `document` BEFORE the user's HTML
+// parses, so user scripts cannot out-race us (capture order is
+// registration order, and we are first on the node).
+//
+// Defense-in-depth — `form-action 'none'` and `connect-src` already
+// block the actual data exfil; this layer surfaces it to the viewer.
+const DEFENSIVE_SCRIPT = `<script>
+(function(){try{
+var seen={form:false,pwd:false};
+function tell(k){if(seen[k])return;seen[k]=true;try{parent.postMessage({type:'pergam:warn',kind:k},'*');}catch(_){}}
+document.addEventListener('submit',function(e){e.preventDefault();tell('form');},true);
+document.addEventListener('focusin',function(e){var t=e.target;if(t&&t.tagName==='INPUT'&&String(t.type||'').toLowerCase()==='password'){try{t.blur();}catch(_){}tell('pwd');}},true);
+}catch(_){}})();
+</script>`;
+
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/1/l/i/o
 function newToken(len = 10): string {
   const bytes = new Uint8Array(len);
@@ -274,18 +292,31 @@ export default {
         // Intentionally no X-Frame-Options here — CSP's frame-ancestors
         // allowlist (pergam.dev) is the gate; XFO would override it and
         // block legitimate embedding.
+        //
+        // `form-action` does NOT inherit from `default-src` (per CSP3),
+        // so we name it explicitly to keep any phishing form from
+        // POSTing data anywhere. `img-src` is intentionally tight to
+        // `'self' data:` to close the `<img src=evil/?q=stolen>` pixel
+        // exfil channel — content authors lose the ability to hotlink
+        // remote images, but that's an acceptable tradeoff.
+        // frame-ancestors mirrors ALLOWED_ORIGIN so a dev environment
+        // can iframe the worker from http://localhost:8080 (or wherever
+        // the local landing is served) without code changes. Falls back
+        // to the production origin so a misconfigured env still safe.
+        const frameOrigin = env.ALLOWED_ORIGIN || "https://pergam.dev";
         const csp = [
           "default-src 'none'",
           "style-src 'unsafe-inline' https://cdn.jsdelivr.net",
           "script-src 'unsafe-inline' https://cdn.jsdelivr.net",
-          "img-src 'self' data: https:",
+          "img-src 'self' data:",
           "font-src data: https://cdn.jsdelivr.net",
           "connect-src https://cdn.jsdelivr.net",
-          "frame-ancestors 'self' https://pergam.dev",
+          "form-action 'none'",
+          `frame-ancestors 'self' ${frameOrigin}`,
           "base-uri 'none'",
         ].join("; ");
 
-        response = new Response(rec.html, {
+        response = new Response(DEFENSIVE_SCRIPT + rec.html, {
           status: 200,
           headers: {
             "Content-Type": "text/html; charset=utf-8",

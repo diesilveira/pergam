@@ -32,6 +32,32 @@
     const empty = $("#viewer-empty");
     const dl = $("#vb-download");
 
+    // Abuse-warning banner. The Worker prepends a defensive <script>
+    // to every served pergam that catches form submits + password
+    // focus and notifies us via postMessage. We validate by window
+    // identity (e.source === frame.contentWindow) rather than origin
+    // because the iframe is sandboxed without allow-same-origin, so
+    // its postMessages arrive with e.origin === "null". Source-pinning
+    // is also stricter — only our iframe's window can pass the gate.
+    const banner       = $("#abuse-banner");
+    const bannerTitle  = $("#abuse-banner-title");
+    const bannerMsg    = $("#abuse-banner-msg");
+    const bannerClose  = $("#abuse-banner-close");
+
+    window.addEventListener("message", (e) => {
+      if (e.source !== frame.contentWindow) return;
+      if (!e.data || e.data.type !== "pergam:warn") return;
+      if (e.data.kind === "pwd") {
+        bannerTitle.textContent = "Don't enter passwords here.";
+        bannerMsg.textContent   = "pergam never asks for credentials. This is user-submitted content that just tried to capture a password.";
+      } else {
+        bannerTitle.textContent = "Don't fill out forms in this pergam.";
+        bannerMsg.textContent   = "pergam never asks for personal data. This is user-submitted content that tried to send form input somewhere.";
+      }
+      banner.hidden = false;
+    });
+    bannerClose?.addEventListener("click", () => { banner.hidden = true; });
+
     if (!/^[a-z0-9]{4,40}$/i.test(token)) {
       titleEl.textContent = "";
       expiryEl.textContent = "";
