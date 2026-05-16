@@ -1,8 +1,7 @@
 # Robots policy for pergam.dev
-# Search engines and AI crawlers welcome.
+# The landing page is crawlable; individual /s/<token> pergams are served
+# by the viewer (view.html), which emits <meta name="robots" content="noindex">
+# to keep user-submitted shares out of search indexes.
 
 User-agent: *
 Allow: /
-
-# Sitemap location
-Sitemap: https://pergam.dev/sitemap.xml
