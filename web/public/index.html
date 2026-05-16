@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#0d1117">
   <meta name="color-scheme" content="dark">
 
-  <title>pergam — immutable parchment for what your AI builds</title>
-  <meta name="description" content="A tiny self-hostable service that turns every HTML report, dashboard, or spec your AI generates into a permanent, versioned URL. MIT, no telemetry, one docker compose away.">
+  <title>pergam — Permanent URLs for HTML from Claude Code, Cursor &amp; Codex</title>
+  <meta name="description" content="Permanent versioned URLs for HTML reports, dashboards, and specs your AI generates. Works with Claude Code, Cursor, Codex. Self-hostable, MIT.">
   <meta name="author" content="diesilveira">
-  <meta name="keywords" content="pergam, AI artifacts, Claude Code, html sharing, self-hostable, immutable, versioned URL, dashboards, reports">
+  <meta name="keywords" content="pergam, claude code, cursor, codex, aider, github copilot, continue.dev, ai artifacts, html sharing, self-hostable, dashboards, llm output, ai dev tools">
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -23,8 +23,8 @@
   <meta property="og:site_name"       content="pergam">
   <meta property="og:locale"          content="en_US">
   <meta property="og:url"             content="https://pergam.dev/">
-  <meta property="og:title"           content="pergam — immutable parchment for what your AI builds">
-  <meta property="og:description"     content="Publish pergams your AI builds — HTML reports, dashboards, specs — at permanent, versioned URLs. Self-hostable. MIT, no telemetry.">
+  <meta property="og:title"           content="pergam — Permanent URLs for HTML from Claude Code, Cursor &amp; Codex">
+  <meta property="og:description"     content="Permanent versioned URLs for HTML reports, dashboards, and specs your AI generates. Works with Claude Code, Cursor, Codex. Self-hostable, MIT.">
   <meta property="og:image"           content="https://pergam.dev/og.png">
   <meta property="og:image:type"      content="image/png">
   <meta property="og:image:width"     content="1200">
@@ -32,8 +32,8 @@
   <meta property="og:image:alt"       content="pergam — immutable parchment for what your AI builds. pergam.dev, self-hostable, MIT, no telemetry.">
 
   <meta name="twitter:card"        content="summary_large_image">
-  <meta name="twitter:title"       content="pergam — immutable parchment for what your AI builds">
-  <meta name="twitter:description" content="Publish pergams your AI builds — HTML reports, dashboards, specs — at permanent, versioned URLs. Self-hostable. MIT.">
+  <meta name="twitter:title"       content="pergam — Permanent URLs for HTML from Claude Code, Cursor &amp; Codex">
+  <meta name="twitter:description" content="Permanent versioned URLs for HTML your AI generates. Works with Claude Code, Cursor, Codex. Self-hostable, MIT.">
   <meta name="twitter:image"       content="https://pergam.dev/og.png">
   <meta name="twitter:image:alt"   content="pergam — immutable parchment for what your AI builds.">
 
@@ -41,6 +41,31 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif&display=swap">
   <link rel="stylesheet" href="/styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "pergam",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (Docker)",
+    "description": "Permanent versioned URLs for HTML reports, dashboards, and specs your AI generates. Works with Claude Code, Cursor, Codex.",
+    "url": "https://pergam.dev",
+    "codeRepository": "https://github.com/diesilveira/pergam",
+    "license": "https://opensource.org/licenses/MIT",
+    "softwareVersion": "1.0.0",
+    "author": {
+      "@type": "Person",
+      "name": "Diego Silveira",
+      "url": "https://diesilveira.dev"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
 </head>
 
 <body class="landing">
@@ -84,7 +109,7 @@
           </h1>
 
           <p class="hero__sub">
-            A tiny self-hostable service that turns every HTML report, dashboard, or design doc your AI generates into a <strong>permanent, versioned URL</strong> your team can open. One Python file. One <code>docker compose up</code>.
+            A tiny self-hostable service that turns every HTML report, dashboard, or spec your AI generates — from <strong>Claude Code</strong>, <strong>Cursor</strong>, <strong>Codex</strong>, or any tool that can <code>curl</code> — into a <strong>permanent, versioned URL</strong>. One Python file. One <code>docker compose up</code>.
           </p>
 
           <div class="cta-row">
@@ -302,11 +327,11 @@
       <div class="container">
         <p class="section__eyebrow">What the skill produces</p>
         <h2 id="gallery-title" class="section__title">Real pergams, not <span class="serif">screenshots.</span></h2>
-        <p class="section__lead">Five pergams — the kind your AI will land here every week. Click any card to open the full thing in a new tab.</p>
+        <p class="section__lead">Four pergams — the kind your AI will land here every week. Click any card to open the full thing in a new tab.</p>
 
         <div class="showcase-grid">
 
-          <a class="show-card" href="/s/prreviewboard" target="_blank" rel="noopener">
+          <a class="show-card" href="/library/pr-review-board.html" target="_blank" rel="noopener">
             <div class="show-card__preview">
               <svg viewBox="0 0 500 220" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <defs>
@@ -361,7 +386,7 @@
             </div>
           </a>
 
-          <a class="show-card" href="/s/statusdashboard" target="_blank" rel="noopener">
+          <a class="show-card" href="/library/status-dashboard.html" target="_blank" rel="noopener">
             <div class="show-card__preview">
               <svg viewBox="0 0 500 220" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <rect width="500" height="220" fill="#0d1117"/>
@@ -411,7 +436,7 @@
             </div>
           </a>
 
-          <a class="show-card" href="/s/specdesigndoc" target="_blank" rel="noopener">
+          <a class="show-card" href="/library/spec-doc.html" target="_blank" rel="noopener">
             <div class="show-card__preview">
               <svg viewBox="0 0 500 220" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <defs>
@@ -455,7 +480,7 @@
             </div>
           </a>
 
-          <a class="show-card" href="/s/investigacion" target="_blank" rel="noopener">
+          <a class="show-card" href="/library/investigacion.html" target="_blank" rel="noopener">
             <div class="show-card__preview">
               <svg viewBox="0 0 500 220" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <rect width="500" height="220" fill="#0d1117"/>
@@ -518,114 +543,6 @@
                 <span class="show-card__type">investigacion</span>
               </div>
               <p>Comparative tables, external links, citations, quadrant chart.</p>
-              <span class="show-card__open">
-                Open example
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M7 17L17 7M9 7h8v8"/></svg>
-              </span>
-            </div>
-          </a>
-
-          <a class="show-card show-card--wide" href="/s/serverview" target="_blank" rel="noopener">
-            <div class="show-card__preview">
-              <svg viewBox="0 0 500 220" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-                <rect width="500" height="220" fill="#0b0d12"/>
-                <!-- top bar -->
-                <rect x="0" y="0" width="500" height="32" fill="#11151c"/>
-                <line x1="0" y1="32" x2="500" y2="32" stroke="#1f2632"/>
-                <text x="14" y="20" fill="#5ee7ff" font-family="JetBrains Mono" font-size="11" font-weight="700">▮▮</text>
-                <text x="32" y="20" fill="#e6edf3" font-family="Inter" font-size="11" font-weight="600">pergam</text>
-                <rect x="78" y="10" width="76" height="14" rx="7" fill="#5ee7ff" fill-opacity=".1" stroke="#5ee7ff" stroke-opacity=".4"/>
-                <text x="116" y="20" fill="#5ee7ff" font-family="Inter" font-size="8" font-weight="700" text-anchor="middle">SELF-HOSTED</text>
-                <rect x="166" y="8" width="158" height="18" rx="5" fill="#0b0d12" stroke="#1f2632"/>
-                <circle cx="176" cy="17" r="2.5" fill="#56d364"/>
-                <text x="184" y="20" fill="#e6edf3" font-family="JetBrains Mono" font-size="9">pergam.internal</text>
-                <text x="396" y="20" fill="#5ee7ff" font-family="Inter" font-size="9" font-weight="600">Index</text>
-                <text x="426" y="20" fill="#6b7686" font-family="Inter" font-size="9">New</text>
-                <text x="452" y="20" fill="#6b7686" font-family="Inter" font-size="9">API</text>
-                <text x="476" y="20" fill="#6b7686" font-family="Inter" font-size="9">⚙</text>
-                <!-- title -->
-                <text x="14" y="52" fill="#e6edf3" font-family="Inter" font-size="13" font-weight="700">Index</text>
-                <text x="14" y="64" fill="#8b96a7" font-family="Inter" font-size="9">12 pergams · 5 authors · 40 versions</text>
-                <!-- stat cards -->
-                <g transform="translate(14, 76)">
-                  <rect width="112" height="36" rx="5" fill="#11151c" stroke="#1f2632"/>
-                  <text x="10" y="18" fill="#e6edf3" font-family="Inter" font-size="14" font-weight="700">12</text>
-                  <text x="10" y="29" fill="#8b96a7" font-family="Inter" font-size="7" font-weight="600" letter-spacing=".5">PERGAMS</text>
-                  <text x="80" y="29" fill="#56d364" font-family="Inter" font-size="7">▲3</text>
-                </g>
-                <g transform="translate(132, 76)">
-                  <rect width="112" height="36" rx="5" fill="#11151c" stroke="#1f2632"/>
-                  <text x="10" y="18" fill="#e6edf3" font-family="Inter" font-size="14" font-weight="700">5</text>
-                  <text x="10" y="29" fill="#8b96a7" font-family="Inter" font-size="7" font-weight="600" letter-spacing=".5">AUTHORS</text>
-                </g>
-                <g transform="translate(250, 76)">
-                  <rect width="112" height="36" rx="5" fill="#11151c" stroke="#1f2632"/>
-                  <text x="10" y="18" fill="#e6edf3" font-family="Inter" font-size="14" font-weight="700">40</text>
-                  <text x="10" y="29" fill="#8b96a7" font-family="Inter" font-size="7" font-weight="600" letter-spacing=".5">VERSIONS</text>
-                  <text x="80" y="29" fill="#56d364" font-family="Inter" font-size="7">▲7</text>
-                </g>
-                <g transform="translate(368, 76)">
-                  <rect width="118" height="36" rx="5" fill="#11151c" stroke="#1f2632"/>
-                  <text x="10" y="18" fill="#e6edf3" font-family="Inter" font-size="14" font-weight="700">284 <tspan font-size="9" fill="#8b96a7">KB</tspan></text>
-                  <text x="10" y="29" fill="#8b96a7" font-family="Inter" font-size="7" font-weight="600" letter-spacing=".5">PAYLOAD</text>
-                </g>
-                <!-- list rows -->
-                <g transform="translate(14, 122)">
-                  <rect width="472" height="90" rx="6" fill="#11151c" stroke="#1f2632"/>
-                  <!-- row 1 -->
-                  <text x="14" y="20" fill="#e6edf3" font-family="Inter" font-size="10" font-weight="600">¿Eléctrico o nafta? UY 2026</text>
-                  <rect x="240" y="11" width="68" height="12" rx="3" fill="#b692ff" fill-opacity=".12" stroke="#b692ff" stroke-opacity=".5"/>
-                  <text x="274" y="20" fill="#b692ff" font-family="JetBrains Mono" font-size="7" text-anchor="middle">investigacion</text>
-                  <circle cx="324" cy="17" r="6" fill="url(#aRodri)"/>
-                  <text x="324" y="20" font-family="JetBrains Mono" font-size="6" font-weight="700" fill="#0b0d12" text-anchor="middle">RO</text>
-                  <text x="336" y="20" fill="#8b96a7" font-family="Inter" font-size="9">rodri</text>
-                  <text x="396" y="20" fill="#5ee7ff" font-family="JetBrains Mono" font-size="9" font-weight="700">v1</text>
-                  <text x="418" y="20" fill="#8b96a7" font-family="Inter" font-size="9">today</text>
-                  <line x1="0" y1="28" x2="472" y2="28" stroke="#1f2632"/>
-                  <!-- row 2 -->
-                  <text x="14" y="42" fill="#e6edf3" font-family="Inter" font-size="10" font-weight="600">Q3 status dashboard</text>
-                  <rect x="240" y="33" width="48" height="12" rx="3" fill="#5ee7ff" fill-opacity=".12" stroke="#5ee7ff" stroke-opacity=".5"/>
-                  <text x="264" y="42" fill="#5ee7ff" font-family="JetBrains Mono" font-size="7" text-anchor="middle">reporte</text>
-                  <circle cx="324" cy="39" r="6" fill="url(#aAlice)"/>
-                  <text x="324" y="42" font-family="JetBrains Mono" font-size="6" font-weight="700" fill="#0b0d12" text-anchor="middle">AL</text>
-                  <text x="336" y="42" fill="#8b96a7" font-family="Inter" font-size="9">alice.dev</text>
-                  <text x="396" y="42" fill="#5ee7ff" font-family="JetBrains Mono" font-size="9" font-weight="700">v7</text>
-                  <text x="418" y="42" fill="#8b96a7" font-family="Inter" font-size="9">1d ago</text>
-                  <line x1="0" y1="50" x2="472" y2="50" stroke="#1f2632"/>
-                  <!-- row 3 -->
-                  <text x="14" y="64" fill="#e6edf3" font-family="Inter" font-size="10" font-weight="600">PR review board · auth-flow</text>
-                  <rect x="240" y="55" width="48" height="12" rx="3" fill="#5ee7ff" fill-opacity=".12" stroke="#5ee7ff" stroke-opacity=".5"/>
-                  <text x="264" y="64" fill="#5ee7ff" font-family="JetBrains Mono" font-size="7" text-anchor="middle">reporte</text>
-                  <circle cx="324" cy="61" r="6" fill="url(#aBob)"/>
-                  <text x="324" y="64" font-family="JetBrains Mono" font-size="6" font-weight="700" fill="#0b0d12" text-anchor="middle">BO</text>
-                  <text x="336" y="64" fill="#8b96a7" font-family="Inter" font-size="9">bob.dev</text>
-                  <text x="396" y="64" fill="#5ee7ff" font-family="JetBrains Mono" font-size="9" font-weight="700">v4</text>
-                  <text x="418" y="64" fill="#8b96a7" font-family="Inter" font-size="9">3d ago</text>
-                  <line x1="0" y1="72" x2="472" y2="72" stroke="#1f2632"/>
-                  <!-- row 4 -->
-                  <text x="14" y="86" fill="#e6edf3" font-family="Inter" font-size="10" font-weight="600">Payments service · architecture spec</text>
-                  <rect x="240" y="77" width="34" height="12" rx="3" fill="#f0d28a" fill-opacity=".12" stroke="#f0d28a" stroke-opacity=".5"/>
-                  <text x="257" y="86" fill="#f0d28a" font-family="JetBrains Mono" font-size="7" text-anchor="middle">plan</text>
-                  <circle cx="324" cy="83" r="6" fill="url(#aCarla)"/>
-                  <text x="324" y="86" font-family="JetBrains Mono" font-size="6" font-weight="700" fill="#0b0d12" text-anchor="middle">CA</text>
-                  <text x="336" y="86" fill="#8b96a7" font-family="Inter" font-size="9">carla.eng</text>
-                  <text x="396" y="86" fill="#5ee7ff" font-family="JetBrains Mono" font-size="9" font-weight="700">v2</text>
-                  <text x="418" y="86" fill="#8b96a7" font-family="Inter" font-size="9">5d ago</text>
-                </g>
-                <defs>
-                  <linearGradient id="aRodri" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#f85149"/><stop offset="100%" stop-color="#f0d28a"/></linearGradient>
-                  <linearGradient id="aAlice" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#5ee7ff"/><stop offset="100%" stop-color="#7aa2ff"/></linearGradient>
-                  <linearGradient id="aBob" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#f0d28a"/><stop offset="100%" stop-color="#f59f5a"/></linearGradient>
-                  <linearGradient id="aCarla" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#56d364"/><stop offset="100%" stop-color="#5ee7ff"/></linearGradient>
-                </defs>
-              </svg>
-            </div>
-            <div class="show-card__meta">
-              <div class="show-card__meta-row">
-                <h3>Self-hosted index</h3>
-                <span class="show-card__type">server view</span>
-              </div>
-              <p>What your team's instance looks like — filterable list with author, type, version history.</p>
               <span class="show-card__open">
                 Open example
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M7 17L17 7M9 7h8v8"/></svg>
