@@ -1,0 +1,8 @@
+# Robots policy for pergam.dev
+# Search engines and AI crawlers welcome.
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://pergam.dev/sitemap.xml

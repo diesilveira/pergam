@@ -1,0 +1,7 @@
+# Pergam
+
+> Pergam publica informes y dashboards interactivos como páginas autocontenidas y compartibles. Cada página vive en una URL estable `/s/<id>`.
+
+## Informes
+
+- [¿Eléctrico o nafta? Marco de decisión para Uruguay en 2026](https://pergam.dev/s/evdecisionuy): Cuánto cuestan realmente uno y otro a lo largo de cinco años, qué cambió en impuestos, dónde se carga, y cuándo el ahorro operativo justifica el cambio. Hecho para alguien que maneja ~12.000 km/año y duda.
