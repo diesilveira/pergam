@@ -1196,6 +1196,55 @@ body.viewer-page {
   border: 0;
   background: var(--bg);
 }
+
+/* User-content abuse warning. Toggled visible by the parent's
+   postMessage listener (app.js) when the iframe's defensive script
+   reports a form submit or password-input focus. The actual exfil
+   is already blocked by CSP (`form-action 'none'`, tight `img-src`,
+   `connect-src` allowlist) — this banner is the user-facing layer
+   that tells the viewer what just happened and why not to trust the
+   content. */
+.abuse-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(248, 81, 73, .12);
+  border-bottom: 1px solid rgba(248, 81, 73, .4);
+  flex-shrink: 0;
+}
+.abuse-banner[hidden] { display: none; }
+.abuse-banner__icon {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--crit);
+  flex-shrink: 0;
+}
+.abuse-banner__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.abuse-banner__text strong { color: var(--crit); }
+.abuse-banner__text span   { color: var(--ink-soft); }
+.abuse-banner__close {
+  background: none;
+  border: 0;
+  color: var(--ink-soft);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 10px;
+  flex-shrink: 0;
+  border-radius: 6px;
+}
+.abuse-banner__close:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, .05);
+}
 .viewer-empty {
   flex: 1;
   display: grid;
