@@ -582,8 +582,9 @@
 git <span class="tok-cmd">clone</span> https://github.com/diesilveira/pergam
 <span class="tok-cmd">cp</span> -r pergam/skills/post-pergam <span class="tok-arg">~/.claude/skills/</span>
 
-<span class="tok-com"># 2. Point it at a pergam (self-hosted or public)</span>
-<span class="tok-cmd">export</span> PERGAM_URL=<span class="tok-str">"http://localhost:1111"</span>
+<span class="tok-com"># 2. Point it at a pergam (defaults to the hosted service)</span>
+<span class="tok-cmd">export</span> PERGAM_URL=<span class="tok-str">"https://api.pergam.dev"</span>   <span class="tok-com"># hosted — or just leave unset</span>
+<span class="tok-com">#    export PERGAM_URL="http://localhost:1111"   # self-hosted</span>
 
 <span class="tok-com"># 3. Inside any project, ask Claude:</span>
 <span class="tok-com">#    "armá un pergam de X y publicalo"</span>
