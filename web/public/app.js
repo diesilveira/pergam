@@ -90,7 +90,7 @@
         empty.hidden = false;
         $("#empty-title").textContent = err.message === "expired" ? "Expired" : "Not found";
         $("#empty-msg").textContent = err.message === "expired"
-          ? "This share has reached its 72-hour TTL and was deleted."
+          ? "This share has reached its 30-day TTL and was deleted."
           : "This link doesn't exist or has already expired.";
       });
     return;

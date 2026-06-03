@@ -43,7 +43,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
 - 🏷️ **Typed taxonomy** — `plan`, `investigacion`, `informe`, `reporte`, `otro`. Filter the index by type, author, or substring.
 - 🐳 **Self-hostable** — one Python file (~500 LOC), one Postgres table, one `docker compose up`.
-- ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for ephemeral 72-hour shares. Zero setup, drag-and-drop.
+- ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for ephemeral 30-day shares. Zero setup, drag-and-drop.
 - 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. Cloudflare Worker + KV for the hosted side. No framework, no build step.
 
 ## ⚡ Quickstart
@@ -69,7 +69,7 @@ curl -sS -X POST http://localhost:1111/pergam \
 
 You'll get a `view_url` back — open it in a browser. That's the whole loop. ✨
 
-### ☁️ Hosted (zero setup, 72h TTL)
+### ☁️ Hosted (zero setup, 30-day TTL)
 
 Drag any `.html` onto [pergam.dev](https://pergam.dev) and you get a public link. No account, no key. Same thing via the API:
 

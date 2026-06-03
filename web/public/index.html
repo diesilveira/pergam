@@ -622,7 +622,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
         </div>
 
         <!-- Drop a file: the whole area is the dropzone -->
-        <section class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Drop an HTML file to publish a 72-hour public link">
+        <section class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Drop an HTML file to publish a 30-day public link">
           <input id="file-input" type="file" accept=".html,.htm,text/html" hidden>
           <svg class="dz-icon" viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -630,7 +630,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
           <p class="dz-prompt">Drop an .html file</p>
-          <p class="dz-sub">or click to choose · public link for 72h · max 128 KB</p>
+          <p class="dz-sub">or click to choose · public link for 30 days · max 128 KB</p>
           <div class="dz-progress" id="dz-progress" hidden>Uploading…</div>
         </section>
 
@@ -669,7 +669,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
           </details>
           <details>
             <summary>Is the public service safe? What about the embedded HTML?</summary>
-            <p>Pergams are served from a sandboxed iframe on a different origin (<code>api.pergam.dev</code>) with a strict CSP that blocks everything except inline CSS and Mermaid from jsDelivr. Visitors are isolated. The 72-hour TTL also limits the blast radius of any abuse.</p>
+            <p>Pergams are served from a sandboxed iframe on a different origin (<code>api.pergam.dev</code>) with a strict CSP that blocks everything except inline CSS and Mermaid from jsDelivr. Visitors are isolated. The 30-day TTL also limits the blast radius of any abuse.</p>
           </details>
           <details>
             <summary>Can I keep pergams forever?</summary>
@@ -697,7 +697,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
         <button class="modal__close-icon close" type="button" aria-label="Close">✕</button>
       </header>
       <div class="modal__body">
-        <p>Anyone with this link can view the pergam for the next 72 hours.</p>
+        <p>Anyone with this link can view the pergam for the next 30 days.</p>
         <div class="url-row">
           <input id="result-url" type="text" readonly aria-label="Shareable URL">
           <button id="result-copy" type="button">Copy</button>
