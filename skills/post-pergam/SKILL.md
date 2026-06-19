@@ -1,6 +1,6 @@
 ---
 name: post-pergam
-description: Use when the user wants an HTML dashboard, report, comparison board, or any self-contained HTML artifact deployed somewhere viewable. POSTs the HTML to a `pergam` backend and returns a shareable URL. Supports two backends — the hosted **pergam.dev** Worker (ephemeral 72-hour shares, default) and any self-hosted pergam server (versioned, immutable, typed). Triggered by phrases like "publish/post/deploy this as a pergam", "armá un pergam de esto", "show this as a viewable pergam", "actualizá el pergam", "v2 de", "iterá sobre", or any request to output HTML that should be browseable.
+description: Use when the user wants an HTML dashboard, report, comparison board, or any self-contained HTML artifact deployed somewhere viewable. POSTs the HTML to a `pergam` backend and returns a shareable URL. Supports two backends — the hosted **pergam.dev** Worker (ephemeral 30-day shares, default) and any self-hosted pergam server (versioned, immutable, typed). Triggered by phrases like "publish/post/deploy this as a pergam", "armá un pergam de esto", "show this as a viewable pergam", "actualizá el pergam", "v2 de", "iterá sobre", or any request to output HTML that should be browseable.
 ---
 
 # post-pergam
@@ -22,7 +22,7 @@ There are **two backends** with different capabilities. Pick the right one befor
 
 ## Flow A — Hosted (pergam.dev)
 
-Ephemeral **72-hour** shares served by a Cloudflare Worker. No versioning. Max 1 MB HTML. URL pattern: `https://pergam.dev/s/<token>`.
+Ephemeral **30-day** shares served by a Cloudflare Worker. No versioning. Max 1 MB HTML. URL pattern: `https://pergam.dev/s/<token>`.
 
 1. **(Optional) health check:**
    ```bash
@@ -51,13 +51,13 @@ Ephemeral **72-hour** shares served by a Cloudflare Worker. No versioning. Max 1
    ```
    Response: `{"token":"abc123…","view_url":"https://pergam.dev/s/abc123…","expires_at":"2026-…","bytes":12345}`
 
-4. **Report the `view_url`** to the user. Always mention "expires in 72h" so they know it's ephemeral.
+4. **Report the `view_url`** to the user. Always mention "expires in 30 days" so they know it's ephemeral.
 
 ### Flow A limitations
 
 - **No versioning.** If the user says "v2", "iterá sobre", or "actualizá", you can't bump a version — post a fresh share and tell the user this backend doesn't keep history. If versioning matters, suggest they switch to Flow B (self-hosted).
 - **1 MB max** per HTML payload. For long-form reports, trim inline CSS or switch to Flow B.
-- **72h TTL.** Hard expiry, then gone.
+- **30-day TTL.** Hard expiry, then gone.
 - **Rate limits:** 10 POSTs / hour / IP, 240 GETs / hour / IP.
 
 ---
