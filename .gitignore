@@ -12,3 +12,6 @@ remote.env
 node_modules/
 .wrangler/
 .dev.vars
+
+# Claude Code (local tool config / worktrees)
+.claude/
