@@ -13,7 +13,7 @@
  *                  5 per hour per IP (KV counter) +
  *                  100 per day total (KV counter, global cap)
  *   - GET  /s/*:   60 per 60s per IP on cache misses (CF binding)
- * Body size: 128 KB max.
+ * Body size: 1 MB max.
  */
 
 // Local type — the project's @cloudflare/workers-types is older than the
@@ -44,7 +44,7 @@ const TTL_SECONDS         = 30 * 24 * 60 * 60;   // 30 days
 const RATE_WINDOW         = 60 * 60;        // 1h window for per-IP hourly counter
 const RATE_POST_HOURLY    = 5;              // /share per hour per IP
 const RATE_GLOBAL_DAILY   = 100;            // /share per UTC day, all IPs
-const MAX_BYTES           = 128 * 1024;     // 128 KB — protects KV free tier write units
+const MAX_BYTES           = 1024 * 1024;    // 1 MB — well under KV's 25 MB per-value cap
 const CACHE_MAX_AGE       = 300;            // 5 min edge cache for GET /s/:token
 
 // Prepended to every served pergam. Intercepts form submits and focus

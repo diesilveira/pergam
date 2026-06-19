@@ -22,7 +22,7 @@ There are **two backends** with different capabilities. Pick the right one befor
 
 ## Flow A — Hosted (pergam.dev)
 
-Ephemeral **72-hour** shares served by a Cloudflare Worker. No versioning. Max 128 KB HTML. URL pattern: `https://pergam.dev/s/<token>`.
+Ephemeral **72-hour** shares served by a Cloudflare Worker. No versioning. Max 1 MB HTML. URL pattern: `https://pergam.dev/s/<token>`.
 
 1. **(Optional) health check:**
    ```bash
@@ -56,7 +56,7 @@ Ephemeral **72-hour** shares served by a Cloudflare Worker. No versioning. Max 1
 ### Flow A limitations
 
 - **No versioning.** If the user says "v2", "iterá sobre", or "actualizá", you can't bump a version — post a fresh share and tell the user this backend doesn't keep history. If versioning matters, suggest they switch to Flow B (self-hosted).
-- **128 KB max** per HTML payload. For long-form reports, trim inline CSS or switch to Flow B.
+- **1 MB max** per HTML payload. For long-form reports, trim inline CSS or switch to Flow B.
 - **72h TTL.** Hard expiry, then gone.
 - **Rate limits:** 10 POSTs / hour / IP, 240 GETs / hour / IP.
 
@@ -176,7 +176,7 @@ Replace ASCII art with Mermaid in long-form content. Only allowed external depen
 
 ### Flow A (hosted)
 
-- **413 `payload too large`** → HTML > 128 KB. Strip whitespace, drop inline assets, or switch to Flow B.
+- **413 `payload too large`** → HTML > 1 MB. Strip whitespace, drop inline assets, or switch to Flow B.
 - **429 `rate limit`** → hit the 10 POST/h cap. Wait an hour or switch to Flow B.
 - **404 on `/share` POST** → check you're using `POST /share`, not `POST /pergam`. Flow A doesn't have `/pergam`.
 
