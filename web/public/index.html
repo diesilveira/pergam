@@ -109,7 +109,7 @@
           </h1>
 
           <p class="hero__sub">
-            A tiny self-hostable service that turns every HTML report, dashboard, or spec your AI generates — from <strong>Claude Code</strong>, <strong>Cursor</strong>, <strong>Codex</strong>, or any tool that can <code>curl</code> — into a <strong>permanent, versioned URL</strong>. One Python file. One <code>docker compose up</code>.
+            A tiny self-hostable service that turns every HTML report, dashboard, or <strong>analysis</strong> your AI generates — from <strong>Claude Code</strong>, <strong>Cursor</strong>, <strong>Codex</strong>, or any tool that can <code>curl</code> — into a <strong>permanent, versioned URL you can share</strong>. Send one link; whoever opens it gets the real, interactive artifact — not a screenshot, not a PDF.
           </p>
 
           <div class="cta-row">
@@ -133,6 +133,10 @@
             <li><span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               Immutable history
+            </span></li>
+            <li><span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07l-1 1"/><path d="M14 11a5 5 0 0 0-7.07 0l-1.41 1.41a5 5 0 0 0 7.07 7.07l1-1"/></svg>
+              One-link sharing
             </span></li>
           </ul>
         </div>
@@ -269,6 +273,14 @@
         <p class="section__lead">Anonymous HTML hosts are fine for one-shot shares. pergam is for the workflow: your AI iterates, your team revisits, your infra stays private.</p>
 
         <div class="feat-grid">
+
+          <article class="feat">
+            <div class="feat__ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            </div>
+            <h4>Share, don't screenshot</h4>
+            <p>Send an analysis, dashboard, or report as one link. The recipient opens the live artifact — Mermaid, charts, dark theme intact — no repo, no deploy, no account. Hosted links last a year; self-host keeps them forever.</p>
+          </article>
 
           <article class="feat">
             <div class="feat__ic">
@@ -623,7 +635,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
         </div>
 
         <!-- Drop a file: the whole area is the dropzone -->
-        <section class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Drop an HTML file to publish a 30-day public link">
+        <section class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Drop an HTML file to publish a public link that lasts a year">
           <input id="file-input" type="file" accept=".html,.htm,text/html" hidden>
           <svg class="dz-icon" viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -631,7 +643,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
           <p class="dz-prompt">Drop an .html file</p>
-          <p class="dz-sub">or click to choose · public link for 30 days · max 1 MB</p>
+          <p class="dz-sub">or click to choose · public link, lasts 1 year · max 1 MB</p>
           <div class="dz-progress" id="dz-progress" hidden>Uploading…</div>
         </section>
 
@@ -670,11 +682,11 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
           </details>
           <details>
             <summary>Is the public service safe? What about the embedded HTML?</summary>
-            <p>Pergams are served from a sandboxed iframe on a different origin (<code>api.pergam.dev</code>) with a strict CSP that blocks everything except inline CSS and Mermaid from jsDelivr. Visitors are isolated. The 30-day TTL also limits the blast radius of any abuse.</p>
+            <p>Pergams are served from a sandboxed iframe on a different origin (<code>api.pergam.dev</code>) with a strict CSP that blocks everything except inline CSS and Mermaid from jsDelivr. Visitors are isolated. Rate limits and a 1 MB size cap keep any abuse cheap to contain.</p>
           </details>
           <details>
             <summary>Can I keep pergams forever?</summary>
-            <p>Yes — self-host. Public service is for ephemeral sharing. Self-host gives you a versioned, immutable history with no TTL.</p>
+            <p>Hosted links last a year. To keep pergams forever, self-host — you get a versioned, immutable history with no expiry.</p>
           </details>
           <details>
             <summary>What does the skill cost?</summary>
@@ -682,7 +694,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
           </details>
           <details>
             <summary>How is it different from Vercel preview URLs or GitHub Pages?</summary>
-            <p>Those need a repo and a deploy step. pergam is a single <code>POST /pergam</code> with a body of HTML — that's the whole contract. It's designed for the throwaway-but-shareable case in between "screenshot in Slack" and "real deploy."</p>
+            <p>Those need a repo and a deploy step. pergam is a single <code>POST /pergam</code> with a body of HTML — that's the whole contract. It's the fastest way to turn an AI-built analysis into a link you can send: it opens the real, interactive artifact and lasts a year.</p>
           </details>
         </div>
       </div>
@@ -698,7 +710,7 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
         <button class="modal__close-icon close" type="button" aria-label="Close">✕</button>
       </header>
       <div class="modal__body">
-        <p>Anyone with this link can view the pergam for the next 30 days.</p>
+        <p>Anyone with this link can open the pergam for the next year.</p>
         <div class="url-row">
           <input id="result-url" type="text" readonly aria-label="Shareable URL">
           <button id="result-copy" type="button">Copy</button>
