@@ -1,7 +1,12 @@
 # pergam-share Worker
 
-Cloudflare Worker backing `api.pergam.dev`'s 30-day share endpoint. Token-based,
-TTL-bound, KV-backed — a ~200 LOC subset of the self-hosted pergam server.
+**An optional, self-contained example of pergam's hosted variant — implemented on
+Cloudflare Workers + KV.** You do *not* need this to run pergam: the generic,
+provider-neutral server lives in [`src/pergam/`](../../src/pergam/) and is what you
+deploy to self-host (see the [root README](../../README.md)).
+
+This worker backs `api.pergam.dev`'s ephemeral 30-day share endpoint — token-based,
+TTL-bound, KV-backed; a ~200 LOC subset of the full server (no versioning).
 
 ## Setup
 
