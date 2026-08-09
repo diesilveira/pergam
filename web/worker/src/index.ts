@@ -7,7 +7,7 @@
  *   GET  /s/:token/meta  → { title, expires_at, bytes, … }
  *   GET  /healthz        → { ok: true }
  *
- * Storage: Cloudflare Workers KV with native TTL (30 days).
+ * Storage: Cloudflare Workers KV with native TTL (365 days).
  * Rate limits:
  *   - POST /share: 1 per 60s per IP (CF binding, no KV) +
  *                  5 per hour per IP (KV counter) +
@@ -40,7 +40,7 @@ interface ShareRecord {
   ip: string;
 }
 
-const TTL_SECONDS         = 30 * 24 * 60 * 60;   // 30 days
+const TTL_SECONDS         = 365 * 24 * 60 * 60;  // 365 days
 const RATE_WINDOW         = 60 * 60;        // 1h window for per-IP hourly counter
 const RATE_POST_HOURLY    = 5;              // /share per hour per IP
 const RATE_GLOBAL_DAILY   = 100;            // /share per UTC day, all IPs
