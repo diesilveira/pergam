@@ -8,12 +8,14 @@ routes = [
   { pattern = "api.pergam.dev", custom_domain = true }
 ]
 
-# Bind the KV namespace. Create it with:
+# Bind the KV namespace. The id is injected from PERGAM_KV_ID at build time
+# (see scripts/gen-wrangler-config.mjs) so it stays out of version control.
+# Create the namespace once with:
 #   wrangler kv namespace create pergam_shares
-# then paste the id below.
+# then put the printed id in web/worker/.env as PERGAM_KV_ID=<id>.
 [[kv_namespaces]]
 binding = "KV"
-id = "5ef569bfb5a2461b91959bb0b97f6075"
+id = "__PERGAM_KV_ID__"
 
 # Cloudflare Rate Limiting bindings. Backed by CF's distributed counters
 # (not KV), so they cost nothing against the KV write budget and survive

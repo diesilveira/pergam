@@ -12,6 +12,9 @@ remote.env
 node_modules/
 .wrangler/
 .dev.vars
+# Generated from wrangler.toml.tmpl by scripts/gen-wrangler-config.mjs
+# (injects PERGAM_KV_ID from .env). The template is the tracked source.
+web/worker/wrangler.toml
 
 # Claude Code (local tool config / worktrees)
 .claude/
