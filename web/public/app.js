@@ -99,10 +99,10 @@
   // ────────────────────────────────────────────────────────────────
   //  LANDING — drag-drop upload
   // ────────────────────────────────────────────────────────────────
-  const dropzone = $("#dropzone");
-  if (!dropzone) return;
-
+  const dropzones = document.querySelectorAll(".dropzone");
   const fileInput = $("#file-input");
+  if (!dropzones.length || !fileInput) return;
+
   const progress = $("#dz-progress");
   const modal = $("#result-modal");
   const resultUrl = $("#result-url");
@@ -110,20 +110,27 @@
   const resultOpen = $("#result-open");
   const resultCopy = $("#result-copy");
 
-  dropzone.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
     if (fileInput.files[0]) handleFile(fileInput.files[0]);
     fileInput.value = "";
   });
 
-  ["dragenter", "dragover"].forEach(ev =>
-    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add("drag"); }));
-  ["dragleave", "drop"].forEach(ev =>
-    dropzone.addEventListener(ev, () => dropzone.classList.remove("drag")));
-  dropzone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
+  // Every .dropzone (the big drop strip + the compact hero one) opens the
+  // picker on click/keyboard and accepts a dropped file.
+  dropzones.forEach((dz) => {
+    dz.addEventListener("click", () => fileInput.click());
+    dz.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+    });
+    ["dragenter", "dragover"].forEach(ev =>
+      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
+    ["dragleave", "drop"].forEach(ev =>
+      dz.addEventListener(ev, () => dz.classList.remove("drag")));
+    dz.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const f = e.dataTransfer.files[0];
+      if (f) handleFile(f);
+    });
   });
 
   function handleFile(file) {
@@ -157,8 +164,8 @@
   }
 
   function setUploading(on) {
-    dropzone.classList.toggle("uploading", on);
-    progress.hidden = !on;
+    dropzones.forEach((dz) => dz.classList.toggle("uploading", on));
+    if (progress) progress.hidden = !on;
   }
 
   function inferTitle(html) {
