@@ -68,7 +68,7 @@ pergam/
 ├── scripts/
 │   └── migrate_from_fs.py   import legacy ./data/*.html files
 ├── skills/post-pergam/      Claude Code skill (see below)
-├── web/                     public landing + Cloudflare Worker
+├── web/                     public landing + example hosted worker (Cloudflare)
 ├── Dockerfile               python:3.13-slim, runs as uid 10001
 ├── docker-compose.yml       app + bundled postgres + healthchecks
 ├── Makefile                 up / down / restart / logs / ps / health / clean

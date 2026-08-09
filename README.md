@@ -15,7 +15,6 @@ A tiny self-hostable service — or a hosted endpoint — that turns every HTML 
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Postgres](https://img.shields.io/badge/Postgres-15-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-deployed-F38020?logo=cloudflare&logoColor=white)](https://api.pergam.dev/healthz)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-D97757?logo=anthropic&logoColor=white)](skills/post-pergam/SKILL.md)
 
 [**Try it live →**](https://pergam.dev) · [**Docs**](DOCS.md) · [**Claude Code skill**](skills/post-pergam/SKILL.md) · [**API health**](https://api.pergam.dev/healthz)
@@ -44,7 +43,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🏷️ **Typed taxonomy** — `plan`, `investigacion`, `informe`, `reporte`, `otro`. Filter the index by type, author, or substring.
 - 🐳 **Self-hostable** — one Python file (~500 LOC), one Postgres table, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for ephemeral 30-day shares. Zero setup, drag-and-drop.
-- 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. Cloudflare Worker + KV for the hosted side. No framework, no build step.
+- 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. A tiny edge worker for the hosted variant. No framework, no build step.
 
 ## ⚡ Quickstart
 
@@ -113,7 +112,7 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 - **One Python process**, no framework — just `http.server` + `psycopg`.
 - **One Postgres table**: `pergams (id, version, …)` with a composite key. Latest version per `id` resolved via a window function on read.
 - **Strict CSP per response**: sandboxed iframe, `frame-ancestors` allowlist, no inline scripts on the viewer chrome.
-- **Hosted side** (Cloudflare Worker + KV) is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/).
+- **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 
 Full schema, request flow, and config knobs → [DOCS.md](DOCS.md).
 
@@ -126,7 +125,7 @@ Full schema, request flow, and config knobs → [DOCS.md](DOCS.md).
 | ⚙️ Configuration | [DOCS.md § Configuration](DOCS.md) |
 | 🚢 Deployment guide | [DOCS.md § Deployment](DOCS.md) |
 | 🤖 Claude Code skill | [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) |
-| ☁️ Hosted Worker | [`web/worker/`](web/worker/) |
+| ☁️ Hosted variant (example: Cloudflare) | [`web/worker/`](web/worker/) |
 | 🌐 Landing source | [`web/public/`](web/public/) |
 
 ## 🤝 Contributing
