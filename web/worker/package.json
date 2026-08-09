@@ -4,7 +4,10 @@
   "private": true,
   "description": "Cloudflare Worker backing pergam.dev's 30-day share endpoint.",
   "scripts": {
+    "gen-config": "node scripts/gen-wrangler-config.mjs",
+    "predev": "npm run gen-config",
     "dev": "wrangler dev",
+    "predeploy": "npm run gen-config",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
   },
