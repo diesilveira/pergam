@@ -25,6 +25,7 @@ MAX_SERVER_URL_LENGTH = 2048
 EARLIEST_CREATED_AT = datetime(1970, 1, 1, tzinfo=timezone.utc)
 CLOCK_SKEW = timedelta(minutes=5)
 MAX_VERSION = 2**31 - 1
+MAX_IMPORT_VERSIONS = 10_000
 
 
 class TransferError(ValueError):
@@ -189,12 +190,13 @@ def parse_import(data: dict[str, Any], types: tuple[str, ...], now: datetime | N
     entries = data.get("versions")
     if not isinstance(entries, list) or not entries:
         raise TransferError("versions must be a non-empty array")
+    if len(entries) > MAX_IMPORT_VERSIONS:
+        raise TransferError(f"an import carries at most {MAX_IMPORT_VERSIONS} versions")
     now = now or datetime.now(timezone.utc)
     versions = sorted((_version(entry, i, types, now) for i, entry in enumerate(entries)), key=lambda v: v.version)
-    numbers = [v.version for v in versions]
-    duplicated = sorted({n for n in numbers if numbers.count(n) > 1})
-    if duplicated:
-        raise TransferError(f"v{duplicated[0]} appears more than once")
+    repeated = next((b for a, b in zip(versions, versions[1:]) if a.version == b.version), None)
+    if repeated:
+        raise TransferError(f"v{repeated.version} appears more than once")
     backwards = next(((a, b) for a, b in zip(versions, versions[1:]) if b.created_at < a.created_at), None)
     if backwards:
         raise TransferError(f"v{backwards[1].version} is dated before v{backwards[0].version}")

@@ -9,7 +9,7 @@ import psycopg
 import pytest
 
 from pergam.meta import Meta, Origin
-from pergam.transfer import FORMAT_VERSION, TransferError, parse_import, parse_server_url
+from pergam.transfer import FORMAT_VERSION, MAX_IMPORT_VERSIONS, TransferError, parse_import, parse_server_url
 from pergam.store import VersionInfo
 from pergam.view_page import render_view
 from support import TARGET_PUBLIC_URL, Client, patch_meta
@@ -380,3 +380,26 @@ def test_imported_version_dated_before_one_already_here_is_409(target: Client, t
     assert resp.status == 409
     assert b"v2 of abcd1234 would be dated before v1" in resp.body
     assert target_db.execute(STATE).fetchone() == state
+
+
+def test_an_import_carries_at_most_the_version_limit(target: Client, target_db: psycopg.Connection) -> None:
+    doc = document(versions=1)
+    doc["versions"] = [{**doc["versions"][0], "version": n} for n in range(1, MAX_IMPORT_VERSIONS + 2)]
+
+    resp = target.post_json(doc, "/import")
+
+    assert resp.status == 400
+    assert f"at most {MAX_IMPORT_VERSIONS} versions".encode() in resp.body
+    assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+
+
+def test_duplicates_are_found_in_a_full_import_without_quadratic_cost() -> None:
+    doc = document(versions=1)
+    doc["versions"] = [{**doc["versions"][0], "version": n} for n in range(1, MAX_IMPORT_VERSIONS + 1)]
+    assert len(parse_import(doc, TYPES).versions) == MAX_IMPORT_VERSIONS
+    doc["versions"][-1]["version"] = 5000
+    started = time.monotonic()
+
+    with pytest.raises(TransferError, match="v5000 appears more than once"):
+        parse_import(doc, TYPES)
+    assert time.monotonic() - started < 1
