@@ -63,6 +63,14 @@ Pergams cannot be deleted. To "supersede" a pergam, post a new version with the 
 - **Title**: the tab shows the document's `<title>`, then the version.
 - **Print**: the print button, or Ctrl/⌘+P anywhere on the page, prints the whole document rather than the visible part of the frame. The button appears only once the bridge has answered.
 
+What changes for a document inside the frame, compared with opening `/content` on its own:
+
+- `window.location` is `/{id}/v{n}/content`, not the view URL, and `window.top !== window`. A fragment the reader follows still shows in the view URL through the bridge.
+- Relative URLs resolve against `/{id}/v{n}/` (`href="notes"` is `/{id}/v{n}/notes`, a 404): link other pergams and assets by absolute path or full URL.
+- The frame is the viewport: `100vh`, `position: fixed` and `sticky`, and `matchMedia` measure the frame, below the bar.
+- The tab title comes from the document's `<title>`; without one it stays the pergam's title.
+- The bridge needs script to run: a document whose own CSP forbids `/static/frame-bridge.js`, or whose markup leaves an element such as `<script>` or a comment unclosed at the end, keeps its links inside the frame and shows no print button.
+
 The view page treats every message as untrusted data: it accepts only those from its own frame, only strings, at most 2,048 characters, and a fragment only when it starts with `#`; nothing is ever inserted as HTML. The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
 
 ## Diff

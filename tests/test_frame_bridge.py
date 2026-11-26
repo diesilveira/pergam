@@ -172,3 +172,15 @@ def test_messages_are_untrusted_data(view) -> None:
     assert page.evaluate("location.hash") == ""
     assert page.evaluate("document.title") == "<img src=x onerror=alert(1)> · v1 · pergam"
     assert page.evaluate("document.querySelectorAll('img').length") == 0
+
+
+def test_document_sees_the_content_url_and_the_frame_as_its_viewport(view) -> None:
+    page, base, pid = view
+    frame = open_view(page, f"{base}/{pid}/v1/view")
+
+    inside = frame.evaluate(
+        "() => [location.pathname, new URL('notes', location.href).pathname, window.top !== window, innerHeight]"
+    )
+
+    assert inside[:3] == [f"/{pid}/v1/content", f"/{pid}/v1/notes", True]
+    assert 0 < inside[3] < page.evaluate("innerHeight")
