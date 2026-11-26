@@ -108,7 +108,7 @@ def test_unknown_name_lists_the_known_ones(env: dict[str, str]) -> None:
 
 
 def run(env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
-    clean = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), **env}
+    clean = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "PYTHONDONTWRITEBYTECODE": "1", **env}
     return subprocess.run([sys.executable, str(SCRIPT), *args], env=clean, capture_output=True, text=True)
 
 

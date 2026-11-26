@@ -40,7 +40,7 @@ def profiles(tmp_path: Path, client: Client, target: Client) -> dict[str, str]:
 
 
 def promote(profiles: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
-    env = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), **profiles}
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "PYTHONDONTWRITEBYTECODE": "1", **profiles}
     return subprocess.run([sys.executable, str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=60)
 
 
@@ -233,3 +233,9 @@ def test_long_histories_are_uploaded_in_batches(client: Client, target: Client, 
 
     assert result.uploaded == [1, 2, 3, 4, 5]
     assert [v["version"] for v in target.get(f"/{pid}/versions").json()] == [5, 4, 3, 2, 1]
+
+
+def test_running_the_helpers_leaves_no_bytecode_in_the_skill_folder(profiles: dict[str, str]) -> None:
+    promote(profiles, "abcdef12", "--from", "local", "--to", "team")
+
+    assert not (SCRIPT.parent / "__pycache__").exists()

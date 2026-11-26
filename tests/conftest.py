@@ -1,8 +1,13 @@
-"""Fixtures: one throwaway Postgres per run (or `TEST_DATABASE_URL`), isolated databases per run/test."""
+"""Fixtures: one throwaway Postgres per run (or `TEST_DATABASE_URL`), isolated databases per run/test.
+
+Bytecode is not written, so importing the skill's helpers leaves no `__pycache__`
+in `skills/post-pergam`, which a `cp -r` install would carry along.
+"""
 
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack
 from pathlib import Path
@@ -11,6 +16,8 @@ import psycopg
 import pytest
 
 from support import TARGET_PUBLIC_URL, Client, DatabaseFactory, ServerProcess, throwaway_postgres
+
+sys.dont_write_bytecode = True
 
 
 @pytest.fixture(scope="session")
