@@ -153,8 +153,14 @@
       if (text) pending = setTimeout(() => { status.textContent = text; }, ANNOUNCE_DELAY);
     };
 
+    const pin = controls.querySelector('[data-meta-flag="pinned"]');
     const show = (meta) => {
       flags.forEach((button) => button.setAttribute('aria-pressed', String(meta[button.dataset.metaFlag])));
+      if (pin) {
+        pin.setAttribute('aria-disabled', String(meta.archived));
+        if (meta.archived) pin.setAttribute('aria-describedby', 'pin-note');
+        else pin.removeAttribute('aria-describedby');
+      }
       if (tagList) {
         tagList.replaceChildren(...meta.tags.map((tag) => {
           const link = document.createElement('a');
@@ -190,7 +196,7 @@
         const meta = await response.json();
         if (!isMeta(meta)) throw new TypeError('unexpected answer');
         show(meta);
-        return true;
+        return meta;
       } catch (error) {
         say('Could not reach the server. Nothing was changed.', true);
         return false;
@@ -203,11 +209,21 @@
       pinned: ['Pinned: it shows first on the index.', 'Unpinned.'],
       archived: ['Archived: the index hides it unless archived pergams are shown.', 'Unarchived.'],
     };
+    const ARCHIVED_UNPINNED = 'Archived and unpinned: the index hides it unless archived pergams are shown.';
+    const PIN_ARCHIVED = 'Archived pergams cannot be pinned: unarchive it first.';
     flags.forEach((button) => {
       button.addEventListener('click', async () => {
         const flag = button.dataset.metaFlag;
+        if (button.getAttribute('aria-disabled') === 'true') {
+          say(PIN_ARCHIVED);
+          return;
+        }
         const wanted = button.getAttribute('aria-pressed') !== 'true';
-        if (await patch({ [flag]: wanted })) say(DONE[flag][wanted ? 0 : 1]);
+        const wasPinned = Boolean(pin) && pin.getAttribute('aria-pressed') === 'true';
+        const meta = await patch({ [flag]: wanted });
+        if (!meta) return;
+        const unpinned = flag === 'archived' && wanted && wasPinned && !meta.pinned;
+        say(unpinned ? ARCHIVED_UNPINNED : DONE[flag][wanted ? 0 : 1]);
       });
     });
 

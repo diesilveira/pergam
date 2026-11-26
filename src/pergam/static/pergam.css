@@ -177,3 +177,4 @@ a.tag:hover { color: var(--accent); border-color: var(--accent); }
 }
 .btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
 .btn:disabled { cursor: progress; opacity: .7; }
+.btn[aria-disabled="true"] { cursor: not-allowed; opacity: .55; }

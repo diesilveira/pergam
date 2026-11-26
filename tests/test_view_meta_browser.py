@@ -6,6 +6,7 @@ skipped, except when `CI` is set: there they fail, so a broken setup cannot pass
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 
 import psycopg
@@ -365,3 +366,71 @@ def test_pinning_over_the_limit_explains_and_changes_nothing(
     assert pin.get_attribute("aria-pressed") == "false"
     assert page.locator(".meta-status img").count() == 0
     assert db.execute(META, (pid,)).fetchone() is None
+
+
+def stub_meta(page, pid: str, answers: list[dict]) -> list[str]:
+    """Answer each PATCH of `/{pid}/meta` with the next of `answers`; returns the bodies sent."""
+    sent: list[str] = []
+
+    def answer(route) -> None:
+        if route.request.method != "PATCH":
+            route.continue_()
+            return
+        sent.append(route.request.post_data or "")
+        route.fulfill(status=200, content_type="application/json", body=json.dumps({"id": pid, **answers.pop(0)}))
+
+    page.route(f"**/{pid}/meta", answer)
+    return sent
+
+
+def test_archiving_a_pinned_pergam_shows_it_unpinned_and_pin_unavailable(open_page, client: Client) -> None:
+    pid = client.publish()["id"]
+    patch_meta(client, pid, {"pinned": True})
+    page = open_page(f"{base(client)}/{pid}/view")
+    sent = stub_meta(page, pid, [
+        {"tags": [], "archived": True, "pinned": False},
+        {"tags": [], "archived": False, "pinned": False},
+    ])
+    pin = page.get_by_role("button", name="Pin", exact=True)
+
+    page.get_by_role("button", name="Archive", exact=True).click()
+
+    assert status_text(page) == "Archived and unpinned: the index hides it unless archived pergams are shown."
+    assert pin.get_attribute("aria-pressed") == "false"
+    assert pin.get_attribute("aria-disabled") == "true"
+    assert pin.evaluate("node => document.getElementById(node.getAttribute('aria-describedby')).textContent") == (
+        "Archived pergams cannot be pinned: unarchive it first."
+    )
+    pin.focus()
+    page.keyboard.press("Enter")
+    assert status_text(page) == "Archived pergams cannot be pinned: unarchive it first."
+    assert sent == ['{"archived":true}']
+
+    page.get_by_role("button", name="Archive", exact=True).click()
+    assert status_text(page) == "Unarchived."
+    assert pin.get_attribute("aria-pressed") == "false"
+    assert pin.get_attribute("aria-disabled") == "false"
+    assert pin.get_attribute("aria-describedby") is None
+    assert sent == ['{"archived":true}', '{"archived":false}']
+
+
+def test_archiving_an_unpinned_pergam_says_archived_only(open_page, client: Client) -> None:
+    pid = client.publish()["id"]
+    page = open_page(f"{base(client)}/{pid}/view")
+    stub_meta(page, pid, [{"tags": [], "archived": True, "pinned": False}])
+
+    page.get_by_role("button", name="Archive", exact=True).click()
+
+    assert status_text(page) == "Archived: the index hides it unless archived pergams are shown."
+
+
+def test_pinning_a_pergam_archived_elsewhere_shows_the_server_reason(open_page, client: Client) -> None:
+    pid = client.publish()["id"]
+    page = open_page(f"{base(client)}/{pid}/view")
+    body = STANDARD_ERROR.format(message=f"{pid} is archived: unarchive it first")
+    page.route(f"**/{pid}/meta", lambda route: route.fulfill(status=409, content_type="text/html;charset=utf-8", body=body))
+
+    page.get_by_role("button", name="Pin", exact=True).click()
+
+    assert status_text(page) == f"{pid} is archived: unarchive it first. Nothing was changed."
+    assert page.get_by_role("button", name="Pin", exact=True).get_attribute("aria-pressed") == "false"

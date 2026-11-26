@@ -96,3 +96,14 @@ def test_meta_answers_no_cross_origin_preflight(client: Client) -> None:
 
     assert resp.status >= 400
     assert not any(name.startswith("access-control-") for name in resp.headers)
+
+
+def test_an_archived_pergam_offers_pin_as_unavailable_and_says_why(client: Client) -> None:
+    archived, live = client.publish()["id"], client.publish()["id"]
+    patch_meta(client, archived, {"archived": True})
+
+    blocked, open_ = client.get(f"/{archived}/view").text, client.get(f"/{live}/view").text
+
+    assert '<button type="button" class="btn" data-meta-flag="pinned" aria-pressed="false" aria-disabled="true" aria-describedby="pin-note">Pin</button>' in blocked
+    assert '<span class="sr-only" id="pin-note">Archived pergams cannot be pinned: unarchive it first.</span>' in blocked
+    assert 'data-meta-flag="pinned" aria-pressed="false" aria-disabled="false">Pin</button>' in open_

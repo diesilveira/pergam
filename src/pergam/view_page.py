@@ -169,12 +169,19 @@ def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[V
 
 
 def _meta_controls(pergam_id: str, meta: Meta) -> str:
-    def toggle(flag: str, label: str, on: bool) -> str:
-        return f'<button type="button" class="btn" data-meta-flag="{flag}" aria-pressed="{str(on).lower()}">{label}</button>'
+    """Pin and Archive toggles; an archived pergam cannot be pinned, so Pin is then unavailable and says why."""
 
+    def toggle(flag: str, label: str, on: bool, extra: str = "") -> str:
+        return (
+            f'<button type="button" class="btn" data-meta-flag="{flag}" aria-pressed="{str(on).lower()}"{extra}>'
+            f"{label}</button>"
+        )
+
+    blocked = ' aria-disabled="true" aria-describedby="pin-note"' if meta.archived else ' aria-disabled="false"'
     return (
         f'<span class="meta-controls" data-meta-url="/{pergam_id}/meta" hidden>'
-        f'{toggle("pinned", "Pin", meta.pinned)}{toggle("archived", "Archive", meta.archived)}</span>'
+        f'{toggle("pinned", "Pin", meta.pinned, blocked)}{toggle("archived", "Archive", meta.archived)}'
+        '<span class="sr-only" id="pin-note">Archived pergams cannot be pinned: unarchive it first.</span></span>'
     )
 
 
