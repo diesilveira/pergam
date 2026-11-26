@@ -209,6 +209,11 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 
 - `PATCH` `tags` **replaces** the set: to add a tag, `GET /{id}/meta` first and send the old tags plus the new one. `[]` clears them.
 - `archived: true` hides it from the index (still reachable by URL); `pinned: true` lists it first. Send only the fields you change.
+- On a server that trusts its proxy for identity, only the owner (the author of v1) and its collaborators may version or `PATCH` a pergam; the owner manages the list:
+  ```bash
+  curl -sS -X PUT "$PERGAM_URL/abc12345/collaborators" -H "Content-Type: application/json" \
+       -d '{"collaborators":["bo@example.com"]}'      # replaces the list; [] empties it
+  ```
 - Archiving and pinning belong to the id: a **new version of an archived pergam stays archived** and hidden from the index, and the POST response doesn't say so. When the user iterates on a pergam they archived, check `GET /{id}/meta` and, if it is archived, either tell them or `PATCH` `{"archived": false}` when they clearly want it visible again.
 
 ### Promoting a pergam to another server (Flow B)
@@ -224,6 +229,7 @@ python3 <skill-dir>/pergam_promote.py abc12345 --from local --to team
 - `--from` and `--to` are server names from [§ Choosing the server](#choosing-the-server) (each with its `ca`, so no `-k`) or plain URLs. When the user names only the target, the source is the server the pergam was published on in this conversation, usually `local`.
 - It exports from the source (`GET /{id}/export`) and, when the target already has the id, uploads **only the versions it lacks** (`POST /import`). Running it again prints `team already has every version of abc12345; nothing to do` and writes nothing. Long histories are uploaded 1,000 versions per request (the server takes at most 10,000 per import), oldest first, so a promote interrupted midway resumes on the next run.
 - When a version the target already has differs (another pergam with the same id there, or a different history), it stops with exit status 1 and uploads nothing: tell the user, never work around it by posting the HTML as a new pergam.
+- When the target trusts its proxy for identity (`TRUST_PROXY_USER`), it refuses with 403 an upload that would create the id with a v1 by someone other than the signed-in user, or that adds versions to a pergam the user neither owns nor collaborates on. The printed message names the rule (`v1 of abc12345 is by …, not …`): tell the user, and for an id already on the target, ask its owner to add them as a collaborator.
 - The target records where the pergam came from (`origin`, shown in its view bar). The hosted backend keeps no versions, so promote works only between self-hosted servers.
 - Report the printed `view_url` (the target's) and how many versions were uploaded.
 
@@ -246,6 +252,8 @@ python3 <skill-dir>/pergam_promote.py abc12345 --from local --to team
 | GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at, note}, …]`. |
 | GET    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`.                                |
 | PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |
+| GET    | `/{id}/collaborators` | JSON: `{id, owner, collaborators}`; `owner` is the author of v1. |
+| PUT    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list. Only the owner, on a server that trusts its proxy. |
 | GET    | `/{id}/export`        | JSON: every version with its HTML, plus `meta`, to move the pergam to another server. |
 | POST   | `/import`             | Body: an export document. Adds the versions this server lacks (same id, numbers, dates); **409** if one it has differs. |
 | GET    | `/feed.atom`          | Atom feed of recent publications, `?tag=`/`?author=` to filter. Point the user here when they want to follow new pergams. |
@@ -295,6 +303,7 @@ Replace ASCII art with Mermaid in long-form content. Only allowed external depen
 - **Container restarts in a loop, logs show "could not connect to server"** → the pergam server can't reach its Postgres. If using bundled compose, `docker compose restart` after the db is ready.
 - **400 "type must be one of […]"** → the message lists the types this server accepts (`PERGAM_TYPES`); pick one of those and retry.
 - **400 "Missing author"** → always pass `author`.
+- **403 "… is neither the owner of … nor one of its collaborators"** → the server trusts its proxy for identity and the pergam belongs to someone else. Tell the user who owns it (the message says) and that the owner can add them with `PUT /{id}/collaborators`; never repost the HTML as a new pergam to get around it.
 - **401 "Missing X-Forwarded-User"** → the server trusts its reverse proxy for identity and the request did not come through it signed in. Use the URL the proxy serves and sign in there; never set the header yourself.
 - **405 on DELETE** → expected. Pergams are immutable. Post a new version to supersede, or `PATCH /{id}/meta` with `{"archived": true}` to hide it.
 - **404 on `PATCH /{id}/meta`** → the id has no versions on this server; check the id.

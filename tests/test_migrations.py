@@ -238,6 +238,7 @@ OWNER_PRECREATED = [
     MIGRATIONS_DIR / "004_pergam_text_extractor.sql",
     MIGRATIONS_DIR / "005_pergam_note.sql",
     MIGRATIONS_DIR / "006_pergam_origin.sql",
+    MIGRATIONS_DIR / "007_pergam_collaborators.sql",
 ]
 
 
@@ -310,11 +311,13 @@ META_FINGERPRINT = (
 )
 
 
+def migrations_through(directory: Path, last: int) -> Path:
+    return write_migrations(directory, {m.path.name: m.path.read_text() for m in discover(MIGRATIONS_DIR) if m.version <= last})
+
+
 def test_origin_migration_keeps_every_row_of_a_populated_database(databases: DatabaseFactory, tmp_path: Path) -> None:
-    previous = write_migrations(
-        tmp_path / "previous",
-        {m.path.name: m.path.read_text() for m in discover(MIGRATIONS_DIR) if m.version < 6},
-    )
+    previous = migrations_through(tmp_path / "previous", 5)
+    through_origin = migrations_through(tmp_path / "through-origin", 6)
     url = databases.create()
     with connect(url) as conn:
         apply_migrations(conn, previous)
@@ -326,9 +329,36 @@ def test_origin_migration_keeps_every_row_of_a_populated_database(databases: Dat
         conn.execute("INSERT INTO pergam_note (id, version, note) VALUES ('aaaa0001', 2, 'second')")
         before = [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)]
 
-        assert [m.name for m in apply_migrations(conn, MIGRATIONS_DIR)] == ["006_pergam_origin"]
+        assert [m.name for m in apply_migrations(conn, through_origin)] == ["006_pergam_origin"]
 
         assert [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)] == before
         assert before[0][0] == len(LEGACY_ROWS)
         assert conn.execute("SELECT count(*) FROM pergam_meta WHERE origin_url IS NOT NULL OR origin_id IS NOT NULL").fetchone() == (0,)
+        assert apply_migrations(conn, through_origin) == []
+
+
+def test_collaborators_migration_keeps_every_row_of_a_populated_database(
+    databases: DatabaseFactory, tmp_path: Path, start_server
+) -> None:
+    previous = migrations_through(tmp_path / "previous", 6)
+    url = databases.create()
+    with connect(url) as conn:
+        apply_migrations(conn, previous)
+        seed_legacy_rows(conn)
+        conn.execute(
+            "INSERT INTO pergam_meta (id, tags, archived, pinned, origin_url, origin_id)"
+            " VALUES ('aaaa0001', '{ops}', true, false, 'https://team.example.com', 'aaaa0001')"
+        )
+        before = [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)]
+
+        assert [m.name for m in apply_migrations(conn, MIGRATIONS_DIR)] == ["007_pergam_collaborators"]
+
+        assert [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)] == before
+        assert conn.execute("SELECT count(*) FROM pergam_meta WHERE collaborators IS NOT NULL").fetchone() == (0,)
         assert apply_migrations(conn, MIGRATIONS_DIR) == []
+
+    client = start_server(url, TRUST_PROXY_USER="1")
+
+    assert client.get("/bbbb0002/collaborators").json() == {"id": "bbbb0002", "owner": "bo@example.com", "collaborators": []}
+    assert client.as_user("ana@example.com").publish(id="aaaa0001")["version"] == 3
+    assert client.as_user("bo@example.com").post_json({"id": "aaaa0001", "html": "<p>x</p>", "type": "plan"}).status == 403

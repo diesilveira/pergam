@@ -23,6 +23,8 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at, note}, …]`, newest first; `note` is `null` when the version has none. |
 | `GET`    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`. **404** for an unknown id.     |
 | `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
+| `GET`    | `/{id}/collaborators` | JSON: `{id, owner, collaborators}`; `owner` is the author of v1. **404** for an unknown id. See [Ownership](#ownership). |
+| `PUT`    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list and returns `{id, owner, collaborators}`. Only the owner, when identity is trusted. See [Ownership](#ownership). |
 | `GET`    | `/{id}/export`        | JSON document with every version of one pergam, its HTML and its metadata. See [Export and import](#export-and-import). **404** for an unknown id. |
 | `POST`   | `/import`             | Body: an export document. Recreates the versions this server lacks, keeping id, version numbers and `created_at`. Returns `{id, imported, skipped, origin, view_url}`. **409** when a version already here differs. See [Export and import](#export-and-import). |
 | `GET`    | `/feed.atom`          | Atom 1.0 feed of the 50 most recent publications; `?tag=<tag>`, `?author=<email>`. See [Feed](#feed). |
@@ -52,9 +54,38 @@ By default the `author` of a version is whatever `POST /pergam` sends: pergam ha
 
 - every `POST /pergam` takes its author from the `X-Forwarded-User` header, trimmed; the body's `author` is ignored, may be left out, and the response's `author` is the header's value, so nobody can publish under someone else's name;
 - a write without the header, or with a blank one, is **401** and writes nothing; one longer than 320 characters or holding a control character is **400**. The header is read as UTF-8;
+- the same header names the writer of `PATCH /{id}/meta`, `PUT /{id}/collaborators` and `POST /import`, with the same **401** and **400**, and decides what each may change (see [Ownership](#ownership));
 - reads (`GET`, `HEAD`) never need it.
 
 Only turn it on when the proxy sets `X-Forwarded-User` on every request itself, drops any copy a client sends, and pergam is reachable through that proxy alone: pergam trusts the header as it arrives. With the flag off (the default) the header is never read and nothing changes. A value of `TRUST_PROXY_USER` that is neither `1/true/yes/on` nor `0/false/no/off` stops the server at startup.
+
+### Ownership
+
+With `TRUST_PROXY_USER` on, each pergam has an **owner**, the author of its v1, which never changes, and a list of **collaborators** the owner manages:
+
+| Write | Who may |
+| ----- | ------- |
+| `POST /pergam` with the `id` of an existing pergam (a new version) | the owner or a collaborator |
+| `PATCH /{id}/meta` | the owner or a collaborator |
+| `PUT /{id}/collaborators` | the owner |
+| `POST /import` into an id this server already has | the owner or a collaborator |
+| `POST /import` that creates the id | anyone whose name is the `author` of the imported v1, who becomes the owner |
+| `POST /pergam` without `id`, or with an id this server does not have | anyone; they become the owner |
+
+Anyone else gets **403** and nothing is written; the message names the rule that failed (`eve@example.com is neither the owner of abc12345 (ana@example.com) nor one of its collaborators`, `v1 of abc12345 is by ana@example.com, not eve@example.com: an import that creates an id needs v1 by the signed-in user`). The check runs under the same per-id lock as the write, so a collaborator removed meanwhile cannot slip a version in.
+
+```bash
+curl -sS https://pergam.example.com/abc12345/collaborators
+# → {"id":"abc12345","owner":"ana@example.com","collaborators":[]}
+curl -sS -X PUT https://pergam.example.com/abc12345/collaborators \
+     -H 'Content-Type: application/json' -d '{"collaborators":["bo@example.com"]}'
+# → {"id":"abc12345","owner":"ana@example.com","collaborators":["bo@example.com"]}
+```
+
+- `PUT` replaces the whole list; `[]` empties it. Each collaborator is a user as the proxy names them (compared exactly), trimmed, deduplicated and sorted, at most 320 characters without control characters, at most 100 per pergam; any other body, or a field other than `collaborators`, is **400**.
+- Imported versions keep the `author` they had on the server they came from: the import rule above checks v1 only, so the versions after it may name other people. They are history copied from that server, not claims by whoever imported them.
+- The owner of a pergam published before the flag was turned on is whatever `author` its v1 was posted with; when that is not the name the proxy now sends, nobody can add versions to it until the owner name and the proxy agree. Plan the switch so authors already match the proxy's names (usually the email).
+- With the flag off nothing is enforced: anyone may version, patch, import and edit the list, which is still validated and stored and takes effect once the flag is turned on.
 
 ### Version notes
 
@@ -135,6 +166,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
   - `server` (optional) must be an absolute `http(s)` URL with a valid host and port, without credentials, query or fragment.
   Anything else is **400** and writes nothing. `bytes` is recomputed from the HTML and unknown fields are ignored.
 - The body may be as large as `PERGAM_MAX_BODY_MB` (see [Configuration](#configuration)).
+- With `TRUST_PROXY_USER` on, an import is a write like any other: it needs `X-Forwarded-User` and follows the [ownership](#ownership) rules (**403** otherwise, nothing written).
 
 `origin` is shown in the view page's bar ("imported from localhost:1111/abc12345", linking to the original) and returned by `GET /api/pergams/{id}` (`null` when the pergam was not imported). It cannot be edited. The skill's [promote helper](skills/post-pergam/SKILL.md#promoting-a-pergam-to-another-server-flow-b), `skills/post-pergam/pergam_promote.py` (stdlib only), combines both in one command between two named servers and uploads only the versions the target lacks: `python3 skills/post-pergam/pergam_promote.py abc12345 --from local --to team`.
 
@@ -274,7 +306,7 @@ The schema lives in numbered files, `db/migrations/NNN_description.sql`, shipped
 - Each migration runs in its own transaction: a failure rolls it back completely, the server logs `migrations failed` and exits non-zero.
 - A Postgres advisory lock serializes servers that start at the same time against one database.
 
-Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. `004_pergam_text_extractor.sql` adds `pergam_text.extractor` (existing rows read as version 1) so the backfill can re-extract text written by an older extractor; it rewrites no rows. `005_pergam_note.sql` adds `pergam_note (id, version, note)`, one row per version posted with a note; it writes no rows, so versions published before it have no note. `006_pergam_origin.sql` adds `pergam_meta.origin_url` and `origin_id` (both nullable, existing rows read as no origin); it rewrites no rows. To add a change, create the next number and restart the server.
+Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. `004_pergam_text_extractor.sql` adds `pergam_text.extractor` (existing rows read as version 1) so the backfill can re-extract text written by an older extractor; it rewrites no rows. `005_pergam_note.sql` adds `pergam_note (id, version, note)`, one row per version posted with a note; it writes no rows, so versions published before it have no note. `006_pergam_origin.sql` adds `pergam_meta.origin_url` and `origin_id` (both nullable, existing rows read as no origin); it rewrites no rows. `007_pergam_collaborators.sql` adds `pergam_meta.collaborators` (nullable, existing rows read as no collaborators); it rewrites no rows. To add a change, create the next number and restart the server.
 
 ### Database privileges
 
@@ -285,7 +317,7 @@ The `DATABASE_URL` role needs:
 | Fresh (no `pergams` yet) | `CREATE` on the schema: the role creates and owns the tables. The bundled compose user owns its database, so nothing to do there. |
 | Initialised by the old `schema.sql`, role not the owner | `SELECT, INSERT` on `pergams`, `SELECT` on `pergams_latest`, plus either `CREATE` on the schema (to create `schema_migrations` once) or a `schema_migrations` table created by the owner with `SELECT, INSERT` granted to the role. |
 
-A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT, UPDATE`. `004_pergam_text_extractor.sql` alters `pergam_text`, so it needs ownership of that table (the role owns it when it ran `003` itself); alternatively the owner runs that file once too, and the migration then runs no DDL. `005_pergam_note.sql` creates `pergam_note` like `002` and `003` do, so it needs `CREATE` on the schema, or the owner runs it once and grants `SELECT, INSERT` on `pergam_note` to the role. `006_pergam_origin.sql` alters `pergam_meta` like `004` alters `pergam_text`: it needs ownership of that table (the role owns it when it ran `002` itself), or the owner runs that file once and the migration then runs no DDL.
+A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT, UPDATE`. `004_pergam_text_extractor.sql` alters `pergam_text`, so it needs ownership of that table (the role owns it when it ran `003` itself); alternatively the owner runs that file once too, and the migration then runs no DDL. `005_pergam_note.sql` creates `pergam_note` like `002` and `003` do, so it needs `CREATE` on the schema, or the owner runs it once and grants `SELECT, INSERT` on `pergam_note` to the role. `006_pergam_origin.sql` alters `pergam_meta` like `004` alters `pergam_text`: it needs ownership of that table (the role owns it when it ran `002` itself), or the owner runs that file once and the migration then runs no DDL. `007_pergam_collaborators.sql` alters `pergam_meta` the same way, with the same privileges.
 
 ## Project layout
 

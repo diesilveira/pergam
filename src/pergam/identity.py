@@ -45,20 +45,25 @@ def _is_control(char: str) -> bool:
     return unicodedata.category(char) in ("Cc", "Cs")
 
 
-def proxy_user(value: str | None) -> str:
-    """The trimmed header value; raises `IdentityError` when it is missing, blank, too long or has control characters.
-
-    `http.server` decodes header bytes as Latin-1; they are read back as UTF-8, what proxies send.
-    """
-    try:
-        user = (value or "").encode("latin-1").decode("utf-8").strip()
-    except UnicodeError:
-        raise IdentityError(400, f"Invalid {PROXY_USER_HEADER}") from None
+def parse_user(text: str) -> str:
+    """A user name trimmed; raises `IdentityError` when it is blank, too long or has control characters."""
+    user = text.strip()
     if not user:
         raise IdentityError(401, f"Missing {PROXY_USER_HEADER}")
     if len(user) > MAX_USER_LENGTH or any(_is_control(char) for char in user):
         raise IdentityError(400, f"Invalid {PROXY_USER_HEADER}")
     return user
+
+
+def proxy_user(value: str | None) -> str:
+    """The user the header names, by `parse_user`; a missing header is a 401 `IdentityError`.
+
+    `http.server` decodes header bytes as Latin-1; they are read back as UTF-8, what proxies send.
+    """
+    try:
+        return parse_user((value or "").encode("latin-1").decode("utf-8"))
+    except UnicodeError:
+        raise IdentityError(400, f"Invalid {PROXY_USER_HEADER}") from None
 
 
 @dataclass(frozen=True)

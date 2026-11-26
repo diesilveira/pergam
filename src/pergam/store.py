@@ -11,6 +11,7 @@ from typing import Any
 import psycopg
 from psycopg_pool import ConnectionPool
 
+from pergam.access import Access, Forbidden, require_editor, require_owner
 from pergam.cursor import IndexCursor
 from pergam.meta import Meta, MetaChange, Origin
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
@@ -164,6 +165,25 @@ def add_tags(conn: psycopg.Connection, pergam_id: str, tags: list[str]) -> list[
     return merged
 
 
+def read_access(conn: psycopg.Connection, pergam_id: str) -> Access | None:
+    """Owner and collaborators of an id; None when it has no v1 here."""
+    row = conn.execute(
+        "SELECT p.author, COALESCE(m.collaborators, '{}') FROM pergams p"
+        " LEFT JOIN pergam_meta m ON m.id = p.id WHERE p.id = %s AND p.version = 1",
+        (pergam_id,),
+    ).fetchone()
+    return Access(*row) if row else None
+
+
+def check_editor(conn: psycopg.Connection, pergam_id: str, editor: str | None) -> None:
+    """Raise `Forbidden` when `editor` is a trusted user who may not change an existing id; call under its lock."""
+    if editor is None:
+        return
+    access = read_access(conn, pergam_id)
+    if access is not None:
+        require_editor(access, editor, pergam_id)
+
+
 _EXPORTED_VERSIONS = """
     SELECT p.version, p.title, p.html, p.type, p.author, n.note, p.bytes, p.created_at
     FROM pergams p LEFT JOIN pergam_note n ON n.id = p.id AND n.version = p.version
@@ -234,19 +254,22 @@ class PergamStore:
     def __init__(self, pool: ConnectionPool) -> None:
         self.pool = pool
 
-    def publish(self, pergam: NewPergam, existing_id: str | None) -> Published:
+    def publish(self, pergam: NewPergam, existing_id: str | None, editor: str | None = None) -> Published:
         """Insert a new version and, when `pergam.tags` is given, merge them into the id's tags.
 
         Posts to an explicit id take a transaction-scoped advisory lock on that id
         before reading `MAX(version)`, so concurrent posts get consecutive versions
         instead of colliding on the primary key. New random ids retry on collision.
         A tag merge that fails (`TagError`) rolls the version back with it. The note,
-        when given, is written in the same transaction as its version.
+        when given, is written in the same transaction as its version. With a trusted
+        `editor`, a new version of an existing id needs its owner or a collaborator
+        (`Forbidden` otherwise), checked under the same lock.
         """
         values = (pergam.title, pergam.html, pergam.type, pergam.author, len(pergam.html.encode("utf-8")))
         with self.pool.connection() as conn, conn.transaction():
             if existing_id:
                 lock_id(conn, existing_id)
+                check_editor(conn, existing_id, editor)
                 row = conn.execute(
                     "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
                     " SELECT %s, COALESCE(MAX(version), 0) + 1, %s, %s, %s, %s, %s FROM pergams WHERE id = %s"
@@ -282,13 +305,17 @@ class PergamStore:
         origin = Origin(origin_url, origin_id) if origin_url and origin_id else None
         return Meta(tags, archived, pinned, origin)
 
-    def update_meta(self, pergam_id: str, change: MetaChange) -> Meta | None:
-        """Apply `change` without touching any version; None when the id has no versions."""
+    def update_meta(self, pergam_id: str, change: MetaChange, editor: str | None = None) -> Meta | None:
+        """Apply `change` without touching any version; None when the id has no versions.
+
+        A trusted `editor` must be the owner or a collaborator (`Forbidden` otherwise).
+        """
         params = {"id": pergam_id, "tags": change.tags, "archived": change.archived, "pinned": change.pinned}
         with self.pool.connection() as conn, conn.transaction():
             lock_id(conn, pergam_id)
             if conn.execute("SELECT 1 FROM pergams WHERE id = %(id)s LIMIT 1", params).fetchone() is None:
                 return None
+            check_editor(conn, pergam_id, editor)
             row = conn.execute(
                 """
                 INSERT INTO pergam_meta (id, tags, archived, pinned)
@@ -303,6 +330,29 @@ class PergamStore:
                 params,
             ).fetchone()
         return Meta(*row)
+
+    def access(self, pergam_id: str) -> Access | None:
+        with self.pool.connection() as conn:
+            return read_access(conn, pergam_id)
+
+    def set_collaborators(self, pergam_id: str, collaborators: list[str], editor: str | None = None) -> Access | None:
+        """Replace the collaborators of an id; None when it has no versions.
+
+        A trusted `editor` must be the owner (`Forbidden` otherwise).
+        """
+        with self.pool.connection() as conn, conn.transaction():
+            lock_id(conn, pergam_id)
+            access = read_access(conn, pergam_id)
+            if access is None:
+                return None
+            if editor is not None:
+                require_owner(access, editor, pergam_id)
+            conn.execute(
+                "INSERT INTO pergam_meta (id, collaborators) VALUES (%s, %s)"
+                " ON CONFLICT (id) DO UPDATE SET collaborators = EXCLUDED.collaborators",
+                (pergam_id, collaborators),
+            )
+        return Access(access.owner, collaborators)
 
     def html(self, pergam_id: str, version: int | None) -> str | None:
         """HTML of one version, or of the latest one when `version` is None."""
@@ -324,7 +374,7 @@ class PergamStore:
         with self.pool.connection() as conn:
             return exported_versions(conn, pergam_id)
 
-    def import_pergam(self, doc: ImportDocument) -> ImportResult:
+    def import_pergam(self, doc: ImportDocument, editor: str | None = None) -> ImportResult:
         """Write the versions of `doc` this server lacks, keeping their numbers and `created_at`.
 
         One transaction under the id's advisory lock: versions already present with
@@ -332,10 +382,22 @@ class PergamStore:
         result would leave a version number missing, `ImportConflict` is raised
         before anything is written. Tags are merged as on publish; `archived`,
         `pinned` and `origin` are set only when the id is new to this server.
+
+        A trusted `editor` follows the rules of a publish: an id already here needs
+        its owner or a collaborator, and an import that creates the id needs v1 by
+        `editor`, who becomes its owner (`Forbidden` otherwise, nothing written).
         """
         with self.pool.connection() as conn, conn.transaction():
             lock_id(conn, doc.id)
             present = {v.version: v for v in exported_versions(conn, doc.id)}
+            if editor is not None:
+                if present:
+                    check_editor(conn, doc.id, editor)
+                elif doc.versions[0].version == 1 and doc.versions[0].author != editor:
+                    raise Forbidden(
+                        f"v1 of {doc.id} is by {doc.versions[0].author}, not {editor}:"
+                        " an import that creates an id needs v1 by the signed-in user"
+                    )
             conflict = import_conflict(doc, present)
             if conflict:
                 raise ImportConflict(conflict)

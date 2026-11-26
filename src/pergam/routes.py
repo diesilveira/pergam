@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from pergam.access import CollaboratorError, Forbidden, parse_collaborators
 from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
 from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
@@ -128,9 +129,13 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             published = self.store.publish(
                 NewPergam(title=title, html=html, type=pergam_type, author=author, tags=tags, note=note),
                 existing_id or None,
+                writer.user,
             )
         except (NoteError, TagError) as exc:
             self.send_error(400, str(exc))
+            return
+        except Forbidden as exc:
+            self.send_error(403, str(exc))
             return
         response: dict[str, object] = {
             "id": published.id,
@@ -148,13 +153,19 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
 
     def _import(self) -> None:
         """201 when any version was written, 200 when every one was already here, 409 on a conflict."""
+        writer = self._writer()
+        if writer is None:
+            return
         data = self._read_json_object()
         if data is None:
             return
         try:
-            result = self.store.import_pergam(parse_import(data, self.types))
+            result = self.store.import_pergam(parse_import(data, self.types), writer.user)
         except (TransferError, TagError) as exc:
             self.send_error(400, str(exc))
+            return
+        except Forbidden as exc:
+            self.send_error(403, str(exc))
             return
         except ImportConflict as exc:
             self.send_error(409, str(exc))
@@ -200,6 +211,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             if parts[1] == "meta":
                 self._render_meta_json(parts[0])
                 return
+            if parts[1] == "collaborators":
+                self._render_collaborators(parts[0])
+                return
             if parts[1] == "export":
                 self._render_export(parts[0])
                 return
@@ -228,19 +242,49 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if len(parts) != 2 or parts[1] != "meta" or not ID_RE.match(parts[0]):
             self.send_error(404, "Not Found")
             return
+        writer = self._writer()
+        if writer is None:
+            return
         data = self._read_json_object()
         if data is None:
             return
         try:
-            change = parse_meta_change(data)
+            meta = self.store.update_meta(parts[0], parse_meta_change(data), writer.user)
         except MetaError as exc:
             self.send_error(400, str(exc))
             return
-        meta = self.store.update_meta(parts[0], change)
+        except Forbidden as exc:
+            self.send_error(403, str(exc))
+            return
         if meta is None:
             self.send_error(404, "Pergam not found")
             return
         self._send(200, "application/json", json.dumps(meta.to_json(parts[0])).encode("utf-8"))
+
+    def do_PUT(self) -> None:
+        """`PUT /{id}/collaborators` replaces the list; only the owner may when identity is trusted."""
+        parts = urlparse(self.path).path.strip("/").split("/")
+        if len(parts) != 2 or parts[1] != "collaborators" or not ID_RE.match(parts[0]):
+            self.send_error(404, "Not Found")
+            return
+        writer = self._writer()
+        if writer is None:
+            return
+        data = self._read_json_object()
+        if data is None:
+            return
+        try:
+            access = self.store.set_collaborators(parts[0], parse_collaborators(data), writer.user)
+        except CollaboratorError as exc:
+            self.send_error(400, str(exc))
+            return
+        except Forbidden as exc:
+            self.send_error(403, str(exc))
+            return
+        if access is None:
+            self.send_error(404, "Pergam not found")
+            return
+        self._send_json(access.to_json(parts[0]))
 
     def do_HEAD(self) -> None:
         """Same status and headers as GET; `_send` and `send_error` skip the body."""
@@ -323,6 +367,13 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "Pergam not found")
             return
         self._send(200, "application/json", json.dumps(meta.to_json(pergam_id)).encode("utf-8"))
+
+    def _render_collaborators(self, pergam_id: str) -> None:
+        access = self.store.access(pergam_id)
+        if access is None:
+            self.send_error(404, "Pergam not found")
+            return
+        self._send_json(access.to_json(pergam_id))
 
     def _render_export(self, pergam_id: str) -> None:
         versions = self.store.export(pergam_id)

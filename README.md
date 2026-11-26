@@ -46,6 +46,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 📡 **Atom feed** — `/feed.atom` follows new publications, filtered by tag or author.
 - 🚚 **Portable** — `/{id}/export` and `POST /import` move a pergam to another server with its id, versions, dates, tags and notes; the skill promotes one between named servers in one command.
 - 🧩 **JSON API** — `/api/pergams` lists, filters, pages and counts like the index; `/api/pergams/{id}` returns one pergam with its versions.
+- 🔐 **Owners behind your proxy** — with `TRUST_PROXY_USER=1` the author comes from an authenticating reverse proxy (`X-Forwarded-User`), and only a pergam's owner and the collaborators they list can add versions or edit it.
 - 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.
 - 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. A tiny edge worker for the hosted variant. No framework, no build step.
@@ -115,7 +116,7 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 ```
 
 - **One Python process**, no framework — just `http.server` + `psycopg`.
-- **Four Postgres tables**: immutable `pergams (id, version, …)` with a composite key, `pergam_meta (id, tags, archived, pinned, origin)` for what belongs to the id rather than to a version, `pergam_text` with each version's extracted text and full-text search document, and `pergam_note` with the optional note of each version. Latest version per `id` resolved on read through the `pergams_latest` view.
+- **Four Postgres tables**: immutable `pergams (id, version, …)` with a composite key, `pergam_meta (id, tags, archived, pinned, origin, collaborators)` for what belongs to the id rather than to a version, `pergam_text` with each version's extracted text and full-text search document, and `pergam_note` with the optional note of each version. Latest version per `id` resolved on read through the `pergams_latest` view.
 - **Framed documents**: the view page loads each version in an iframe from `/{id}/v{n}/content` and talks to it only through a `postMessage` bridge, so the frame can be sandboxed later without changing the page. It is not sandboxed yet; the hosted viewer is (sandboxed iframe, strict CSP, `frame-ancestors` allowlist).
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 
