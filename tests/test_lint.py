@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+from pathlib import Path
 
 import psycopg
 import pytest
 
-from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, _Linter, lint_html
+import pergam
+from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, MERMAID_DIAGRAMS, _Linter, lint_html
+from pergam.static_files import MERMAID_VERSION
 from support import Client
 
 TABLES = ("pergams", "pergam_meta", "pergam_text", "pergam_note")
@@ -95,8 +99,17 @@ def test_malformed_mermaid_blocks(block: str, rule: str) -> None:
         "%% a comment\nstateDiagram-v2\n  [*] --> A",
         "pie title Pets\n  \"Dogs\" : 3",
         "<div><span>graph</span> TD; A-->B</div>",
+        "flowchart-elk TD\n A-->B",
+        "requirementDiagram\n requirement r { id: 1 }",
+        "xychart-beta\n bar [1, 2]",
+        "architecture-beta\n service api(server)[API]",
+        "venn-beta\n set A",
+        "treeView-beta\n root",
+        "ishikawa-beta\n Problem",
+        "C4Context\n Person(a, \"A\")",
     ],
-    ids=["directive", "multiline-directive", "frontmatter", "comment", "pie", "nested-markup"],
+    ids=["directive", "multiline-directive", "frontmatter", "comment", "pie", "nested-markup", "elk", "requirement",
+         "xychart", "architecture", "venn", "tree-view", "ishikawa", "c4"],
 )
 def test_well_formed_mermaid_blocks(diagram: str) -> None:
     assert found(f'<div class="mermaid">{diagram}</div>') == []
@@ -206,3 +219,11 @@ def test_capped_findings_are_the_first_in_document_order_across_rules() -> None:
         ("missing-anchor", 1), ("external-resource", 2), ("missing-anchor", 3), ("external-resource", 4)
     ]
     assert result.findings[-1].line == MAX_FINDINGS
+
+
+def test_every_diagram_type_is_one_the_vendored_mermaid_detects() -> None:
+    source = (Path(pergam.__file__).parent / "static" / "mermaid" / MERMAID_VERSION / "mermaid.min.js").read_text()
+    detectors = re.findall(r"/\^\\s\*([^/]{1,120})/", source)
+    detected = {word for body in detectors for word in re.findall(r"[A-Za-z][A-Za-z0-9-]*", body)}
+
+    assert set(MERMAID_DIAGRAMS) <= detected

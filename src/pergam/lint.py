@@ -9,7 +9,9 @@ of the tag it is about:
   documents published before `/static/` served Mermaid, so those are warnings.
 - `missing-anchor`: a link to `#name` with no element whose `id` (or `<a name>`) is `name`.
 - `mermaid-empty`: a `class="mermaid"` block with no diagram text.
-- `mermaid-unknown-diagram`: one whose first statement is not a diagram type Mermaid knows.
+- `mermaid-unknown-diagram`: one whose first statement starts with no diagram type the
+  vendored Mermaid detects (`MERMAID_DIAGRAMS`, its detectors' prefixes, so `flowchart-elk`
+  and `stateDiagram-v2` count). Update the list with Mermaid.
 """
 
 from __future__ import annotations
@@ -26,14 +28,12 @@ from urllib.parse import unquote, urlparse
 MAX_FINDINGS = 500
 LINT_MAX_BODY_BYTES = 2 * 1024 * 1024
 ALLOWED_CDN_HOST = "cdn.jsdelivr.net"
-MERMAID_DIAGRAMS = frozenset(
-    {
-        "architecture", "architecture-beta", "block", "block-beta", "C4Component", "C4Container", "C4Context",
-        "C4Deployment", "C4Dynamic", "classDiagram", "classDiagram-v2", "erDiagram", "flowchart", "flowchart-elk",
-        "gantt", "gitGraph", "graph", "info", "journey", "kanban", "mindmap", "packet", "packet-beta", "pie",
-        "quadrantChart", "radar-beta", "requirementDiagram", "sankey", "sankey-beta", "sequenceDiagram",
-        "stateDiagram", "stateDiagram-v2", "timeline", "treemap", "treemap-beta", "xychart", "xychart-beta", "zenuml",
-    }
+MERMAID_DIAGRAMS = (
+    "C4Context", "C4Container", "C4Component", "C4Dynamic", "C4Deployment", "architecture", "block", "classDiagram",
+    "cynefin-beta", "erDiagram", "eventmodeling", "flowchart", "gantt", "gitGraph", "graph", "info", "ishikawa",
+    "journey", "kanban", "mindmap", "packet", "pie", "quadrantChart", "radar-beta", "railroad-abnf-beta",
+    "railroad-beta", "railroad-ebnf-beta", "railroad-peg-beta", "requirement", "sankey", "sequenceDiagram",
+    "stateDiagram", "swimlane-beta", "timeline", "treeView-beta", "treemap", "venn-beta", "wardley-beta", "xychart",
 )
 _RESOURCE_ATTRIBUTES = {
     "script": ("src",),
@@ -235,7 +235,7 @@ class _Linter(HTMLParser):
         statement = _first_statement("".join(block.parts))
         if statement is None:
             self.add("mermaid-empty", "error", "Mermaid block has no diagram", (block.line, block.offset))
-        elif statement.split()[0].rstrip(":;") not in MERMAID_DIAGRAMS:
+        elif not statement.startswith(MERMAID_DIAGRAMS):
             message = f"Mermaid block starts with {_shown(statement.split()[0])!r}, not a diagram type such as flowchart"
             self.add("mermaid-unknown-diagram", "error", message, (block.line, block.offset))
 

@@ -156,7 +156,7 @@ Findings come in document order, at most 500 (`truncated` says when there were m
 | `external-resource` | warning | A `<script>` or `<link>` from `cdn.jsdelivr.net`, which the sandbox allows for older pergams; prefer the server's [Mermaid](#mermaid). |
 | `missing-anchor` | error | `<a href="#name">` with no element whose `id` is `name` (or `<a name="name">`); `#` and `#top` are fine. |
 | `mermaid-empty` | error | A `class="mermaid"` element with no diagram text (comments, directives and front matter do not count). |
-| `mermaid-unknown-diagram` | error | Its first statement is not a diagram type Mermaid knows (`flowchart`, `graph`, `sequenceDiagram`, `stateDiagram-v2`, `erDiagram`, `gantt`, `pie`, …). |
+| `mermaid-unknown-diagram` | error | Its first statement does not start with a diagram type the server's Mermaid detects (`flowchart`, `graph`, `sequenceDiagram`, `stateDiagram-v2`, `erDiagram`, `gantt`, `pie`, `xychart-beta`, `architecture-beta`, … the same prefixes Mermaid's own detectors use). |
 
 ## Diff
 
