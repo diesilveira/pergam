@@ -11,7 +11,7 @@ import pytest
 from pergam.meta import Meta, Origin
 from pergam.transfer import FORMAT_VERSION, MAX_IMPORT_VERSIONS, TransferError, parse_import, parse_server_url
 from pergam.store import VersionInfo
-from pergam.view_page import render_view
+from pergam.view_page import BRIDGE_TAG, framed, render_view
 from support import TARGET_PUBLIC_URL, Client, patch_meta
 
 TYPES = ("plan", "otro")
@@ -436,3 +436,13 @@ def test_import_stores_the_title_as_given_unlike_publish(target: Client) -> None
 
     assert target.get("/abcd1234/versions").json()[0]["title"] == "  Spaced title "
     assert target.publish(title="  Spaced title ")["title"] == "Spaced title"
+
+
+def test_export_carries_the_html_as_posted_not_the_framed_content(client: Client) -> None:
+    pid = client.publish(html="<h1>as posted</h1>")["id"]
+
+    exported = export(client, pid)["versions"][0]["html"]
+
+    assert exported == client.get(f"/{pid}/v1/raw").text == "<h1>as posted</h1>"
+    assert BRIDGE_TAG not in exported
+    assert client.get(f"/{pid}/v1/content").text == framed(exported)

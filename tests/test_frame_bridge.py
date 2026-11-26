@@ -184,3 +184,25 @@ def test_document_sees_the_content_url_and_the_frame_as_its_viewport(view) -> No
 
     assert inside[:3] == [f"/{pid}/v1/content", f"/{pid}/v1/notes", True]
     assert 0 < inside[3] < page.evaluate("innerHeight")
+
+
+def test_imported_pergam_shows_its_origin_next_to_a_working_bridge(view, client: Client) -> None:
+    page, base, _ = view
+    version = {"version": 1, "title": "Moved", "html": DOCUMENT, "type": "otro", "author": "you@example.com"}
+    doc = {
+        "format_version": 1,
+        "id": "0123abcd",
+        "server": "https://pergam.example.com",
+        "versions": [{**version, "created_at": "2025-01-01T00:00:00+00:00"}],
+    }
+    assert client.post_json(doc, "/import").status == 201
+
+    frame = open_view(page, f"{base}/0123abcd/view")
+
+    origin = page.locator(".bar__origin a")
+    assert origin.is_visible()
+    assert origin.inner_text() == "pergam.example.com/0123abcd"
+    assert origin.get_attribute("href") == "https://pergam.example.com/0123abcd/view"
+    page.wait_for_function("document.title === 'Inner title · v1 · pergam'")
+    frame.click("#to-c")
+    page.wait_for_function("location.hash === '#sec-c'")

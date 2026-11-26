@@ -109,7 +109,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
 }
 ```
 
-- `versions` holds every version, oldest first, with the HTML exactly as posted (what `/{id}/v{n}/raw` returns). `server` is this server's `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`).
+- `versions` holds every version, oldest first, with the HTML exactly as posted (what `/{id}/v{n}/raw` returns, never `/content` with the frame bridge appended). `server` is this server's `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`).
 - `POST /import` takes that document, or the same document with only some of its versions, and writes, in one transaction:
   - every version this server does not have yet, with its version number, `created_at`, note and text (searchable at once);
   - nothing for a version it already has with the same `title`, `html`, `type`, `author` and `note` (`created_at` and `bytes` are not compared): it is listed as skipped. Importing the same document twice is a no-op;
