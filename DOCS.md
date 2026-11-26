@@ -59,7 +59,7 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 - **Filters** combine with AND: `type`, `author`, `tag` (normalised like stored tags, so `?tag=Q3` matches `q3`) and `q` (case-insensitive title substring). Clicking a type, author or tag pill sets that filter and keeps the others; clicking the active one clears it.
 - **Archived** pergams are left out unless `?archived=1`, which lists them alongside the rest, marked `archived`. They stay reachable by URL either way.
 - **Order**: pinned first, then by the latest version's `created_at` (newest first), then by id. The order is total, so paging is stable.
-- **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters, and every pergam that matches is visited exactly once. A malformed `cursor` is **400**.
+- **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters. While the data does not change, following the links visits every matching pergam exactly once. A pergam that gets a new version or is pinned, unpinned, archived or retagged mid-crawl changes its sort key or match, so it can move to a page already seen (skipped) or one still ahead (seen twice). A malformed `cursor` is **400**.
 - Pill counts (type, author, tag) and the count under the title cover every visible pergam, not only the current page: hidden archived pergams are left out of them and the title line says how many are hidden. The stats cards cover the whole instance, archived included. "clear all" drops every filter, `archived=1` included.
 
 ## Pergam types
