@@ -1,9 +1,10 @@
 """The page behind `/{id}/view` and `/{id}/v{n}/view`, from `templates/view.html` and `view.css`.
 
-The page is pergam's own: a slim bar with the version's title, type, tags,
-author, the server it was imported from (if any) and a version selector with
-each version's note, and the published document in a full-height iframe loaded
-from the version-pinned `/{id}/v{n}/content`. The document itself
+The page is pergam's own: a bar with a breadcrumb, the version's type and tags,
+a version selector and the actions (compare, text, print, a menu with raw, export
+and the document alone), a side panel with the history and details
+(`view_panel`), and the published document in an iframe loaded from the
+version-pinned `/{id}/v{n}/content`. The document itself
 is stored unchanged: `/raw` returns it byte for byte, and `/content` returns it
 followed by one `<script src>` tag, the frame bridge (`static/frame-bridge.js`).
 The bridge and this page talk through `postMessage` only, never through the
@@ -17,15 +18,18 @@ from __future__ import annotations
 import html as html_lib
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from string import Template
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
+from pergam.access import Access
 from pergam.layout import HEAD_ASSETS, top_bar
-from pergam.meta import Meta, Origin
-from pergam.static_files import BRIDGE_PATH, STORAGE_SHIM
+from pergam.meta import Meta
+from pergam.static_files import BRIDGE_PATH, PAGES_SCRIPT_PATH, STORAGE_SHIM, hashed_url
 from pergam.store import VersionInfo
 from pergam.taxonomy import type_rgb
+from pergam.view_panel import diff_path, published_at, render_panel
 
 _TEMPLATES = Path(__file__).resolve().parent / "templates"
 _PAGE = Template((_TEMPLATES / "view.html").read_text(encoding="utf-8").rstrip("\n"))
@@ -113,23 +117,13 @@ def content_path(pergam_id: str, version: int) -> str:
     return f"/{pergam_id}/v{version}/content"
 
 
-def diff_path(pergam_id: str, old: int, new: int) -> str:
-    return f"/{pergam_id}/diff/v{old}..v{new}"
-
-
-def _changes_link(pergam_id: str, version: int) -> str:
-    if version == 1:
-        return ""
-    return f'<a href="{diff_path(pergam_id, version - 1, version)}" title="diff with v{version - 1}">changes</a>'
-
-
 def _attributes(pairs: tuple[tuple[str, str], ...]) -> str:
     return " ".join(f'{name}="{esc(value)}"' for name, value in pairs)
 
 
 def _version_item(pergam_id: str, info: VersionInfo, current: int, latest: int) -> str:
     current_attr = ' aria-current="page"' if info.version == current else ""
-    badge = ' <span class="versions__latest">latest</span>' if info.version == latest else ""
+    badge = ' <span class="versions__latest">current</span>' if info.version == latest else ""
     note = f'<span class="versions__note">{esc(info.note)}</span>' if info.note else ""
     return (
         f'<li><a href="/{pergam_id}/v{info.version}/view"{current_attr}>'
@@ -144,64 +138,85 @@ def _tags(tags: list[str]) -> str:
     return f'<span class="bar__tags">{links}</span>' if links else ""
 
 
-def _origin(origin: Origin | None) -> str:
-    if origin is None:
-        return ""
-    shown = f"{urlparse(origin.url).netloc}/{origin.id}"
-    return (
-        f'<span class="bar__origin">imported from '
-        f'<a href="{esc(origin.view_url)}" rel="noreferrer" title="{esc(origin.view_url)}">{esc(shown)}</a></span>'
-    )
-
-
-def _outdated(pergam_id: str, current: int, latest: int) -> str:
-    if current == latest:
-        return ""
-    return (
-        f'<p class="outdated" role="status">You are viewing v{current}, an earlier version. '
-        f'<a href="/{pergam_id}/view">Go to the current version (v{latest})</a> · '
-        f'<a href="{diff_path(pergam_id, current, latest)}">what changed since</a></p>'
-    )
-
-
 def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[VersionInfo]) -> str:
     latest = versions[0].version
     items = "".join(_version_item(pergam_id, info, shown.version, latest) for info in versions)
     return (
-        f'<h1 class="bar__title">{esc(shown.title)}</h1>'
+        '<div class="crumbs"><nav aria-label="Breadcrumb"><a href="/">Index</a></nav>'
+        '<span class="crumbs__sep" aria-hidden="true">/</span>'
+        f'<h1 class="bar__title">{esc(shown.title)}</h1></div>'
         f'<span class="badge" style="--type-rgb:{",".join(map(str, type_rgb(shown.type)))}">{esc(shown.type)}</span>'
         f"{_tags(meta.tags)}"
-        f'<span class="bar__author">{esc(shown.author)}</span>'
-        f"{_origin(meta.origin)}"
-        f'<details class="versions"><summary class="ver">v{shown.version} of {len(versions)}</summary>'
-        f'<ol class="versions__list" reversed>{items}</ol></details>'
+        f'<details class="dropdown versions"><summary class="ver dropdown__toggle">v{shown.version} of {len(versions)}</summary>'
+        f'<ol class="dropdown__menu versions__list" reversed>{items}</ol></details>'
+    )
+
+
+def _compare_link(pergam_id: str, version: int) -> str:
+    if version == 1:
+        return ""
+    return (
+        f'<a class="btn" href="{diff_path(pergam_id, version - 1, version)}" '
+        f'title="What changed from v{version - 1} to v{version}">Compare</a>'
     )
 
 
 def _bar_actions(pergam_id: str, version: int) -> str:
+    more = (
+        '<details class="dropdown more"><summary class="icon-btn dropdown__toggle" aria-label="More actions" '
+        'title="Raw HTML, export, open document"><span aria-hidden="true">⋯</span></summary>'
+        '<ul class="dropdown__menu dropdown__menu--end">'
+        f'<li><a href="/{pergam_id}/v{version}/raw">Raw HTML</a></li>'
+        f'<li><a href="/{pergam_id}/export" download="pergam-{pergam_id}.json">Export (JSON)</a></li>'
+        f'<li><a href="{content_path(pergam_id, version)}">Open document</a></li></ul></details>'
+    )
     return (
         '<nav class="bar__links" aria-label="Pergam">'
-        '<a href="/">index</a>'
-        f'<a href="/{pergam_id}/v{version}/raw">raw</a>'
-        f'<a href="/{pergam_id}/v{version}/text">text</a>'
-        f"{_changes_link(pergam_id, version)}"
-        f'<a href="{content_path(pergam_id, version)}">open document</a>'
-        '<button type="button" class="btn bar__print" hidden>print</button></nav>'
+        f"{_compare_link(pergam_id, version)}"
+        f'<a class="btn" href="/{pergam_id}/v{version}/text">Text</a>'
+        '<button type="button" class="btn bar__print" hidden>Print</button>'
+        f"{more}</nav>"
+        '<button type="button" class="btn" data-panel-toggle aria-controls="panel" aria-expanded="true" hidden>'
+        "History</button>"
+    )
+
+
+def _outdated(pergam_id: str, shown: VersionInfo, latest: int, now: datetime) -> str:
+    if shown.version == latest:
+        return ""
+    return (
+        f'<p class="outdated" role="status"><span>You are viewing <strong>v{shown.version}</strong>, '
+        f"published {published_at(shown.created_at, now)}.</span> "
+        f'<a href="/{pergam_id}/view">Go to the current version (v{latest})</a> '
+        f'<a href="{diff_path(pergam_id, shown.version, latest)}">See what changed since</a></p>'
     )
 
 
 def render_view(
-    pergam_id: str, versions: list[VersionInfo], meta: Meta, version: int, policy: FramePolicy = FRAME_POLICY
+    pergam_id: str,
+    versions: list[VersionInfo],
+    meta: Meta,
+    version: int,
+    policy: FramePolicy = FRAME_POLICY,
+    *,
+    access: Access | None = None,
+    now: datetime | None = None,
 ) -> str:
     """`versions` newest first, as `PergamStore.versions` returns them; `version` must be one of them."""
+    now = now or datetime.now(timezone.utc)
     shown = next(info for info in versions if info.version == version)
     frame = (("class", "doc"), ("src", content_path(pergam_id, version)), ("title", shown.title))
     return _PAGE.substitute(
         head_assets=HEAD_ASSETS,
+        pages_script=hashed_url(PAGES_SCRIPT_PATH),
         css=_CSS,
         page_title=esc(f"{shown.title} · v{version} · pergam"),
         title_suffix=esc(f" · v{version} · pergam"),
-        top_bar=top_bar(middle=_bar_middle(pergam_id, shown, meta, versions), actions=_bar_actions(pergam_id, version)),
-        outdated=_outdated(pergam_id, version, versions[0].version),
+        top_bar=top_bar(
+            middle=_bar_middle(pergam_id, shown, meta, versions),
+            actions=_bar_actions(pergam_id, version),
+        ),
+        outdated=_outdated(pergam_id, shown, versions[0].version, now),
         frame_attributes=_attributes(frame + policy.iframe_attributes),
+        panel=render_panel(pergam_id, versions, version, meta.origin, access, now),
     )

@@ -13,14 +13,15 @@ Modules
   layout.py      head assets and the top bar shared by every page
   error_page.py  errors as a page for browsers (Accept: text/html), templates/error.html
   index_page.py  the HTML index, from templates/index.html + index.css
-  view_page.py   the view page: version bar and the document in a frame
+  view_page.py   the view page: bar and the document in a frame
+  view_panel.py  the view page's history and details panel
   diff.py        text diff of two versions, grouped by section
   diff_page.py   the diff page, from templates/diff.html + diff.css
   public_url.py  host and URL used in `view_url` and on the index
   limits.py      largest request body
   identity.py    the writer, from X-Forwarded-User when trusted
   access.py      owners, collaborators and who may change a pergam
-  static_files.py files served under /static/ (stylesheet, theme script, bridge, vendored Mermaid)
+  static_files.py files served under /static/ (stylesheet, page scripts, bridge, vendored Mermaid)
   lint.py        static checks of a document for POST /lint
   taxonomy.py    accepted types and type badge colours
   migrate.py     numbered migrations applied at startup

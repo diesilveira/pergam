@@ -3,12 +3,16 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${page_title}</title>
 ${head_assets}
+<script src="${pages_script}"></script>
 <style>
 ${css}</style></head><body data-title-suffix="${title_suffix}">
 
 ${top_bar}
 ${outdated}
+<div class="view">
 <iframe ${frame_attributes}></iframe>
+${panel}
+</div>
 
 <script>
   (() => {

@@ -148,9 +148,9 @@ def test_view_links_to_the_changes_and_to_what_changed_since(client: Client) -> 
 
     first, middle = client.get(f"/{pid}/v1/view").text, client.get(f"/{pid}/v2/view").text
 
-    assert ">changes</a>" not in first
-    assert f'<a href="/{pid}/diff/v1..v3">what changed since</a>' in first
-    assert f'<a href="/{pid}/diff/v1..v2" title="diff with v1">changes</a>' in middle
+    assert ">Compare</a>" not in first
+    assert f'<a href="/{pid}/diff/v1..v3">See what changed since</a>' in first
+    assert f'<a class="btn" href="/{pid}/diff/v1..v2" title="What changed from v1 to v2">Compare</a>' in middle
 
 
 DOUBLED = 4_000

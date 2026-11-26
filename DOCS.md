@@ -12,7 +12,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<search>` (title or text), `?archived=1`. See [Index](#index) and [Search](#search). |
 | `GET`    | `/api/pergams`        | JSON index: the same filters, order, pages and counts as `/`. See [JSON API](#json-api). |
 | `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags, `origin` and every version of one pergam. **404** for an unknown id. |
-| `GET`    | `/{id}/view`          | View page of the latest version: a bar with title, type, tags, author and versions, and the document in a frame. See [View](#view). |
+| `GET`    | `/{id}/view`          | View page of the latest version: a bar with title, type, tags, versions and actions, a history and details panel, and the document in a frame. See [View](#view). |
 | `GET`    | `/{id}/v{n}/view`     | View page of a specific version; tells when a newer one exists.      |
 | `GET`    | `/{id}/v{n}/content`  | The posted HTML with the frame bridge tag added (`text/html`, sandboxed by its CSP), what the view page frames. Version-pinned only. See [View](#view) and [Sandbox](#sandbox). |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
@@ -98,16 +98,19 @@ curl -sS -X PUT https://pergam.example.com/abc12345/collaborators \
 
 `/{id}/view` and `/{id}/v{n}/view` are pergam's own page around the document:
 
-- **A slim bar** with the version's title, type, the id's tags, the author, the server it was [imported](#export-and-import) from when it was, `v3 of 5`, a version selector (every version, newest first, with its date and [note](#version-notes)), links to the index, the version's `raw` HTML, its `text` and the document alone (`open document`), and a **print** button.
-- **A notice** on any version that is not the latest, linking to the current one (`/{id}/view`).
+- **A bar** with a breadcrumb (`Index / title`), the version's type, the id's tags and a version selector (`v3 of 5`: every version, newest first, with its date and [note](#version-notes)). On the right, buttons: **Compare** (what this version changed, `/{id}/diff/v{n-1}..v{n}`; absent on v1), **Text** (`/{id}/v{n}/text`), **Print**, a **⋯** menu with **Raw HTML** (`/raw`), **Export (JSON)** (`/{id}/export`, downloaded) and **Open document** (`/content` alone), and **History**, which shows or hides the side panel.
+- **A notice** on any version that is not the latest: when it was published, a link to the current one (`/{id}/view`) and one to what changed since (`/{id}/diff/v{n}..v{latest}`).
 - **The document** in a full-height, sandboxed iframe loaded from `/{id}/v{n}/content`, always version-pinned (see [Sandbox](#sandbox)).
+- **A side panel**: the history (every version with its note, author and how long ago it was published, the exact time on hover; the version shown is marked, and every earlier one offers **Compare with current**), then the details: author (the owner, the author of v1), [collaborators](#ownership), origin (the server it was [imported](#export-and-import) from, or "published here") and the id.
+
+The panel is part of the page, so it works without script. With script (`/static/pages.js`, loaded in `<head>` like `theme.js`) the **History** button collapses it and the document takes the full width. On a wide screen (over 860 px) the panel starts open and the reader's last choice is remembered in `localStorage` under `pergam-history-panel`, applied before first paint; on a narrow one it starts closed and opens over the document, with a close button and `Esc`. The version selector and the **⋯** menu are `<details>` dropdowns, so they open with the keyboard and without script; with script `Esc` or a click elsewhere closes them. Every control is reachable with `Tab`, has a visible focus ring and an accessible name.
 
 `/raw` returns the posted bytes untouched, as `text/plain`. `/content` returns them with two tags added right after a leading `<!doctype>` (or first when there is none, so a document that ends inside `<title>` or `<textarea>` cannot swallow them as text): a small inline script, the [storage stand-in](#sandbox), which runs before any script of the document, and `<script src="/static/frame-bridge.js" defer></script>`, the **frame bridge**, which talks to the view page with `postMessage` only, never reaching into the other side's DOM or location, so it works inside the sandbox. `/raw` and `/{id}/export` never carry it. Through it:
 
 - **Anchors**: in-document links (`#section`) scroll the document, and the view URL follows them (`/{id}/view#section`, replaced, not a new history entry). A fragment on the view URL, at load or changed later, scrolls the document without adding history.
 - **Links** that leave the document and have no `target` of their own (and no `<base target>`) open in the whole window, not inside the frame. Links with a `target`, downloads, and clicks with a modifier key keep their usual behaviour.
 - **Title**: the tab shows the document's `<title>`, then the version.
-- **Print**: the print button, or Ctrl/⌘+P anywhere on the page, prints the whole document rather than the visible part of the frame. The button appears only once the bridge has answered.
+- **Print**: the **Print** button, or Ctrl/⌘+P anywhere on the page, prints the whole document rather than the visible part of the frame. The button appears only once the bridge has answered.
 
 What changes for a document inside the frame, compared with opening `/content` on its own:
 
@@ -117,7 +120,7 @@ What changes for a document inside the frame, compared with opening `/content` o
 - The tab title comes from the document's `<title>`; without one it stays the pergam's title.
 - The bridge needs script to run: a document whose own CSP forbids `/static/frame-bridge.js` keeps its links inside the frame and shows no print button.
 
-The view page treats every message as untrusted data: it accepts only those from its own frame whose origin is its own or `null` (the sandbox's), only strings, at most 2,048 characters, and a fragment only when it starts with `#`; nothing is ever inserted as HTML. The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). Unknown ids or versions are **404**.
+The view page treats every message as untrusted data: it accepts only those from its own frame whose origin is its own or `null` (the sandbox's), only strings, at most 2,048 characters, and a fragment only when it starts with `#`; nothing is ever inserted as HTML. `pages.js` never listens to messages, so nothing the framed document sends reaches it. Unknown ids or versions are **404**.
 
 ### Sandbox
 
@@ -244,7 +247,7 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 
 ## Pages and theme
 
-The index, view and diff pages share one stylesheet, `/static/pergam.css`, and one script, `/static/theme.js`. Pages link them as `…?v=<content digest>` (`layout.HEAD_ASSETS`, `static_files.hashed_url`) and that exact URL is served `public, max-age=31536000, immutable`; pages themselves are never cached, so an upgrade changes the URLs and readers never pair new markup with an old stylesheet. The plain paths stay served, with `max-age=300`. They use system fonts only and load nothing from elsewhere. The colour tokens use `light-dark()` and `color-mix()`, so the floor is a browser from 2024: Chrome 123, Firefox 120, Safari 17.5; older ones show the pages without colours. The published document inside the view page keeps its own look.
+The index, view and diff pages share one stylesheet, `/static/pergam.css`, and one script, `/static/theme.js`; the view and diff pages add `/static/pages.js`, their progressive enhancements (the history panel, dropdowns). Pages link them as `…?v=<content digest>` (`layout.HEAD_ASSETS`, `static_files.hashed_url`) and that exact URL is served `public, max-age=31536000, immutable`; pages themselves are never cached, so an upgrade changes the URLs and readers never pair new markup with an old stylesheet. The plain paths stay served, with `max-age=300`. They use system fonts only and load nothing from elsewhere. The colour tokens use `light-dark()` and `color-mix()`, so the floor is a browser from 2024: Chrome 123, Firefox 120, Safari 17.5; older ones show the pages without colours. The published document inside the view page keeps its own look.
 
 **Themes.** Every colour is a token holding a `light-dark(light, dark)` pair, resolved by the element's colour scheme: the system's (`prefers-color-scheme`) unless the reader has chosen. The top bar's toggle cycles **system, light, dark** and back: system is no stored value and no `data-theme`; light and dark are stored in `localStorage` under `pergam-theme` and set `<html data-theme>`. `theme.js` runs synchronously in `<head>`, before the body is parsed, so a remembered choice is on `<html>` before first paint, and other open tabs follow a change. The toggle's glyph and `aria-label` name the current mode and the next. Without script the system scheme applies and the toggle stays hidden. Text tokens meet WCAG AA (4.5:1) on `--bg`, `--surface` and `--raised` in both themes, and on the diff and highlight backgrounds, which tests check.
 
@@ -267,6 +270,8 @@ The index, view and diff pages share one stylesheet, `/static/pergam.css`, and o
 | `.tag` | a tag pill, `<a>` or `<span>` |
 | `.avatar` | author initials on a hue: `style="--h:0-359"`, see `index_page.avatar` |
 | `.ver` | a version chip (`v3`), monospace accent |
+| `.crumbs`, `.crumbs__sep` | a breadcrumb: muted links separated by `/`, the current page last (a heading) |
+| `.dropdown`, `.dropdown__toggle`, `.dropdown__menu`, `.dropdown__menu--end` | a `<details>` dropdown: the `<summary>` is the toggle, the menu opens below it (right-aligned with `--end`, across the screen at phone width) |
 | `.input`, `.kbd`, `.card`, `.plus`, `.minus`, `.muted`, `.sr-only` | search field, key cap, bordered surface, diff counts, secondary text, text for screen readers only; `.plus` and `.minus` are the diff's added and removed counts and live in the shared sheet only so the diff colours stay in one place |
 
 **The top bar** is rendered in one place, `pergam.layout.top_bar(host=None, middle="", actions="")`: the logo linking to `/`, the optional server `host` (plain text, escaped there), then `middle` (grows with the bar), then `actions` and the theme toggle at the right edge. `middle` and `actions` are HTML the caller has escaped. A page puts `layout.HEAD_ASSETS` (colour-scheme meta, `theme.js`, the stylesheet link) in `<head>` and the bar first in `<body>`; its template fills `${head_assets}` and `${top_bar}`.
@@ -414,13 +419,14 @@ pergam/
 │   ├── layout.py            head assets and the top bar shared by every page
 │   ├── error_page.py        error responses as a page, for browsers only
 │   ├── index_page.py        HTML index renderer
-│   ├── view_page.py         view page: version bar around the framed document
+│   ├── view_page.py         view page: bar, frame policy and the framed document
+│   ├── view_panel.py        view page's side panel: history and details
 │   ├── diff.py              text diff of two versions, grouped by section
 │   ├── diff_page.py         diff page renderer
 │   ├── api.py               JSON bodies of /api/pergams
 │   ├── feed.py              Atom feed of recent publications
 │   ├── templates/           index, view, diff and error pages (HTML + layout CSS)
-│   ├── static/              pergam.css and theme.js (every page), frame-bridge.js (added to /content), vendored Mermaid
+│   ├── static/              pergam.css and theme.js (every page), pages.js (view and diff), frame-bridge.js (added to /content), vendored Mermaid
 │   ├── static_files.py      the files served under /static/
 │   ├── identity.py          the writer, from X-Forwarded-User when trusted
 │   ├── access.py            owners, collaborators and the 403 rules
@@ -485,7 +491,7 @@ make test
 
 That creates `.venv`, installs `requirements-dev.txt` and runs `pytest`. The suite boots the real server (`python3 src/pergam/server.py`) against a throwaway Postgres: by default it starts a `postgres:15-alpine` container named `pergam-test-*` on a random local port with no volume, and removes it at the end. Set `TEST_DATABASE_URL` to an admin connection string to use an existing server instead (CI does this with a `services: postgres` container). Either way every run works in its own `pergam_test_*` database, dropped afterwards; the bundled compose database is never touched.
 
-`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. `tests/test_ui_browser.py` does the same for the themes: both colour schemes, the toggle and its remembered choice (applied before first paint), keyboard use, phone width and the legibility of every type badge colour. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
+`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. `tests/test_view_browser.py` covers the view page's bar, menus and history panel (remembered state, full width when closed, phone width, keyboard, contrast in both themes). `tests/test_ui_browser.py` does the same for the themes: both colour schemes, the toggle and its remembered choice (applied before first paint), keyboard use, phone width and the legibility of every type badge colour. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
 
 ## Make targets
 

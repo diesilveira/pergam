@@ -416,7 +416,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if meta is None or all(info.version != shown for info in versions):
             self.send_error(404, "Pergam not found")
             return
-        page = render_view(pergam_id, versions, meta, shown, self.frame)
+        page = render_view(pergam_id, versions, meta, shown, self.frame, access=self.store.access(pergam_id))
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
 
     def _render_diff(self, pergam_id: str, version_range: str) -> None:

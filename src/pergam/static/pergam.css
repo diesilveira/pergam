@@ -146,3 +146,32 @@ a.tag:hover { color: var(--accent); border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ── breadcrumb and dropdown: view and diff bars ─────────────────────── */
+.crumbs { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--muted); }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--text); }
+.crumbs__sep { color: var(--muted); }
+/* A <details class="dropdown"> with a <summary class="dropdown__toggle"> and a .dropdown__menu. */
+.dropdown { position: relative; }
+.dropdown > summary { list-style: none; cursor: pointer; }
+.dropdown > summary::-webkit-details-marker { display: none; }
+.dropdown__toggle.ver {
+  display: inline-flex; align-items: center; gap: var(--space-1); padding: .18rem .5rem;
+  border: 1px solid var(--border-strong); border-radius: 7px; white-space: nowrap;
+}
+.dropdown__toggle.ver::after { content: "▾"; color: var(--muted); }
+.dropdown__toggle.ver:hover { background: var(--raised); }
+.dropdown__menu {
+  position: absolute; z-index: 40; top: calc(100% + .3rem); left: 0; margin: 0; padding: var(--space-1) 0;
+  list-style: none; min-width: 12rem; max-width: min(24rem, calc(100vw - 2rem)); max-height: 60vh; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow);
+}
+.dropdown__menu--end { left: auto; right: 0; }
+.dropdown__menu a { display: block; padding: .35rem .75rem; color: var(--text); }
+.dropdown__menu a:hover { background: var(--raised); }
+.dropdown__menu a[aria-current] { background: var(--accent-soft); }
+.dropdown__menu a:focus-visible { outline-offset: -2px; }
+@media (max-width: 700px) {
+  .dropdown__menu, .dropdown__menu--end { position: fixed; top: auto; left: var(--space-4); right: var(--space-4); max-width: none; }
+}
