@@ -458,4 +458,4 @@ make test      # run the test suite (see Testing)
 
 ## Privacy
 
-No telemetry. No external network calls. The server only reads/writes its own Postgres. A self-hosted pergam's CSP lets a document load only from the server itself and from jsDelivr (Mermaid in pergams published before the server served it), so nothing else leaves the reader's browser.
+No telemetry. No external network calls. The server only reads/writes its own Postgres. A self-hosted pergam's CSP lets a document load resources only from the server itself and from jsDelivr (Mermaid in pergams published before the server served it). That does not stop a document from sending the reader elsewhere: it can navigate its own frame to any URL, and its links go anywhere on a click or in a new tab, carrying whatever it puts in those URLs. What it can put there is only what it holds itself, since it cannot read the API or this server's cookies.
