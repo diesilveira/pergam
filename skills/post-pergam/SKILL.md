@@ -89,6 +89,7 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
        "type":   "plan",                # required
        "author": "you@example.com",     # required
        # "id":   "abc12345",            # OPTIONAL: present → new version of this id
+       # "tags": ["q3", "billing"],     # OPTIONAL: merged into the id's existing tags
    }))
    PY
    ```
@@ -101,7 +102,7 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
    ```
    Response: `{"id":"abc12345", "version": 2, "view_url":"http://localhost:1111/abc12345/view", "title":"...", "type":"...", "author":"..."}`
 
-7. **Report the `view_url` AND `version`** to the user. Mention "v{n}" if not v1.
+7. **Report the `view_url` AND `version`** to the user. Mention "v{n}" if not v1, and the `tags` if you sent any.
    The `view_url` is built by the server from its `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`); report it as returned instead of rebuilding it from `$PERGAM_URL`. It always shows the latest version; when the link must keep showing exactly this version, replace its trailing `/view` with `/v{n}/view` (served as immutable and cacheable).
 
 ### Versioning (Flow B)
@@ -133,11 +134,19 @@ Required in Flow B. Free-form `text` on the server, but stick to this taxonomy s
 
 When iterating (new version of an existing pergam), **keep the same type as the previous version** unless the content shifts categorically.
 
+### Tags (Flow B)
+
+Optional. Send `tags` when the user names topics, a project, a quarter or a team ("tag it billing", "para el release de marzo"), or when the content obviously belongs to one; otherwise omit them. Two or three short tags beat many.
+
+- The server normalises them (lowercase, hyphens, deduplicated, sorted) and returns the id's resulting `tags`.
+- On a new version, `tags` are **merged** with the ones the id already has; omitting `tags` leaves them untouched. You don't need to resend old tags.
+- Limits: 20 tags per id, 40 characters per tag.
+
 ### Flow B endpoints
 
 | Method | Path                  | Description                                                          |
 | ------ | --------------------- | -------------------------------------------------------------------- |
-| POST   | `/pergam`             | Body `{title, html, type, author, id?}`. Returns `{id, version, view_url, title, type, author}`. |
+| POST   | `/pergam`             | Body `{title, html, type, author, id?, tags?}`. Returns `{id, version, view_url, title, type, author}` (+ `tags` when sent). |
 | GET    | `/`                   | HTML index, latest version per id. Filters: `?type=plan&author=...&q=substr`. |
 | GET    | `/{id}/view`          | Render latest version.                                               |
 | GET    | `/{id}/v{n}/view`     | Render specific version.                                             |

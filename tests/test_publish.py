@@ -123,3 +123,53 @@ def test_post_to_other_path_is_not_found(client: Client) -> None:
 @pytest.mark.parametrize("path", ["/abcdef12", "/pergam", "/abcdef12/view"])
 def test_delete_is_not_allowed(client: Client, path: str) -> None:
     assert client.request("DELETE", path).status == 405
+
+
+def test_post_without_tags_writes_no_metadata(client: Client, db: psycopg.Connection) -> None:
+    body = client.publish()
+
+    assert "tags" not in body
+    assert db.execute("SELECT count(*) FROM pergam_meta").fetchone() == (0,)
+
+
+def test_post_with_tags_returns_them_normalised(client: Client, db: psycopg.Connection) -> None:
+    body = client.publish(tags=["Q3 Review", "ops", "OPS", " "])
+
+    assert body["tags"] == ["ops", "q3-review"]
+    assert db.execute("SELECT tags FROM pergam_meta WHERE id = %s", (body["id"],)).fetchone() == (["ops", "q3-review"],)
+
+
+def test_tags_from_two_versions_are_merged(client: Client) -> None:
+    first = client.publish(tags=["ops", "draft"])
+    second = client.publish(id=first["id"], tags=["release"])
+    third = client.publish(id=first["id"])
+
+    assert second["tags"] == ["draft", "ops", "release"]
+    assert "tags" not in third
+    assert client.publish(id=first["id"], tags=[])["tags"] == ["draft", "ops", "release"]
+
+
+def test_null_tags_are_ignored(client: Client, db: psycopg.Connection) -> None:
+    body = client.publish(tags=None)
+
+    assert "tags" not in body
+    assert db.execute("SELECT count(*) FROM pergam_meta").fetchone() == (0,)
+
+
+@pytest.mark.parametrize("tags", ["ops", [1, 2], {"ops": True}, ["x" * 41]], ids=["string", "numbers", "object", "too-long"])
+def test_invalid_tags_are_rejected(client: Client, db: psycopg.Connection, tags: object) -> None:
+    resp = client.post_json({"title": "x", "html": "<p>x</p>", "type": "plan", "author": "you@example.com", "tags": tags})
+
+    assert resp.status == 400
+    assert db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+
+
+def test_tag_limit_overflow_rolls_back_the_version(client: Client, db: psycopg.Connection) -> None:
+    first = client.publish(tags=[f"t{i:02d}" for i in range(20)])
+
+    resp = client.post_json(
+        {"id": first["id"], "title": "x", "html": "<p>x</p>", "type": "plan", "author": "you@example.com", "tags": ["extra"]}
+    )
+
+    assert resp.status == 400
+    assert db.execute("SELECT max(version) FROM pergams WHERE id = %s", (first["id"],)).fetchone() == (1,)

@@ -41,7 +41,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
 - 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
 - 🏷️ **Typed taxonomy** — `plan`, `investigacion`, `informe`, `reporte`, `otro`. Filter the index by type, author, or substring.
-- 🐳 **Self-hostable** — a few small Python modules, one Postgres table, one `docker compose up`.
+- 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.
 - 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. A tiny edge worker for the hosted variant. No framework, no build step.
 
@@ -110,7 +110,7 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 ```
 
 - **One Python process**, no framework — just `http.server` + `psycopg`.
-- **One Postgres table**: `pergams (id, version, …)` with a composite key. Latest version per `id` resolved on read through the `pergams_latest` view.
+- **Two Postgres tables**: immutable `pergams (id, version, …)` with a composite key, and `pergam_meta (id, tags, archived, pinned)` for what can change without a new version. Latest version per `id` resolved on read through the `pergams_latest` view.
 - **Strict CSP per response**: sandboxed iframe, `frame-ancestors` allowlist, no inline scripts on the viewer chrome.
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 

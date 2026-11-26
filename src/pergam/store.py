@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import psycopg
 from psycopg_pool import ConnectionPool
+
+from pergam.tags import merge_tags
 
 
 @dataclass(frozen=True)
@@ -16,6 +19,14 @@ class NewPergam:
     html: str
     type: str
     author: str
+    tags: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class Published:
+    id: str
+    version: int
+    tags: list[str] | None
 
 
 @dataclass(frozen=True)
@@ -76,37 +87,60 @@ def new_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
+def lock_id(conn: psycopg.Connection, pergam_id: str) -> None:
+    """Serialize writers of one id (new versions and metadata) until the transaction ends."""
+    conn.execute("SELECT pg_advisory_xact_lock(%s, hashtext(%s))", (VERSION_LOCK_NAMESPACE, pergam_id))
+
+
+def insert_with_new_id(conn: psycopg.Connection, values: tuple[Any, ...]) -> str:
+    while True:
+        pergam_id = new_id()
+        inserted = conn.execute(
+            "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
+            " VALUES (%s, 1, %s, %s, %s, %s, %s) ON CONFLICT (id, version) DO NOTHING RETURNING id",
+            (pergam_id, *values),
+        ).fetchone()
+        if inserted:
+            return pergam_id
+
+
+def add_tags(conn: psycopg.Connection, pergam_id: str, tags: list[str]) -> list[str]:
+    row = conn.execute("SELECT tags FROM pergam_meta WHERE id = %s", (pergam_id,)).fetchone()
+    merged = merge_tags(row[0] if row else [], tags)
+    conn.execute(
+        "INSERT INTO pergam_meta (id, tags) VALUES (%s, %s) ON CONFLICT (id) DO UPDATE SET tags = EXCLUDED.tags",
+        (pergam_id, merged),
+    )
+    return merged
+
+
 class PergamStore:
     def __init__(self, pool: ConnectionPool) -> None:
         self.pool = pool
 
-    def publish(self, pergam: NewPergam, existing_id: str | None) -> tuple[str, int]:
-        """Insert a new version and return `(id, version)`.
+    def publish(self, pergam: NewPergam, existing_id: str | None) -> Published:
+        """Insert a new version and, when `pergam.tags` is given, merge them into the id's tags.
 
         Posts to an explicit id take a transaction-scoped advisory lock on that id
         before reading `MAX(version)`, so concurrent posts get consecutive versions
         instead of colliding on the primary key. New random ids retry on collision.
+        A tag merge that fails (`TagError`) rolls the version back with it.
         """
         values = (pergam.title, pergam.html, pergam.type, pergam.author, len(pergam.html.encode("utf-8")))
         with self.pool.connection() as conn, conn.transaction():
             if existing_id:
-                conn.execute("SELECT pg_advisory_xact_lock(%s, hashtext(%s))", (VERSION_LOCK_NAMESPACE, existing_id))
+                lock_id(conn, existing_id)
                 row = conn.execute(
                     "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
                     " SELECT %s, COALESCE(MAX(version), 0) + 1, %s, %s, %s, %s, %s FROM pergams WHERE id = %s"
                     " RETURNING version",
                     (existing_id, *values, existing_id),
                 ).fetchone()
-                return existing_id, row[0]
-            while True:
-                pergam_id = new_id()
-                inserted = conn.execute(
-                    "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
-                    " VALUES (%s, 1, %s, %s, %s, %s, %s) ON CONFLICT (id, version) DO NOTHING RETURNING id",
-                    (pergam_id, *values),
-                ).fetchone()
-                if inserted:
-                    return pergam_id, 1
+                pergam_id, version = existing_id, row[0]
+            else:
+                pergam_id, version = insert_with_new_id(conn, values), 1
+            tags = None if pergam.tags is None else add_tags(conn, pergam_id, pergam.tags)
+        return Published(pergam_id, version, tags)
 
     def html(self, pergam_id: str, version: int | None) -> str | None:
         """HTML of one version, or of the latest one when `version` is None."""

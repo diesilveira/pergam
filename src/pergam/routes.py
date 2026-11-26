@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from pergam.index_page import render_index
 from pergam.public_url import PublicAddress
 from pergam.store import IndexFilters, NewPergam, PergamStore
+from pergam.tags import TagError, parse_tags
 
 VALID_TYPES = {"plan", "investigacion", "informe", "reporte", "otro"}
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
@@ -76,18 +77,25 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(400, "Invalid id format")
             return
 
-        pergam_id, version = self.store.publish(
-            NewPergam(title=title, html=html, type=pergam_type, author=author), existing_id or None
-        )
-        response = json.dumps({
-            "id": pergam_id,
-            "version": version,
-            "view_url": self.public.view_url(pergam_id),
+        try:
+            tags = None if data.get("tags") is None else parse_tags(data["tags"])
+            published = self.store.publish(
+                NewPergam(title=title, html=html, type=pergam_type, author=author, tags=tags), existing_id or None
+            )
+        except TagError as exc:
+            self.send_error(400, str(exc))
+            return
+        response: dict[str, object] = {
+            "id": published.id,
+            "version": published.version,
+            "view_url": self.public.view_url(published.id),
             "title": title,
             "type": pergam_type,
             "author": author,
-        })
-        self._send(201, "application/json", response.encode("utf-8"))
+        }
+        if published.tags is not None:
+            response["tags"] = published.tags
+        self._send(201, "application/json", json.dumps(response).encode("utf-8"))
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)

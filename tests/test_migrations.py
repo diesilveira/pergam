@@ -105,7 +105,22 @@ def test_legacy_database_keeps_every_row_and_object(databases: DatabaseFactory) 
         assert fingerprint[0] == len(LEGACY_ROWS)
         assert schema_of(conn) == schema
         assert conn.execute(OIDS).fetchall() == oids
-        assert conn.execute("SELECT version FROM schema_migrations").fetchall() == [(1,)]
+        assert conn.execute("SELECT version FROM schema_migrations ORDER BY 1").fetchall() == [
+            (m.version,) for m in discover(MIGRATIONS_DIR)
+        ]
+
+
+def test_metadata_migration_adds_no_rows_and_legacy_ids_read_as_untagged(databases: DatabaseFactory, start_server) -> None:
+    url = databases.create()
+    apply_legacy_schema(url)
+    with connect(url) as conn:
+        seed_legacy_rows(conn)
+
+    client = start_server(url)
+
+    with connect(url) as conn:
+        assert conn.execute("SELECT count(*) FROM pergam_meta").fetchone() == (0,)
+    assert client.publish(id="bbbb0002", tags=["Legacy"])["tags"] == ["legacy"]
 
 
 def test_legacy_and_fresh_databases_converge(databases: DatabaseFactory) -> None:
@@ -227,35 +242,45 @@ APP_GRANTS = [
 ]
 
 
+META_MIGRATION = MIGRATIONS_DIR / "002_pergam_meta.sql"
+
+
 @pytest.mark.parametrize(
-    "ledger_grants",
+    ("ledger_grants", "owner_creates_meta"),
     [
-        ["GRANT CREATE ON SCHEMA public TO {role}"],
-        [
-            "CREATE TABLE schema_migrations (version int PRIMARY KEY, name text NOT NULL,"
-            " applied_at timestamptz NOT NULL DEFAULT now())",
-            "GRANT SELECT, INSERT ON schema_migrations TO {role}",
-        ],
+        (["GRANT CREATE ON SCHEMA public TO {role}"], False),
+        (
+            [
+                "CREATE TABLE schema_migrations (version int PRIMARY KEY, name text NOT NULL,"
+                " applied_at timestamptz NOT NULL DEFAULT now())",
+                "GRANT SELECT, INSERT ON schema_migrations TO {role}",
+                "GRANT SELECT, INSERT, UPDATE ON pergam_meta TO {role}",
+            ],
+            True,
+        ),
     ],
-    ids=["role-creates-ledger", "ledger-precreated"],
+    ids=["role-creates-ledger", "owner-precreates-tables"],
 )
 def test_legacy_database_upgrades_with_a_non_owner_role(
-    admin_url: str, databases: DatabaseFactory, start_server, ledger_grants: list[str]
+    admin_url: str, databases: DatabaseFactory, start_server, ledger_grants: list[str], owner_creates_meta: bool
 ) -> None:
     url = databases.create()
     apply_legacy_schema(url)
     with connect(url) as owner:
         seed_legacy_rows(owner)
         fingerprint, schema = owner.execute(FINGERPRINT).fetchone(), schema_of(owner)
+        if owner_creates_meta:
+            owner.execute(META_MIGRATION.read_text())
 
     with app_role(admin_url, url, APP_GRANTS + ledger_grants) as role_url:
         with connect(role_url) as conn:
-            assert [m.version for m in apply_migrations(conn, MIGRATIONS_DIR)] == [1]
+            assert apply_migrations(conn, MIGRATIONS_DIR) == discover(MIGRATIONS_DIR)
         client = start_server(role_url)
 
         assert client.get("/aaaa0001/view").text == "<h1>plan v2</h1>"
         assert client.get("/").status == 200
-        assert client.publish(id="aaaa0001")["version"] == 3
+        assert client.publish(id="aaaa0001", tags=["legacy"])["version"] == 3
+        assert client.get("/aaaa0001/meta").json()["tags"] == ["legacy"]
 
     with connect(url) as owner:
         assert owner.execute("SELECT count(*) FROM pergams").fetchone() == (len(LEGACY_ROWS) + 1,)

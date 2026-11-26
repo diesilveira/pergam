@@ -8,7 +8,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 
 | Method   | Path                  | Description                                                          |
 | -------- | --------------------- | -------------------------------------------------------------------- |
-| `POST`   | `/pergam`             | Body `{title, html, type, author, id?}`. Returns `{id, version, view_url, title, type, author}`. Omit `id` for a new pergam; include it to bump the version of an existing one. |
+| `POST`   | `/pergam`             | Body `{title, html, type, author, id?, tags?}`. Returns `{id, version, view_url, title, type, author}`, plus `tags` when the request sent them. Omit `id` for a new pergam; include it to bump the version of an existing one. `tags` are merged into the id's tags (see [Tags and metadata](#tags-and-metadata)). |
 | `GET`    | `/`                   | HTML index. Filters: `?type=<type>`, `?author=<email>`, `?q=<title-substring>`. |
 | `GET`    | `/{id}/view`          | Render the latest version.                                           |
 | `GET`    | `/{id}/v{n}/view`     | Render a specific version.                                           |
@@ -33,6 +33,14 @@ Version numbers are assigned atomically: concurrent posts to the same `id` are s
 Caching: a version-pinned route (`/{id}/v{n}/view`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. Everything else (latest `/{id}/view` and `/{id}/raw`, the index, JSON routes) is `no-store`.
 
 Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id.
+
+## Tags and metadata
+
+Tags, `archived` and `pinned` belong to the logical `id`, not to a version, and live in `pergam_meta`. Changing them never creates a version. An id without a metadata row reads as no tags, not archived, not pinned.
+
+- Tags are free-form and normalised: trimmed, lowercased, runs of whitespace, `_` and `-` collapsed to one `-`, empties dropped, duplicates removed, stored sorted. `" Q3  Review_notes "` → `q3-review-notes`.
+- At most 20 tags per id, each at most 40 characters after normalisation; beyond that the request gets **400** and nothing is written.
+- `POST /pergam` with `tags` **merges** them into the id's existing tags; posting without `tags` (or `"tags": null`) leaves them as they are.
 
 ## Pergam types
 
@@ -72,7 +80,7 @@ The schema lives in numbered files, `db/migrations/NNN_description.sql`, shipped
 - Each migration runs in its own transaction: a failure rolls it back completely, the server logs `migrations failed` and exits non-zero.
 - A Postgres advisory lock serializes servers that start at the same time against one database.
 
-Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. To add a change, create the next number and restart the server.
+Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. To add a change, create the next number and restart the server.
 
 ### Database privileges
 
@@ -83,7 +91,7 @@ The `DATABASE_URL` role needs:
 | Fresh (no `pergams` yet) | `CREATE` on the schema: the role creates and owns the tables. The bundled compose user owns its database, so nothing to do there. |
 | Initialised by the old `schema.sql`, role not the owner | `SELECT, INSERT` on `pergams`, `SELECT` on `pergams_latest`, plus either `CREATE` on the schema (to create `schema_migrations` once) or a `schema_migrations` table created by the owner with `SELECT, INSERT` granted to the role. |
 
-A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file.
+A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL.
 
 ## Project layout
 
@@ -96,6 +104,7 @@ pergam/
 │   ├── index_page.py        HTML index renderer
 │   ├── templates/           index.html + index.css
 │   ├── public_url.py        host/URL used in view_url and on the index
+│   ├── tags.py              tag normalisation and limits
 │   └── migrate.py           numbered migrations runner
 ├── db/
 │   └── migrations/          NNN_*.sql, applied at server startup
