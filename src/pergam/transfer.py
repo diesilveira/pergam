@@ -75,6 +75,7 @@ class ImportDocument:
     archived: bool
     pinned: bool
     versions: list[ExportedVersion]
+    pinned_at: datetime | None = None
 
 
 def export_json(pergam_id: str, versions: list[ExportedVersion], meta: Meta, public: PublicAddress) -> dict[str, Any]:
@@ -82,7 +83,12 @@ def export_json(pergam_id: str, versions: list[ExportedVersion], meta: Meta, pub
         "format_version": FORMAT_VERSION,
         "id": pergam_id,
         "server": public.base_url,
-        "meta": {"tags": meta.tags, "archived": meta.archived, "pinned": meta.pinned},
+        "meta": {
+            "tags": meta.tags,
+            "archived": meta.archived,
+            "pinned": meta.pinned,
+            "pinned_at": meta.pinned_at.isoformat() if meta.pinned_at else None,
+        },
         "versions": [version.to_json() for version in versions],
     }
 
@@ -131,29 +137,32 @@ def check_written_authors(versions: list[ExportedVersion]) -> None:
 
 
 def _created_at(entry: dict[str, Any], label: str, now: datetime) -> datetime:
+    return _moment(entry.get("created_at"), f"{label}: created_at", now)
+
+
+def _moment(value: object, label: str, now: datetime) -> datetime:
     """The timestamp in UTC, between 1970 and `now` plus `CLOCK_SKEW`.
 
     Dates outside that window cannot come from a real publish: a far future one
     would sit on top of the index and feed for good, and one past year 9999 in
     UTC is stored but cannot be read back by the driver.
     """
-    value = entry.get("created_at")
     try:
         created_at = datetime.fromisoformat(value) if isinstance(value, str) else None
     except ValueError:
         created_at = None
     if created_at is None or created_at.tzinfo is None:
-        raise TransferError(f"{label}: created_at must be an ISO 8601 timestamp with a UTC offset")
+        raise TransferError(f"{label} must be an ISO 8601 timestamp with a UTC offset")
     try:
         created_at = created_at.astimezone(timezone.utc)
     except OverflowError:
         created_at = None
     if created_at is None or created_at < EARLIEST_CREATED_AT:
-        raise TransferError(f"{label}: created_at must be between 1970-01-01 and now (UTC)")
+        raise TransferError(f"{label} must be between 1970-01-01 and now (UTC)")
     if created_at > now + CLOCK_SKEW:
         minutes = int(CLOCK_SKEW.total_seconds() // 60)
         raise TransferError(
-            f"{label}: created_at {created_at.isoformat()} is more than {minutes} minutes ahead of this server's clock"
+            f"{label} {created_at.isoformat()} is more than {minutes} minutes ahead of this server's clock"
             f" ({now.isoformat(timespec='seconds')}); check for clock skew between the two servers"
         )
     return created_at
@@ -186,9 +195,10 @@ def _version(entry: object, index: int, types: tuple[str, ...], now: datetime) -
     )
 
 
-def _meta(value: object) -> tuple[list[str], bool, bool]:
+def _meta(value: object, now: datetime) -> tuple[list[str], bool, bool, datetime | None]:
+    """Tags, archived, pinned and the optional `pinned_at` (absent or null in exports from older servers)."""
     if value is None:
-        return [], False, False
+        return [], False, False, None
     if not isinstance(value, dict):
         raise TransferError("meta must be an object")
     for flag in ("archived", "pinned"):
@@ -198,7 +208,9 @@ def _meta(value: object) -> tuple[list[str], bool, bool]:
         tags = parse_tags(value.get("tags", []))
     except TagError as exc:
         raise TransferError(f"meta: {exc}") from None
-    return tags, value.get("archived", False), value.get("pinned", False)
+    raw_pinned_at = value.get("pinned_at")
+    pinned_at = None if raw_pinned_at is None else _moment(raw_pinned_at, "meta.pinned_at", now)
+    return tags, value.get("archived", False), value.get("pinned", False), pinned_at
 
 
 def parse_import(data: dict[str, Any], types: tuple[str, ...], now: datetime | None = None) -> ImportDocument:
@@ -226,5 +238,5 @@ def parse_import(data: dict[str, Any], types: tuple[str, ...], now: datetime | N
         raise TransferError(f"v{repeated.version} appears more than once")
     server = data.get("server")
     origin = None if server is None else Origin(parse_server_url(server), pergam_id)
-    tags, archived, pinned = _meta(data.get("meta"))
-    return ImportDocument(pergam_id, origin, tags, archived, pinned, versions)
+    tags, archived, pinned, pinned_at = _meta(data.get("meta"), now)
+    return ImportDocument(pergam_id, origin, tags, archived, pinned, versions, pinned_at)

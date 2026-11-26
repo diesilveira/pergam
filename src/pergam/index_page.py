@@ -284,12 +284,26 @@ def render_card(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
 
 
 def pinned_cards(data: IndexData, filters: IndexFilters, now: datetime) -> str:
+    """One row of cards, most recently pinned first, that scrolls sideways.
+
+    It is a plain labelled list: native scrolling with snap points works by touch,
+    trackpad and Tab; index.js adds previous/next buttons (hidden until then).
+    """
     if filters.cursor or not data.pinned:
         return ""
     cards = "".join(render_card(row, filters, now) for row in data.pinned)
+    stats = data.stats
     return (
-        '<section class="pins" aria-labelledby="pins-title">'
-        f'<h2 class="group__title" id="pins-title">Pinned</h2><ul class="pins__grid">{cards}</ul></section>'
+        '<section class="pins">'
+        '<div class="pins__head">'
+        f'<h2 class="group__title" id="pins-title">Pinned</h2>'
+        f'<span class="pins__count">{stats.total_pinned} of {stats.max_pinned} pinned</span>'
+        '<button type="button" class="icon-btn pins__nav" data-pins-prev aria-label="Previous pinned pergams" hidden>'
+        '<span aria-hidden="true">‹</span></button>'
+        '<button type="button" class="icon-btn pins__nav" data-pins-next aria-label="Next pinned pergams" hidden>'
+        '<span aria-hidden="true">›</span></button>'
+        "</div>"
+        f'<ul class="pins__row" aria-labelledby="pins-title" data-pins>{cards}</ul></section>'
     )
 
 

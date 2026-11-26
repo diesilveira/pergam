@@ -134,6 +134,17 @@ def seed(db: psycopg.Connection) -> dict[str, tuple[bool, bool, bool]]:
     return flags
 
 
+def as_listed(expected: list[str], flags: dict[str, tuple[bool, bool, bool]], by_date: list[str] | None = None) -> list[str]:
+    """The HTML index's order for `expected`: pinned pergams that are not archived as cards first, the rest after.
+
+    Cards follow pin time, newest first; seeded pins have none, so they follow `by_date`
+    (newest first, `expected` itself when it is in the recent order).
+    """
+    wanted = set(expected)
+    cards = [pid for pid in (by_date or expected) if pid in wanted and flags[pid][0] and not flags[pid][1]]
+    return cards + [pid for pid in expected if pid not in cards]
+
+
 def crawl(client: Client, path: str) -> list[str]:
     visited: list[str] = []
     pages = 0

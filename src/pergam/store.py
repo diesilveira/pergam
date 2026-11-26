@@ -14,6 +14,7 @@ from psycopg_pool import ConnectionPool
 from pergam.access import Access, require_editor, require_import_authors, require_owner
 from pergam.cursor import DEFAULT_SORT, Cursor, IndexCursor, TitleCursor
 from pergam.meta import Meta, MetaChange, Origin
+from pergam.pins import ARCHIVED_REASON, DEFAULT_MAX_PINNED, PinRefused, over_cap_reason
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
 from pergam.summary import SOURCE_CHARS, summarise
 from pergam.tags import merge_tags
@@ -91,6 +92,7 @@ class IndexRow:
     snippet: Snippet | None = None
     summary: str | None = None
     title_key: str = ""
+    pinned_at: datetime | None = None
 
     def cursor(self, sort: str) -> Cursor:
         if sort == "title":
@@ -107,6 +109,8 @@ class IndexStats:
     new_pergams_7d: int
     new_versions_7d: int
     total_archived: int = 0
+    total_pinned: int = 0
+    max_pinned: int = DEFAULT_MAX_PINNED
 
 
 @dataclass(frozen=True)
@@ -144,11 +148,16 @@ ORDERS = {
         "p.pinned DESC, p.created_at DESC, p.id DESC",
     ),
     "title": ("lower(l.title), l.id", "p.title_key, p.id"),
+    "pinned": (
+        "m.pinned_at DESC NULLS LAST, l.created_at DESC, l.id DESC",
+        "p.pinned_at DESC NULLS LAST, p.created_at DESC, p.id DESC",
+    ),
 }
 FEED_SIZE = 50
 SUMMARY_CHARS = 280
 
 VERSION_LOCK_NAMESPACE = 0x7067
+PIN_LOCK_NAMESPACE = 0x7070
 
 
 def new_id() -> str:
@@ -180,6 +189,21 @@ def add_tags(conn: psycopg.Connection, pergam_id: str, tags: list[str]) -> list[
         (pergam_id, merged),
     )
     return merged
+
+
+def claim_pin(conn: psycopg.Connection, pergam_id: str, limit: int) -> None:
+    """Raise `PinRefused` unless one more pergam may be pinned; call before writing the pin.
+
+    Every new pin takes one instance-wide lock until its transaction ends, so
+    concurrent pins are counted one after another and never pass `limit`. Only
+    pins of pergams that are not archived count.
+    """
+    conn.execute("SELECT pg_advisory_xact_lock(%s, 0)", (PIN_LOCK_NAMESPACE,))
+    pinned = conn.execute(
+        "SELECT count(*) FROM pergam_meta WHERE pinned AND NOT archived AND id <> %s", (pergam_id,)
+    ).fetchone()[0]
+    if pinned >= limit:
+        raise PinRefused(over_cap_reason(pinned, limit))
 
 
 def read_access(conn: psycopg.Connection, pergam_id: str) -> Access | None:
@@ -272,11 +296,11 @@ def page_query(source: str, condition: str, sort: str, headline: str, limit: str
     return f"""
         SELECT p.id, p.version, p.title, p.type, p.author, p.created_at, p.bytes,
                (SELECT count(*) FROM pergams v WHERE v.id = p.id),
-               p.tags, p.archived, p.pinned, {headline}, left(t.body, %(source_chars)s), p.title_key
+               p.tags, p.archived, p.pinned, {headline}, left(t.body, %(source_chars)s), p.title_key, p.pinned_at
         FROM (
             SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
                    COALESCE(m.tags, '{{}}') AS tags, COALESCE(m.archived, false) AS archived,
-                   COALESCE(m.pinned, false) AS pinned, lower(l.title) AS title_key
+                   COALESCE(m.pinned, false) AS pinned, lower(l.title) AS title_key, m.pinned_at
             {source} {condition} ORDER BY {order} LIMIT {limit}
         ) p
         LEFT JOIN pergam_text t ON t.id = p.id AND t.version = p.version
@@ -286,13 +310,16 @@ def page_query(source: str, condition: str, sort: str, headline: str, limit: str
 
 def index_row(row: tuple[Any, ...]) -> IndexRow:
     """An `IndexRow` from the index query's columns: the row, its headline, text prefix and title key."""
-    *fields, headline, body, title_key = row
-    return IndexRow(*fields, snippet=Snippet.of(headline), summary=summarise(body, fields[2]), title_key=title_key)
+    *fields, headline, body, title_key, pinned_at = row
+    return IndexRow(
+        *fields, snippet=Snippet.of(headline), summary=summarise(body, fields[2]), title_key=title_key, pinned_at=pinned_at
+    )
 
 
 class PergamStore:
-    def __init__(self, pool: ConnectionPool) -> None:
+    def __init__(self, pool: ConnectionPool, max_pinned: int = DEFAULT_MAX_PINNED) -> None:
         self.pool = pool
+        self.max_pinned = max_pinned
 
     def publish(self, pergam: NewPergam, existing_id: str | None, editor: str | None = None) -> Published:
         """Insert a new version and, when `pergam.tags` is given, merge them into the id's tags.
@@ -336,7 +363,7 @@ class PergamStore:
             row = conn.execute(
                 """
                 SELECT COALESCE(m.tags, '{}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
-                       m.origin_url, m.origin_id
+                       m.origin_url, m.origin_id, m.pinned_at
                 FROM (SELECT DISTINCT id FROM pergams WHERE id = %(id)s) p
                 LEFT JOIN pergam_meta m ON m.id = p.id
                 """,
@@ -344,35 +371,55 @@ class PergamStore:
             ).fetchone()
         if row is None:
             return None
-        tags, archived, pinned, origin_url, origin_id = row
+        tags, archived, pinned, origin_url, origin_id, pinned_at = row
         origin = Origin(origin_url, origin_id) if origin_url and origin_id else None
-        return Meta(tags, archived, pinned, origin)
+        return Meta(tags, archived, pinned, origin, pinned_at)
 
     def update_meta(self, pergam_id: str, change: MetaChange, editor: str | None = None) -> Meta | None:
         """Apply `change` without touching any version; None when the id has no versions.
 
+        Pinning a pergam that is not pinned yet stamps `pinned_at` and must fit under
+        the instance's cap (`PinRefused` otherwise); pinning an archived one is
+        refused too. Archiving unpins, unpinning clears `pinned_at`, and patching a
+        pinned pergam again leaves its `pinned_at` alone. A row left both archived
+        and pinned by an older build reads as not pinned and is normalised here.
         A trusted `editor` must be the owner or a collaborator (`Forbidden` otherwise).
+        Nothing is written when anything is refused.
         """
-        params = {"id": pergam_id, "tags": change.tags, "archived": change.archived, "pinned": change.pinned}
         with self.pool.connection() as conn, conn.transaction():
             lock_id(conn, pergam_id)
-            if conn.execute("SELECT 1 FROM pergams WHERE id = %(id)s LIMIT 1", params).fetchone() is None:
+            if conn.execute("SELECT 1 FROM pergams WHERE id = %s LIMIT 1", (pergam_id,)).fetchone() is None:
                 return None
             check_editor(conn, pergam_id, editor)
+            current = conn.execute(
+                "SELECT tags, archived, pinned, pinned_at FROM pergam_meta WHERE id = %s", (pergam_id,)
+            ).fetchone()
+            tags, archived, pinned, pinned_at = current or ([], False, False, None)
+            pinned = pinned and not archived
+            tags = tags if change.tags is None else change.tags
+            archived = archived if change.archived is None else change.archived
+            stamp = False
+            if change.pinned and not pinned:
+                if archived:
+                    raise PinRefused(ARCHIVED_REASON)
+                claim_pin(conn, pergam_id, self.max_pinned)
+                pinned, stamp = True, True
+            elif change.pinned is False or archived:
+                pinned = False
             row = conn.execute(
                 """
-                INSERT INTO pergam_meta (id, tags, archived, pinned)
-                VALUES (%(id)s, COALESCE(%(tags)s::text[], '{}'),
-                        COALESCE(%(archived)s::boolean, false), COALESCE(%(pinned)s::boolean, false))
+                INSERT INTO pergam_meta (id, tags, archived, pinned, pinned_at)
+                VALUES (%(id)s, %(tags)s, %(archived)s, %(pinned)s,
+                        CASE WHEN %(stamp)s THEN clock_timestamp() WHEN %(pinned)s THEN %(pinned_at)s::timestamptz END)
                 ON CONFLICT (id) DO UPDATE SET
-                    tags     = COALESCE(%(tags)s::text[], pergam_meta.tags),
-                    archived = COALESCE(%(archived)s::boolean, pergam_meta.archived),
-                    pinned   = COALESCE(%(pinned)s::boolean, pergam_meta.pinned)
-                RETURNING tags, archived, pinned
+                    tags = EXCLUDED.tags, archived = EXCLUDED.archived,
+                    pinned = EXCLUDED.pinned, pinned_at = EXCLUDED.pinned_at
+                RETURNING tags, archived, pinned, pinned_at
                 """,
-                params,
+                {"id": pergam_id, "tags": tags, "archived": archived, "pinned": pinned, "stamp": stamp, "pinned_at": pinned_at},
             ).fetchone()
-        return Meta(*row)
+        tags, archived, pinned, pinned_at = row
+        return Meta(tags, archived, pinned, pinned_at=pinned_at)
 
     def access(self, pergam_id: str) -> Access | None:
         with self.pool.connection() as conn:
@@ -458,14 +505,24 @@ class PergamStore:
                 origin = self._origin(conn, doc.id)
             else:
                 origin = doc.origin
+                pinned = doc.pinned and not doc.archived and self._has_pin_room(conn, doc.id)
                 conn.execute(
-                    "INSERT INTO pergam_meta (id, tags, archived, pinned, origin_url, origin_id)"
-                    " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET tags = EXCLUDED.tags,"
-                    " archived = EXCLUDED.archived, pinned = EXCLUDED.pinned,"
+                    "INSERT INTO pergam_meta (id, tags, archived, pinned, pinned_at, origin_url, origin_id)"
+                    " VALUES (%s, %s, %s, %s, CASE WHEN %s THEN COALESCE(%s::timestamptz, clock_timestamp()) END, %s, %s)"
+                    " ON CONFLICT (id) DO UPDATE SET tags = EXCLUDED.tags,"
+                    " archived = EXCLUDED.archived, pinned = EXCLUDED.pinned, pinned_at = EXCLUDED.pinned_at,"
                     " origin_url = EXCLUDED.origin_url, origin_id = EXCLUDED.origin_id",
-                    (doc.id, doc.tags, doc.archived, doc.pinned, origin and origin.url, origin and origin.id),
+                    (doc.id, doc.tags, doc.archived, pinned, pinned, doc.pinned_at, origin and origin.url, origin and origin.id),
                 )
         return ImportResult([v.version for v in missing], sorted(set(present) & {v.version for v in doc.versions}), origin)
+
+    def _has_pin_room(self, conn: psycopg.Connection, pergam_id: str) -> bool:
+        """Whether an imported pin fits under the cap; an import over it arrives unpinned rather than failing."""
+        try:
+            claim_pin(conn, pergam_id, self.max_pinned)
+        except PinRefused:
+            return False
+        return True
 
     @staticmethod
     def _origin(conn: psycopg.Connection, pergam_id: str) -> Origin | None:
@@ -532,10 +589,10 @@ class PergamStore:
         source = SEARCHED if filters.q else LISTED
         headline = HEADLINE_SQL if filters.q else "NULL"
 
-        def page_of(condition: str, limit: str) -> str:
-            return page_query(source, condition, filters.sort, headline, limit)
+        def page_of(condition: str, limit: str, sort: str = filters.sort) -> str:
+            return page_query(source, condition, sort, headline, limit)
 
-        pinned_where = f"{where} AND COALESCE(m.pinned, false)"
+        pinned_where = f"{where} AND m.pinned AND NOT m.archived"
         with self.pool.connection() as conn:
             rows = conn.execute(page_of(page_where, "%(limit)s"), params).fetchall()
             pinned: list[IndexRow] = []
@@ -544,11 +601,12 @@ class PergamStore:
                 pinned_ids = frozenset(
                     pid
                     for (pid,) in conn.execute(
-                        f"SELECT l.id {source} {pinned_where} ORDER BY {order} LIMIT %(pinned_limit)s", params
+                        f"SELECT l.id {source} {pinned_where} ORDER BY {ORDERS['pinned'][0]} LIMIT %(pinned_limit)s",
+                        params,
                     ).fetchall()
                 )
             elif cards:
-                pinned = [index_row(row) for row in conn.execute(page_of(pinned_where, "%(pinned_limit)s"), params)]
+                pinned = [index_row(row) for row in conn.execute(page_of(pinned_where, "%(pinned_limit)s", "pinned"), params)]
                 pinned_ids = frozenset(row.id for row in pinned)
             matching = conn.execute(f"SELECT count(*) {source} {where}", params).fetchone()[0]
             type_counts = conn.execute(
@@ -574,7 +632,8 @@ class PergamStore:
                   (SELECT COALESCE(SUM(bytes), 0) FROM pergams),
                   (SELECT count(*) FROM pergams_latest WHERE created_at >= now() - interval '7 days'),
                   (SELECT count(*) FROM pergams         WHERE created_at >= now() - interval '7 days'),
-                  (SELECT count(*) FROM pergams_latest l JOIN pergam_meta m ON m.id = l.id WHERE m.archived)
+                  (SELECT count(*) FROM pergams_latest l JOIN pergam_meta m ON m.id = l.id WHERE m.archived),
+                  (SELECT count(*) FROM pergam_meta WHERE pinned AND NOT archived)
                 """
             ).fetchone()
 
@@ -584,7 +643,7 @@ class PergamStore:
             type_counts=[(t, c) for t, c in type_counts],
             author_counts=[(a, c) for a, c in author_counts],
             tag_counts=[(t, c) for t, c in tag_counts],
-            stats=IndexStats(*stats),
+            stats=IndexStats(*stats, max_pinned=self.max_pinned),
             matching=matching,
             archived_count=archived_count,
             next_cursor=page[-1].cursor(filters.sort) if len(rows) > page_size else None,

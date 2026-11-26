@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from pergam.tags import TagError, parse_tags
@@ -38,6 +39,7 @@ class Meta:
     archived: bool
     pinned: bool
     origin: Origin | None = None
+    pinned_at: datetime | None = None
 
     def to_json(self, pergam_id: str) -> dict[str, Any]:
         return {"id": pergam_id, "tags": self.tags, "archived": self.archived, "pinned": self.pinned}
@@ -61,6 +63,8 @@ def parse_meta_change(data: dict[str, Any]) -> MetaChange:
     for flag in ("archived", "pinned"):
         if flag in data and not isinstance(data[flag], bool):
             raise MetaError(f"{flag} must be true or false")
+    if data.get("archived") is True and data.get("pinned") is True:
+        raise MetaError("archived and pinned cannot both be true: an archived pergam is never pinned")
     try:
         tags = parse_tags(data["tags"]) if "tags" in data else None
     except TagError as exc:

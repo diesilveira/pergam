@@ -33,10 +33,10 @@ def test_patch_updates_metadata_without_creating_a_version(client: Client, db: p
     pid = client.publish(tags=["draft"])["id"]
     client.publish(id=pid)
 
-    resp = patch(client, pid, {"tags": ["Q3 Review", "ops"], "archived": True, "pinned": True})
+    resp = patch(client, pid, {"tags": ["Q3 Review", "ops"], "archived": True, "pinned": False})
 
     assert resp.status == 200
-    assert resp.json() == {"id": pid, "tags": ["ops", "q3-review"], "archived": True, "pinned": True}
+    assert resp.json() == {"id": pid, "tags": ["ops", "q3-review"], "archived": True, "pinned": False}
     assert client.get(f"/{pid}/meta").json() == resp.json()
     assert version_count(db, pid) == 2
 
@@ -45,9 +45,9 @@ def test_patch_changes_only_the_fields_it_sends(client: Client) -> None:
     pid = client.publish(tags=["ops"])["id"]
 
     assert patch(client, pid, {"pinned": True}).json() == {"id": pid, "tags": ["ops"], "archived": False, "pinned": True}
-    assert patch(client, pid, {"archived": True}).json() == {"id": pid, "tags": ["ops"], "archived": True, "pinned": True}
-    assert patch(client, pid, {"tags": []}).json() == {"id": pid, "tags": [], "archived": True, "pinned": True}
-    assert patch(client, pid, {"pinned": False, "archived": False}).json()["pinned"] is False
+    assert patch(client, pid, {"tags": []}).json() == {"id": pid, "tags": [], "archived": False, "pinned": True}
+    assert patch(client, pid, {"archived": True}).json() == {"id": pid, "tags": [], "archived": True, "pinned": False}
+    assert patch(client, pid, {"archived": False}).json() == {"id": pid, "tags": [], "archived": False, "pinned": False}
 
 
 def test_patch_tags_replace_and_later_posts_merge(client: Client) -> None:
@@ -139,10 +139,13 @@ def test_post_body_must_be_an_object(client: Client) -> None:
 
 
 def test_new_version_keeps_archived_and_pinned(client: Client) -> None:
-    pid = client.publish()["id"]
-    patch(client, pid, {"archived": True, "pinned": True})
+    archived, pinned = client.publish()["id"], client.publish()["id"]
+    patch(client, archived, {"archived": True})
+    patch(client, pinned, {"pinned": True})
 
-    client.publish(id=pid, html="<p>v2</p>", tags=["more"])
+    client.publish(id=archived, html="<p>v2</p>", tags=["more"])
+    client.publish(id=pinned, html="<p>v2</p>")
 
-    assert client.get(f"/{pid}/meta").json() == {"id": pid, "tags": ["more"], "archived": True, "pinned": True}
-    assert pid not in listed_order(client.get("/").text)
+    assert client.get(f"/{archived}/meta").json() == {"id": archived, "tags": ["more"], "archived": True, "pinned": False}
+    assert client.get(f"/{pinned}/meta").json()["pinned"] is True
+    assert archived not in listed_order(client.get("/").text)

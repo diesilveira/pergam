@@ -26,6 +26,7 @@ from pergam.lint import LINT_CONCURRENCY, LINT_MAX_BODY_BYTES, lint_html
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
 from pergam.meta import MetaError, parse_meta_change
 from pergam.notes import NoteError, parse_note
+from pergam.pins import PinRefused
 from pergam.public_url import PublicAddress
 from pergam.search import QueryError, parse_query
 from pergam.store import ImportConflict, IndexFilters, NewPergam, PergamStore
@@ -345,6 +346,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         except Forbidden as exc:
             self.send_error(403, str(exc))
+            return
+        except PinRefused as exc:
+            self.send_error(409, str(exc))
             return
         if meta is None:
             self.send_error(404, "Pergam not found")

@@ -7,7 +7,7 @@ import psycopg
 import pytest
 
 from pergam.store import save_text
-from support import Client, crawl, listed_order, patch_meta, seed
+from support import Client, as_listed, crawl, listed_order, patch_meta, seed
 
 
 def api_crawl(client: Client, query: str) -> list[str]:
@@ -53,11 +53,11 @@ def test_api_and_html_index_list_the_same_pergams(client: Client, catalogue: dic
 
 @pytest.mark.parametrize("query", ["", "?archived=1", "?tag=seeded&type=plan"])
 def test_api_pages_like_the_html_index(client: Client, db: psycopg.Connection, query: str) -> None:
-    seed(db)
+    flags = seed(db)
 
     visited = api_crawl(client, query)
 
-    assert visited == crawl(client, f"/{query}")
+    assert as_listed(visited, flags) == crawl(client, f"/{query}")
     assert len(visited) == len(set(visited))
 
 
@@ -82,6 +82,7 @@ def test_api_index_row_shape(client: Client, catalogue: dict[str, str]) -> None:
         "tags": ["ops", "q3"],
         "archived": False,
         "pinned": False,
+        "pinned_at": None,
         "view_url": f"http://localhost:{port}/{catalogue['notes']}/view",
         "text_url": f"http://localhost:{port}/{catalogue['notes']}/text",
         "snippet": None,
@@ -135,6 +136,7 @@ def test_api_pergam_has_metadata_tags_and_versions(client: Client, catalogue: di
         "tags": ["ops", "q3"],
         "archived": False,
         "pinned": False,
+        "pinned_at": None,
         "origin": None,
         "view_url": f"http://localhost:{port}/{pid}/view",
         "text_url": f"http://localhost:{port}/{pid}/text",
@@ -178,5 +180,5 @@ def test_search_results_page_like_the_index(client: Client, db: psycopg.Connecti
     visited = crawl(client, f"/{query}")
 
     assert len(expected) > 100
-    assert visited == expected
+    assert visited == as_listed(expected, flags)
     assert api_crawl(client, query) == expected

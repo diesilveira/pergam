@@ -18,7 +18,7 @@ from pergam.index_page import TAGS_SHOWN, date_group
 from pergam.search import HEADLINE_SQL, MATCHES_SQL, search_params
 from pergam.store import SEARCHED, IndexFilters, PergamStore, page_query, save_text
 from pergam.summary import SUMMARY_CHARS, SOURCE_CHARS, summarise
-from support import Client, crawl, listed_order, patch_meta, seed
+from support import Client, as_listed, crawl, listed_order, patch_meta, seed
 
 
 def api_crawl(client: Client, query: str) -> list[str]:
@@ -50,9 +50,9 @@ def test_title_order_pages_every_pergam_once(client: Client, db: psycopg.Connect
     from_api = api_crawl(client, query)
     from_page = crawl(client, f"/{query}")
 
+    by_date = [pid for (pid,) in db.execute("SELECT id FROM pergams_latest ORDER BY created_at DESC, id DESC").fetchall()]
     assert from_api == expected
-    pinned = [pid for pid in expected if flags[pid][0]]
-    assert from_page == pinned + [pid for pid in expected if pid not in pinned]
+    assert from_page == as_listed(expected, flags, by_date)
 
 
 def test_title_order_is_case_insensitive_then_by_id(client: Client) -> None:

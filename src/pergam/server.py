@@ -18,6 +18,7 @@ Modules
   diff_page.py   the diff page, from templates/diff.html + diff.css
   public_url.py  host and URL used in `view_url` and on the index
   limits.py      largest request body
+  pins.py        the cap on pinned pergams
   identity.py    the writer, from X-Forwarded-User when trusted
   access.py      owners, collaborators and who may change a pergam
   static_files.py files served under /static/ (stylesheet, theme script, bridge, vendored Mermaid)
@@ -40,6 +41,7 @@ Env (12-factor)
   PERGAM_TYPES   accepted types, comma separated (default the five built-in ones)
   PERGAM_MAX_BODY_MB largest request body in MB (default 256)
   TRUST_PROXY_USER author from X-Forwarded-User, owners enforced (default off)
+  PERGAM_MAX_PINNED most pergams pinned at once (default 12, 0 turns pinning off)
 """
 
 from __future__ import annotations
@@ -57,7 +59,7 @@ if __package__ in (None, ""):
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from pergam import identity, limits, public_url, taxonomy
+from pergam import identity, limits, pins, public_url, taxonomy
 from pergam.view_page import frame_policy
 from pergam.backfill import run_backfill
 from pergam.migrate import MigrationError, apply_migrations, migrations_dir
@@ -90,6 +92,7 @@ def main() -> int:
         PergamHandler.max_body_bytes = limits.max_body_bytes(os.environ)
         PergamHandler.trust_proxy_user = identity.trusts_proxy_user(os.environ)
         PergamHandler.frame = frame_policy(PergamHandler.public.origin)
+        max_pinned = pins.max_pinned(os.environ)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -105,7 +108,7 @@ def main() -> int:
         return 1
     for migration in applied:
         print(f"applied migration {migration.name}", flush=True)
-    PergamHandler.store = PergamStore(pool)
+    PergamHandler.store = PergamStore(pool, max_pinned)
     threading.Thread(target=run_backfill, args=(pool,), name="text-backfill", daemon=True).start()
 
     with ThreadingHTTPServer((host, port), PergamHandler) as httpd:

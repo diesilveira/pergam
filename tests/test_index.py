@@ -6,7 +6,7 @@ import re
 import psycopg
 import pytest
 
-from support import Client, crawl, listed_ids, listed_order, patch_meta, seed
+from support import Client, as_listed, crawl, listed_ids, listed_order, patch_meta, seed
 
 
 @pytest.fixture
@@ -197,7 +197,7 @@ def test_paging_visits_every_pergam_once_in_order(client: Client, db: psycopg.Co
 
     visited = crawl(client, query)
 
-    assert visited == expected
+    assert visited == as_listed(expected, flags)
     assert len(visited) == len(set(visited))
 
 

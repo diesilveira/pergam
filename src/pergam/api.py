@@ -28,6 +28,7 @@ def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
         "tags": row.tags,
         "archived": row.archived,
         "pinned": row.pinned,
+        "pinned_at": row.pinned_at.isoformat() if row.pinned_at else None,
         "view_url": public.view_url(row.id),
         "text_url": public.url(f"{row.id}/text"),
         "snippet": row.snippet.text() if row.snippet else None,
@@ -57,6 +58,8 @@ def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT)
             "bytes": stats.total_bytes,
             "new_pergams_7d": stats.new_pergams_7d,
             "new_versions_7d": stats.new_versions_7d,
+            "pinned": stats.total_pinned,
+            "max_pinned": stats.max_pinned,
         },
     }
 
@@ -90,6 +93,7 @@ def pergam_json(pergam_id: str, versions: list[VersionInfo], meta: Meta, public:
         "tags": meta.tags,
         "archived": meta.archived,
         "pinned": meta.pinned,
+        "pinned_at": meta.pinned_at.isoformat() if meta.pinned_at else None,
         "origin": meta.origin.to_json() if meta.origin else None,
         "view_url": public.view_url(pergam_id),
         "text_url": public.url(f"{pergam_id}/text"),
