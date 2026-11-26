@@ -48,7 +48,12 @@ DERIVED = "public, max-age=300"
 NOSNIFF = (("X-Content-Type-Options", "nosniff"),)
 
 
-_CONTROL_ESCAPES = {code: f"\\x{code:02x}" for code in (*range(0x20), 0x7F)}
+_LOG_ESCAPES = {code: f"\\x{code:02x}" for code in (*range(0x20), *range(0x7F, 0xA0))} | {ord("\\"): "\\\\"}
+
+
+def escape_log(text: str) -> str:
+    """`text` with C0 and C1 control characters as `\\xNN` and backslashes doubled, as `http.server` logs them."""
+    return text.translate(_LOG_ESCAPES)
 
 
 def _utc_now_iso() -> str:
@@ -82,7 +87,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     frame: FramePolicy = FRAME_POLICY
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
-        line = (format % args).translate(_CONTROL_ESCAPES)
+        line = escape_log(format % args)
         sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {line}\n")
 
     def send_response(self, code: int, message: str | None = None) -> None:
