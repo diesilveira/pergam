@@ -17,7 +17,7 @@ from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
-from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, proxy_user
+from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, proxy_user
 from pergam.ids import ID_RE
 from pergam.index_page import render_index
 from pergam.lint import LINT_MAX_BODY_BYTES, lint_html
@@ -46,6 +46,9 @@ NO_STORE = "no-store"
 IMMUTABLE = "public, max-age=31536000, immutable"
 DERIVED = "public, max-age=300"
 NOSNIFF = (("X-Content-Type-Options", "nosniff"),)
+
+
+_CONTROL_ESCAPES = {code: f"\\x{code:02x}" for code in (*range(0x20), 0x7F)}
 
 
 def _utc_now_iso() -> str:
@@ -79,7 +82,17 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     frame: FramePolicy = FRAME_POLICY
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
-        sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {format % args}\n")
+        line = (format % args).translate(_CONTROL_ESCAPES)
+        sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {line}\n")
+
+    def send_response(self, code: int, message: str | None = None) -> None:
+        """The status line always carries the standard reason phrase.
+
+        `send_error` messages can name users and ids, which belong only in the
+        HTML-escaped body: in a header line a stored CR LF would split the
+        response, and a character outside Latin-1 would drop the connection.
+        """
+        super().send_response(code)
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
@@ -113,7 +126,12 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         html = data.get("html", "")
         title = (data.get("title") or "Pergam").strip()
         pergam_type = normalise_type(data.get("type") or "")
-        author = writer.user or (data.get("author") or "").strip()
+        try:
+            body_author = parse_author(data.get("author"))
+        except ValueError as exc:
+            self.send_error(400, str(exc))
+            return
+        author = writer.user or body_author
         existing_id = (data.get("id") or "").strip()
 
         if not html or not html.strip():

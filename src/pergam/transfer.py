@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
+from pergam.identity import parse_author
 from pergam.ids import ID_RE
 from pergam.meta import Meta, Origin
 from pergam.notes import NoteError, parse_note
@@ -116,6 +117,13 @@ def _text(entry: dict[str, Any], field: str, label: str) -> str:
     return value
 
 
+def _author(entry: dict[str, Any], label: str) -> str:
+    try:
+        return parse_author(_text(entry, "author", label))
+    except ValueError as exc:
+        raise TransferError(f"{label}: {exc}") from None
+
+
 def _created_at(entry: dict[str, Any], label: str, now: datetime) -> datetime:
     """The timestamp in UTC, between 1970 and `now` plus `CLOCK_SKEW`.
 
@@ -165,7 +173,7 @@ def _version(entry: object, index: int, types: tuple[str, ...], now: datetime) -
         title=_text(entry, "title", label),
         html=html,
         type=pergam_type,
-        author=_text(entry, "author", label).strip(),
+        author=_author(entry, label),
         note=note,
         bytes=len(html.encode("utf-8")),
         created_at=_created_at(entry, label, now),

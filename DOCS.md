@@ -8,7 +8,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 
 | Method   | Path                  | Description                                                          |
 | -------- | --------------------- | -------------------------------------------------------------------- |
-| `POST`   | `/pergam`             | Body `{title, html, type, author, id?, tags?, note?}`. Returns `{id, version, view_url, title, type, author}`, plus `tags` and `note` when the request sent them. Omit `id` for a new pergam; include it to bump the version of an existing one. `tags` are merged into the id's tags (see [Tags and metadata](#tags-and-metadata)); `note` describes this version (see [Version notes](#version-notes)). |
+| `POST`   | `/pergam`             | Body `{title, html, type, author, id?, tags?, note?}`; `author` must not contain control characters (**400**). Returns `{id, version, view_url, title, type, author}`, plus `tags` and `note` when the request sent them. Omit `id` for a new pergam; include it to bump the version of an existing one. `tags` are merged into the id's tags (see [Tags and metadata](#tags-and-metadata)); `note` describes this version (see [Version notes](#version-notes)). |
 | `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<search>` (title or text), `?archived=1`. See [Index](#index) and [Search](#search). |
 | `GET`    | `/api/pergams`        | JSON index: the same filters, order, pages and counts as `/`. See [JSON API](#json-api). |
 | `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags, `origin` and every version of one pergam. **404** for an unknown id. |
@@ -78,7 +78,7 @@ With `TRUST_PROXY_USER` on, each pergam has an **owner**, the author of its v1, 
 | `POST /import` that creates the id | anyone whose name is the `author` of the imported v1, who becomes the owner |
 | `POST /pergam` without `id`, or with an id this server does not have | anyone; they become the owner |
 
-Anyone else gets **403** and nothing is written; the message names the rule that failed (`eve@example.com is neither the owner of abc12345 (ana@example.com) nor one of its collaborators`, `v1 of abc12345 is by ana@example.com, not eve@example.com: an import that creates an id needs v1 by the signed-in user`). The check runs under the same per-id lock as the write, so a collaborator removed meanwhile cannot slip a version in.
+Anyone else gets **403** and nothing is written; the HTML body's message (never the status line, which always carries the standard reason) names the rule that failed (`eve@example.com is neither the owner of abc12345 (ana@example.com) nor one of its collaborators`, `v1 of abc12345 is by ana@example.com, not eve@example.com: an import that creates an id needs v1 by the signed-in user`). The check runs under the same per-id lock as the write, so a collaborator removed meanwhile cannot slip a version in.
 
 ```bash
 curl -sS https://pergam.example.com/abc12345/collaborators
@@ -200,7 +200,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
 - The response is **201** when anything was written, **200** when every version was skipped: `{"id": "abc12345", "imported": [4, 5], "skipped": [1, 2, 3], "origin": {"url": "http://localhost:1111", "id": "abc12345"}, "view_url": "…"}`.
 - Validation follows `POST /pergam` for `type` (trimmed, lowercased, one of this server's [types](#pergam-types)), `author` (trimmed, non-empty) and `note` (see [Version notes](#version-notes)), and is stricter elsewhere, since an export always carries every field:
   - `title` and `html` must be non-empty strings and are stored exactly as sent: `title` is not trimmed and has no `"Pergam"` default;
-  - `title`, `html` and `author` must not contain NUL;
+  - `title`, `html` and `author` must not contain NUL, and `author` no other control character either (as on `POST /pergam`);
   - `format_version` must be 1 and the id 6 to 16 lowercase hex characters;
   - `version`s must be distinct integers from 1 to 2147483647, at most 10,000 of them per import (a longer history goes in several imports, each carrying the next versions);
   - `created_at` must be ISO 8601 with a UTC offset, between 1970-01-01 and five minutes past the server's clock (the allowed clock skew between servers); it is stored in UTC. Dates need not grow with the version number: older histories, or ones across a clock step, can date a version before the previous one, and they import as they are;

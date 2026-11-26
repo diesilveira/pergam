@@ -45,6 +45,21 @@ def _is_control(char: str) -> bool:
     return unicodedata.category(char) in ("Cc", "Cs")
 
 
+def parse_author(value: object) -> str:
+    """A body `author`, trimmed, `""` when absent; raises `ValueError` when it is not a string or holds a control character.
+
+    An author ends up in HTML, JSON, feeds and error pages, where a line break or
+    other control character has no business.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError("author must be a string")
+    if any(_is_control(char) for char in value.strip()):
+        raise ValueError("author must not contain control characters")
+    return value.strip()
+
+
 def parse_user(text: str) -> str:
     """A user name trimmed; raises `IdentityError` when it is blank, too long or has control characters."""
     user = text.strip()

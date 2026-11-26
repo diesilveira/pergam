@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import http.client
 import json
 from datetime import datetime, timezone
 
@@ -175,3 +177,24 @@ def test_without_trusted_identity_nothing_is_enforced(client: Client) -> None:
     assert set_collaborators(client, pid, [STRANGER]).json() == {"id": pid, "owner": OWNER, "collaborators": [STRANGER]}
     assert send(client, "PUT", f"/{pid}/collaborators", {"collaborators": [""]}).status == 400
     assert client.post_json(export_document("0123abcd", OWNER), "/import").status == 201
+
+
+@pytest.mark.parametrize("owner", ["ana@example.com\r\nSet-Cookie: injected=1", "日本@example.com"], ids=["crlf", "non-latin-1"])
+def test_refusals_keep_stored_names_out_of_the_status_line(
+    trusting: Client, db: psycopg.Connection, owner: str
+) -> None:
+    db.execute(
+        "INSERT INTO pergams (id, version, title, html, type, author, bytes) VALUES ('0123abcd', 1, 'x', '<p>x</p>', 'otro', %s, 8)",
+        (owner,),
+    )
+    conn = http.client.HTTPConnection("127.0.0.1", trusting.port, timeout=10)
+    try:
+        conn.request("PATCH", "/0123abcd/meta", b'{"pinned": true}', {"Content-Type": "application/json", "X-Forwarded-User": STRANGER})
+        resp = conn.getresponse()
+        body = resp.read().decode()
+    finally:
+        conn.close()
+
+    assert (resp.status, resp.reason) == (403, "Forbidden")
+    assert resp.getheader("Set-Cookie") is None
+    assert html.escape(owner, quote=False) in body

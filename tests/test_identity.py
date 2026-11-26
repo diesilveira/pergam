@@ -5,7 +5,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from pergam.identity import IdentityError, proxy_user, trusts_proxy_user
+from pergam.identity import IdentityError, parse_author, proxy_user, trusts_proxy_user
 from support import Client, ServerProcess
 
 
@@ -76,3 +76,36 @@ def test_server_refuses_an_unknown_trust_flag(session_database: str, server_logs
         server.stop()
 
     assert "TRUST_PROXY_USER" in server.log()
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, ""), ("  ana@example.com ", "ana@example.com"), ("Ñandú 日本", "Ñandú 日本")])
+def test_body_author_is_trimmed(value: object, expected: str) -> None:
+    assert parse_author(value) == expected
+
+
+@pytest.mark.parametrize("value", ["ana\r\nSet-Cookie: x=1", "a\tb", "a\x00b", 42, ["ana"]])
+def test_body_author_with_control_characters_or_not_a_string_is_refused(value: object) -> None:
+    with pytest.raises(ValueError):
+        parse_author(value)
+
+
+@pytest.mark.parametrize("trusted", [False, True], ids=["untrusted", "trusted"])
+def test_publish_refuses_an_author_with_control_characters(
+    client: Client, trusting: Client, db: psycopg.Connection, trusted: bool
+) -> None:
+    server = trusting.as_user("ana@example.com") if trusted else client
+
+    resp = server.post_json({"title": "x", "html": "<p>x</p>", "type": "otro", "author": "ana\r\nX-Injected: 1"})
+
+    assert resp.status == 400
+    assert db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+
+
+def test_import_refuses_an_author_with_control_characters(client: Client) -> None:
+    version = {"version": 1, "title": "t", "html": "<p>t</p>", "type": "otro", "author": "ana\nbo",
+               "created_at": "2025-01-01T00:00:00+00:00"}
+
+    resp = client.post_json({"format_version": 1, "id": "0123abcd", "versions": [version]}, "/import")
+
+    assert resp.status == 400
+    assert "control characters" in resp.text
