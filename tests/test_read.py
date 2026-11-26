@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pytest
 
+from pergam.view_page import BRIDGE_TAG
 from support import Client
 
 
@@ -35,14 +36,14 @@ def test_pinned_version_serves_that_version(client: Client, kind: str, content_t
 
     assert resp.status == 200
     assert resp.headers["content-type"] == f"{content_type}; charset=utf-8"
-    assert resp.text == "<p>one</p>"
+    assert resp.text.removesuffix(BRIDGE_TAG) == "<p>one</p>"
 
 
 def test_body_is_utf8_with_matching_length(client: Client) -> None:
     html = "<p>ñandú — 日本</p>"
     body = client.publish(html=html)
 
-    resp = client.get(f"/{body['id']}/v1/content")
+    resp = client.get(f"/{body['id']}/v1/raw")
 
     assert resp.body == html.encode("utf-8")
     assert resp.headers["content-length"] == str(len(html.encode("utf-8")))

@@ -25,7 +25,7 @@ from pergam.store import IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
 from pergam.text import extract_text
-from pergam.view_page import FRAME_POLICY, render_view
+from pergam.view_page import BRIDGE_PATH, BRIDGE_SCRIPT, FRAME_POLICY, framed, render_view
 
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 VERSION_RE = re.compile(r"^v(\d+)$")
@@ -135,6 +135,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if path == "api/pergams":
             self._render_index_json(parse_qs(parsed.query))
             return
+        if path == BRIDGE_PATH.strip("/"):
+            self._send(200, "text/javascript; charset=utf-8", BRIDGE_SCRIPT, cache_control=DERIVED)
+            return
         if path == "healthz":
             self._send(200, "application/json", b'{"ok":true}')
             return
@@ -197,12 +200,17 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self.send_error(405, "Pergams are immutable")
 
     def _serve_pergam(self, pergam_id: str, version: int | None, kind: str) -> None:
-        """`kind` is `content` (the HTML the view frames), `raw` (that HTML as plain text) or `text` (Markdown)."""
+        """`kind` is `content` (the HTML plus the frame bridge), `raw` (the HTML as posted) or `text` (Markdown)."""
         html_text = self.store.html(pergam_id, version)
         if html_text is None:
             self.send_error(404, "Pergam not found")
             return
-        body = extract_text(html_text).markdown if kind == "text" else html_text
+        if kind == "text":
+            body = extract_text(html_text).markdown
+        elif kind == "content":
+            body = framed(html_text)
+        else:
+            body = html_text
         cache_control = NO_STORE if version is None else DERIVED if kind == "text" else IMMUTABLE
         headers = FRAME_POLICY.content_headers if kind == "content" else ()
         self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control, headers=headers)

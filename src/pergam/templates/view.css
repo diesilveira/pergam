@@ -29,6 +29,10 @@
   .bar__links { margin-left:auto; display:flex; gap:.9rem; font-size:.78rem; }
   .bar__links a { color:var(--muted-2); }
   .bar__links a:hover { color:var(--text); }
+  .bar__print { font:inherit; color:var(--muted-2); background:none; border:1px solid var(--border);
+                 border-radius:4px; padding:0 .45rem; cursor:pointer; }
+  .bar__print:hover { color:var(--text); border-color:var(--muted-2); }
+  .bar__print[hidden] { display:none; }
 
   .versions { position:relative; }
   .versions > summary { cursor:pointer; list-style:none; color:var(--accent);

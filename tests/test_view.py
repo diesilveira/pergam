@@ -94,22 +94,25 @@ def test_bar_escapes_untrusted_fields(client: Client) -> None:
     assert "&lt;b&gt;x&lt;/b&gt;@example.com" in page
 
 
-def test_outer_fragment_is_forwarded_into_the_frame(client: Client) -> None:
+def test_bar_links_the_document_alone_and_offers_print_once_bridged(client: Client) -> None:
     pid = client.publish()["id"]
 
     page = client.get(f"/{pid}/view").text
 
-    assert "frame.src = src + location.hash" in page
-    assert "addEventListener('hashchange'" in page
+    assert f'<a href="/{pid}/v1/content">open document</a>' in page
+    assert '<button type="button" class="bar__print" hidden>print</button>' in page
+    assert '<body data-title-suffix=" · v1 · pergam">' in page
 
 
-def test_content_is_byte_identical_and_cacheable(client: Client) -> None:
+def test_content_is_the_posted_html_plus_the_bridge_tag_and_raw_is_untouched(client: Client) -> None:
     html = '<!doctype html><a href="#s">s</a><h2 id="s">ñ — 日本</h2>'
     pid = client.publish(html=html)["id"]
 
     content, raw = client.get(f"/{pid}/v1/content"), client.get(f"/{pid}/v1/raw")
 
-    assert content.body == raw.body == html.encode("utf-8")
+    assert raw.body == html.encode("utf-8")
+    assert content.body == (html + '<script src="/static/frame-bridge.js"></script>').encode("utf-8")
+    assert content.headers["content-length"] == str(len(content.body))
     assert content.headers["content-type"] == "text/html; charset=utf-8"
     assert raw.headers["content-type"] == "text/plain; charset=utf-8"
     assert content.headers["cache-control"] == "public, max-age=31536000, immutable"
@@ -135,3 +138,17 @@ def test_frame_policy_is_the_one_place_that_isolates_the_document() -> None:
     page = render_view("abcdef12", versions, Meta([], False, False), 1, policy)
 
     assert '<iframe class="doc" src="/abcdef12/v1/content" title="Doc" sandbox="allow-scripts"></iframe>' in page
+
+
+def test_bridge_script_is_served_with_a_short_cache(client: Client) -> None:
+    resp = client.get("/static/frame-bridge.js")
+
+    assert resp.status == 200
+    assert resp.headers["content-type"] == "text/javascript; charset=utf-8"
+    assert resp.headers["cache-control"] == "public, max-age=300"
+    assert resp.body.startswith(b"/*\n * pergam frame bridge")
+
+
+@pytest.mark.parametrize("path", ["/static/other.js", "/static/", "/static/../server.py", "/static/frame-bridge.js/x"])
+def test_only_the_bridge_is_served_from_static(client: Client, path: str) -> None:
+    assert client.get(path).status == 404

@@ -184,7 +184,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | GET    | `/api/pergams/{id}`   | JSON: latest title/type/author, `tags`, `archived`, `pinned` and `versions` (newest first). |
 | GET    | `/{id}/view`          | View page of the latest version: bar with title, type, tags, author, `v3 of 5` and a version selector, document in a frame. |
 | GET    | `/{id}/v{n}/view`     | View page of a specific version; says so when a newer one exists.    |
-| GET    | `/{id}/v{n}/content`  | The posted HTML as `text/html`, nothing added (what the view frames). |
+| GET    | `/{id}/v{n}/content`  | The posted HTML as `text/html` plus the frame bridge tag (what the view frames). Use `/raw` for the exact bytes. |
 | GET    | `/{id}/raw`           | Raw HTML (latest).                                                   |
 | GET    | `/{id}/v{n}/raw`      | Raw HTML (specific).                                                 |
 | GET    | `/{id}/text`          | Visible text of the latest version as Markdown (headings, lists, tables). Cheapest way to read a pergam. |

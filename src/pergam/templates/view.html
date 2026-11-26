@@ -3,7 +3,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${page_title}</title>
 <style>
-${css}</style></head><body>
+${css}</style></head><body data-title-suffix="${title_suffix}">
 
 <header class="bar">
   <a class="bar__home" href="/" title="pergam index"><span class="blocks">▮▮</span> pergam</a>
@@ -20,6 +20,8 @@ ${css}</style></head><body>
     <a href="${raw_href}">raw</a>
     <a href="${text_href}">text</a>
     ${changes_link}
+    <a href="${content_href}">open document</a>
+    <button type="button" class="bar__print" hidden>print</button>
   </nav>
 </header>
 ${outdated}
@@ -27,11 +29,40 @@ ${outdated}
 
 <script>
   (() => {
+    const MAX_LENGTH = 2048;
+    const MAX_TITLE = 200;
     const frame = document.querySelector('iframe.doc');
-    const src = frame.getAttribute('src');
-    const forwardHash = () => { if (location.hash) frame.src = src + location.hash; };
-    forwardHash();
+    const printButton = document.querySelector('.bar__print');
+    const titleSuffix = document.body.dataset.titleSuffix;
+    let bridged = false;
+    const toFrame = (type, value) => frame.contentWindow && frame.contentWindow.postMessage({ pergam: 1, type, value }, '*');
+    const forwardHash = () => { if (bridged && location.hash) toFrame('hash', location.hash); };
+    const print = () => toFrame('print', '');
+
     addEventListener('hashchange', forwardHash);
+    printButton.addEventListener('click', print);
+    addEventListener('keydown', (event) => {
+      if (bridged && (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        print();
+      }
+    });
+    addEventListener('message', (event) => {
+      if (event.source !== frame.contentWindow) return;
+      const data = event.data;
+      if (!data || typeof data !== 'object' || data.pergam !== 1) return;
+      if (typeof data.type !== 'string' || typeof data.value !== 'string' || data.value.length > MAX_LENGTH) return;
+      if (data.type === 'ready') {
+        bridged = true;
+        printButton.hidden = false;
+        forwardHash();
+      } else if (data.type === 'title') {
+        const title = data.value.replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE);
+        if (title) document.title = title + titleSuffix;
+      } else if (data.type === 'hash' && data.value.startsWith('#') && data.value !== location.hash) {
+        history.replaceState(history.state, '', data.value);
+      }
+    });
   })();
 </script>
 </body></html>

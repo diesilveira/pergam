@@ -4,9 +4,12 @@ The page is pergam's own: a slim bar with the version's title, type, tags,
 author and a version selector with each version's note, and the published
 document in a full-height iframe loaded from the version-pinned
 `/{id}/v{n}/content`. The document itself
-is never altered, so `/raw` and `/content` stay byte-identical to what was posted.
-How the framed document is isolated (iframe attributes and the headers of its
-content response) lives in `FRAME_POLICY` and nowhere else.
+is stored unchanged: `/raw` returns it byte for byte, and `/content` returns it
+followed by one `<script src>` tag, the frame bridge (`static/frame-bridge.js`).
+The bridge and this page talk through `postMessage` only, never through the
+frame's DOM or location, so the frame can be sandboxed without
+`allow-same-origin`. How the framed document is isolated (iframe attributes and
+the headers of its content response) lives in `FRAME_POLICY` and nowhere else.
 """
 
 from __future__ import annotations
@@ -28,9 +31,24 @@ _CSS = (_TEMPLATES / "view.css").read_text(encoding="utf-8")
 esc = html_lib.escape
 
 
+BRIDGE_PATH = "/static/frame-bridge.js"
+BRIDGE_TAG = f'<script src="{BRIDGE_PATH}"></script>'
+BRIDGE_SCRIPT = (Path(__file__).resolve().parent / "static" / "frame-bridge.js").read_bytes()
+
+
+def framed(html: str) -> str:
+    """The body of `/content`: the posted HTML, then the bridge tag (a browser runs it even after `</html>`)."""
+    return html + BRIDGE_TAG
+
+
 @dataclass(frozen=True)
 class FramePolicy:
-    """Isolation of the framed document: extra iframe attributes, and headers sent with `/content`."""
+    """Isolation of the framed document: extra iframe attributes, and headers sent with `/content`.
+
+    A `sandbox` needs `allow-scripts` for the bridge, `allow-top-navigation-by-user-activation`
+    for links that leave the document, `allow-modals` for printing and `allow-popups` for
+    links with `target="_blank"`. A CSP must allow the bridge script from this origin.
+    """
 
     iframe_attributes: tuple[tuple[str, str], ...] = ()
     content_headers: tuple[tuple[str, str], ...] = ()
@@ -94,6 +112,8 @@ def render_view(
     return _PAGE.substitute(
         css=_CSS,
         page_title=esc(f"{shown.title} · v{version} · pergam"),
+        title_suffix=esc(f" · v{version} · pergam"),
+        content_href=content_path(pergam_id, version),
         title=esc(shown.title),
         type=esc(shown.type),
         type_rgb=",".join(map(str, type_rgb(shown.type))),
