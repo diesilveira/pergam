@@ -9,7 +9,7 @@ already has the others); the server keeps their numbers and `created_at`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -22,6 +22,8 @@ from pergam.taxonomy import normalise_type
 
 FORMAT_VERSION = 1
 MAX_SERVER_URL_LENGTH = 2048
+EARLIEST_CREATED_AT = datetime(1970, 1, 1, tzinfo=timezone.utc)
+CLOCK_SKEW = timedelta(minutes=5)
 
 
 class TransferError(ValueError):
@@ -107,7 +109,13 @@ def _text(entry: dict[str, Any], field: str, label: str) -> str:
     return value
 
 
-def _created_at(entry: dict[str, Any], label: str) -> datetime:
+def _created_at(entry: dict[str, Any], label: str, now: datetime) -> datetime:
+    """The timestamp in UTC, between 1970 and `now` plus `CLOCK_SKEW`.
+
+    Dates outside that window cannot come from a real publish: a far future one
+    would sit on top of the index and feed for good, and one past year 9999 in
+    UTC is stored but cannot be read back by the driver.
+    """
     value = entry.get("created_at")
     try:
         created_at = datetime.fromisoformat(value) if isinstance(value, str) else None
@@ -115,10 +123,16 @@ def _created_at(entry: dict[str, Any], label: str) -> datetime:
         created_at = None
     if created_at is None or created_at.tzinfo is None:
         raise TransferError(f"{label}: created_at must be an ISO 8601 timestamp with a UTC offset")
+    try:
+        created_at = created_at.astimezone(timezone.utc)
+    except OverflowError:
+        created_at = None
+    if created_at is None or not EARLIEST_CREATED_AT <= created_at <= now + CLOCK_SKEW:
+        raise TransferError(f"{label}: created_at must be between 1970-01-01 and now (UTC)")
     return created_at
 
 
-def _version(entry: object, index: int, types: tuple[str, ...]) -> ExportedVersion:
+def _version(entry: object, index: int, types: tuple[str, ...], now: datetime) -> ExportedVersion:
     if not isinstance(entry, dict):
         raise TransferError(f"versions[{index}] must be an object")
     number = entry.get("version")
@@ -141,7 +155,7 @@ def _version(entry: object, index: int, types: tuple[str, ...]) -> ExportedVersi
         author=_text(entry, "author", label).strip(),
         note=note,
         bytes=len(html.encode("utf-8")),
-        created_at=_created_at(entry, label),
+        created_at=_created_at(entry, label, now),
     )
 
 
@@ -160,7 +174,7 @@ def _meta(value: object) -> tuple[list[str], bool, bool]:
     return tags, value.get("archived", False), value.get("pinned", False)
 
 
-def parse_import(data: dict[str, Any], types: tuple[str, ...]) -> ImportDocument:
+def parse_import(data: dict[str, Any], types: tuple[str, ...], now: datetime | None = None) -> ImportDocument:
     """Validate a `POST /import` body against this server's accepted types; raises `TransferError`.
 
     `bytes` is recomputed from each version's HTML, unknown fields are ignored.
@@ -173,7 +187,8 @@ def parse_import(data: dict[str, Any], types: tuple[str, ...]) -> ImportDocument
     entries = data.get("versions")
     if not isinstance(entries, list) or not entries:
         raise TransferError("versions must be a non-empty array")
-    versions = sorted((_version(entry, i, types) for i, entry in enumerate(entries)), key=lambda v: v.version)
+    now = now or datetime.now(timezone.utc)
+    versions = sorted((_version(entry, i, types, now) for i, entry in enumerate(entries)), key=lambda v: v.version)
     numbers = [v.version for v in versions]
     duplicated = sorted({n for n in numbers if numbers.count(n) > 1})
     if duplicated:

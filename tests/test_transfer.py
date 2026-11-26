@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import psycopg
@@ -292,3 +292,40 @@ def test_render_view_escapes_the_origin() -> None:
     page = render_view(pid, info, Meta([], False, False, Origin('https://example.com/"x', pid)), 1)
 
     assert 'href="https://example.com/&quot;x/' in page
+
+
+@pytest.mark.parametrize(
+    "created_at",
+    ["9999-12-31T23:30:00-05:00", "1969-12-31T23:59:59+00:00", "2999-01-01T00:00:00+00:00"],
+    ids=["past-year-9999-in-utc", "before-1970", "future"],
+)
+def test_out_of_range_created_at_is_400(target: Client, target_db: psycopg.Connection, created_at: str) -> None:
+    doc = document()
+    doc["versions"][0]["created_at"] = created_at
+
+    resp = target.post_json(doc, "/import")
+
+    assert resp.status == 400
+    assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+
+
+def test_created_at_is_stored_in_utc_and_may_lead_by_the_clock_skew(target: Client) -> None:
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
+    doc = document()
+    doc["versions"][0]["created_at"] = "2025-01-01T05:00:00-05:00"
+    doc["versions"][1]["created_at"] = soon
+
+    assert target.post_json(doc, "/import").status == 201
+    exported = export(target, "abcd1234")["versions"]
+    assert exported[0]["created_at"] == "2025-01-01T10:00:00+00:00"
+    assert datetime.fromisoformat(exported[1]["created_at"]) == datetime.fromisoformat(soon)
+
+
+def test_parse_import_window_is_relative_to_now() -> None:
+    doc = document(versions=1)
+    doc["versions"][0]["created_at"] = "2025-01-01T00:06:00+00:00"
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+
+    with pytest.raises(TransferError, match="between 1970-01-01 and now"):
+        parse_import(doc, TYPES, now=now)
+    assert parse_import(doc, TYPES, now=now + timedelta(minutes=1)).versions[0].created_at.tzinfo == timezone.utc
