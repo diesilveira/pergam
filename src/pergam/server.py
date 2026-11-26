@@ -16,6 +16,7 @@ Modules
   diff_page.py   the diff page, from templates/diff.html + diff.css
   public_url.py  host and URL used in `view_url` and on the index
   limits.py      largest request body
+  identity.py    the writer, from X-Forwarded-User when trusted
   taxonomy.py    accepted types and type badge colours
   migrate.py     numbered migrations applied at startup
   text.py        visible text of a pergam as Markdown
@@ -33,6 +34,7 @@ Env (12-factor)
   MIGRATIONS_DIR directory of NNN_*.sql files  (default <repo>/db/migrations)
   PERGAM_TYPES   accepted types, comma separated (default the five built-in ones)
   PERGAM_MAX_BODY_MB largest request body in MB (default 256)
+  TRUST_PROXY_USER author from X-Forwarded-User, owners enforced (default off)
 """
 
 from __future__ import annotations
@@ -50,7 +52,7 @@ if __package__ in (None, ""):
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from pergam import limits, public_url, taxonomy
+from pergam import identity, limits, public_url, taxonomy
 from pergam.backfill import run_backfill
 from pergam.migrate import MigrationError, apply_migrations, migrations_dir
 from pergam.routes import PergamHandler
@@ -80,6 +82,7 @@ def main() -> int:
     try:
         PergamHandler.public = public_url.resolve(os.environ, port)
         PergamHandler.max_body_bytes = limits.max_body_bytes(os.environ)
+        PergamHandler.trust_proxy_user = identity.trusts_proxy_user(os.environ)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

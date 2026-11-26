@@ -200,8 +200,13 @@ class Response:
 
 
 class Client:
-    def __init__(self, port: int) -> None:
+    def __init__(self, port: int, headers: Mapping[str, str] | None = None) -> None:
         self.port = port
+        self.headers = dict(headers or {})
+
+    def as_user(self, user: str) -> Client:
+        """The same server, every request sent with `X-Forwarded-User: user` as a trusting proxy would."""
+        return Client(self.port, {**self.headers, "X-Forwarded-User": user})
 
     def request(
         self,
@@ -212,7 +217,7 @@ class Client:
     ) -> Response:
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         try:
-            conn.request(method, path, body=body, headers=dict(headers or {}))
+            conn.request(method, path, body=body, headers={**self.headers, **(headers or {})})
             resp = conn.getresponse()
             return Response(resp.status, {k.lower(): v for k, v in resp.getheaders()}, resp.read())
         finally:

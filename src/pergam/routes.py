@@ -16,6 +16,7 @@ from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
+from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, proxy_user
 from pergam.ids import ID_RE
 from pergam.index_page import render_index
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
@@ -70,6 +71,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     public: PublicAddress
     types: tuple[str, ...] = DEFAULT_TYPES
     max_body_bytes: int = DEFAULT_MAX_BODY_MB * MIB
+    trust_proxy_user: bool = False
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {format % args}\n")
@@ -83,7 +85,20 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Not Found")
 
+    def _writer(self) -> Writer | None:
+        """The writer of this request, or None after answering 401/400 for a missing or malformed proxy user."""
+        if not self.trust_proxy_user:
+            return Writer()
+        try:
+            return Writer(proxy_user(self.headers.get(PROXY_USER_HEADER)))
+        except IdentityError as exc:
+            self.send_error(exc.status, str(exc))
+            return None
+
     def _publish(self) -> None:
+        writer = self._writer()
+        if writer is None:
+            return
         data = self._read_json_object()
         if data is None:
             return
@@ -91,7 +106,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         html = data.get("html", "")
         title = (data.get("title") or "Pergam").strip()
         pergam_type = normalise_type(data.get("type") or "")
-        author = (data.get("author") or "").strip()
+        author = writer.user or (data.get("author") or "").strip()
         existing_id = (data.get("id") or "").strip()
 
         if not html or not html.strip():

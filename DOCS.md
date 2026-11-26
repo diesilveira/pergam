@@ -46,6 +46,16 @@ Caching: a version-pinned content route (`/{id}/v{n}/content`, `/{id}/v{n}/raw`)
 
 Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id; to hide it, archive it with `PATCH /{id}/meta`.
 
+## Identity
+
+By default the `author` of a version is whatever `POST /pergam` sends: pergam has no accounts and assumes the network is a trust boundary. Behind a reverse proxy that authenticates users (see [Deployment](#deployment)), set `TRUST_PROXY_USER=1` and the author comes from the proxy instead:
+
+- every `POST /pergam` takes its author from the `X-Forwarded-User` header, trimmed; the body's `author` is ignored, may be left out, and the response's `author` is the header's value, so nobody can publish under someone else's name;
+- a write without the header, or with a blank one, is **401** and writes nothing; one longer than 320 characters or holding a control character is **400**. The header is read as UTF-8;
+- reads (`GET`, `HEAD`) never need it.
+
+Only turn it on when the proxy sets `X-Forwarded-User` on every request itself, drops any copy a client sends, and pergam is reachable through that proxy alone: pergam trusts the header as it arrives. With the flag off (the default) the header is never read and nothing changes. A value of `TRUST_PROXY_USER` that is neither `1/true/yes/on` nor `0/false/no/off` stops the server at startup.
+
 ### Version notes
 
 `note` on `POST /pergam` is an optional one-line description of what this version changes (`"adds the costs section"`). It is stored with the version and, like the version, never changes. Whitespace is collapsed; a blank note is the same as none; a note that is not a string, holds a control character other than whitespace or is longer than 280 characters is **400** and publishes nothing. Notes are returned by `/{id}/versions` and `/api/pergams/{id}` (`null` for versions without one) and shown in the view page's version selector.
@@ -249,11 +259,12 @@ App env vars follow 12-factor conventions; only the pergam-specific knobs carry 
 | `PUBLIC_PORT`       | `PORT`                 | Port used in returned `view_url`s when `PUBLIC_URL` is unset; `443` means `https`, `80`/`443` are omitted from the URL. |
 | `PERGAM_TYPES`      | `plan,investigacion,informe,reporte,otro` | Accepted `type` values, comma separated (see [Pergam types](#pergam-types)). |
 | `PERGAM_MAX_BODY_MB` | `256`                | Largest request body, in MB, for `POST` and `PATCH`. A larger declared `Content-Length` is **413** and nothing is read; a `Content-Length` that is not a number is **400**. The default leaves room for a multi-version `POST /import`. |
+| `TRUST_PROXY_USER`  | off                    | `1` takes the author of every write from `X-Forwarded-User`, set by an authenticating reverse proxy (see [Identity](#identity)). |
 | `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
 | `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
 
-See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, or when `PERGAM_MAX_BODY_MB` is not a positive integer.
+See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, when `PERGAM_MAX_BODY_MB` is not a positive integer, or when `TRUST_PROXY_USER` is not a recognised on/off value.
 
 ## Schema migrations
 
@@ -342,7 +353,7 @@ For a single internal team, the easiest path is:
 2. Point a DNS record (e.g. `pergam.internal`) at it.
 3. Optionally put [Caddy](https://caddyserver.com/) in front for TLS and auth — pergam itself has no auth and assumes the network is a trust boundary.
 
-For larger teams, swap `tls internal` for an OIDC sidecar (e.g. `oauth2-proxy`) so per-user attribution flows in via `X-Forwarded-User`.
+For larger teams, swap `tls internal` for an OIDC sidecar (e.g. `oauth2-proxy`) that sets `X-Forwarded-User`, and start pergam with `TRUST_PROXY_USER=1` so authors come from that header (see [Identity](#identity)). Publish pergam's port only to the proxy, never directly, or anyone could send the header themselves.
 
 ## Testing
 

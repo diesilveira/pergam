@@ -30,6 +30,7 @@ services:
       PUBLIC_PORT: "${PUBLIC_PORT:-1111}"
       PERGAM_TYPES: "${PERGAM_TYPES:-}"
       PERGAM_MAX_BODY_MB: "${PERGAM_MAX_BODY_MB:-}"
+      TRUST_PROXY_USER: "${TRUST_PROXY_USER:-}"
     depends_on:
       db:
         condition: service_healthy

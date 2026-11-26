@@ -84,6 +84,17 @@ def client(session_server: Client, db: psycopg.Connection) -> Client:
 
 
 @pytest.fixture(scope="session")
+def trusting_server(session_database: str, start_server: StartServer) -> Client:
+    """A server on the session database with `TRUST_PROXY_USER` on, as behind an authenticating proxy."""
+    return start_server(session_database, TRUST_PROXY_USER="1")
+
+
+@pytest.fixture
+def trusting(trusting_server: Client, db: psycopg.Connection) -> Client:
+    return trusting_server
+
+
+@pytest.fixture(scope="session")
 def target_database(databases: DatabaseFactory) -> str:
     return databases.create()
 

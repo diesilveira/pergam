@@ -113,7 +113,7 @@ Use when the resolved server is a self-hosted instance (typically `http://localh
 
 3. **Pick `type`** from the server's accepted list (by default `plan | investigacion | informe | reporte | otro`). See [§ Pergam types (Flow B)](#pergam-types-flow-b).
 
-4. **Determine `author`** from the Claude session's user email. Required.
+4. **Determine `author`** from the Claude session's user email. Required, except on a server started with `TRUST_PROXY_USER=1` behind an authenticating proxy: there the author is the signed-in user (`X-Forwarded-User`, set by the proxy), the body's `author` is ignored and the response's `author` says who was recorded.
 
 5. **Build the HTML** (see [§ HTML guidelines](#html-guidelines)). Write to temp file:
    ```bash
@@ -295,5 +295,6 @@ Replace ASCII art with Mermaid in long-form content. Only allowed external depen
 - **Container restarts in a loop, logs show "could not connect to server"** → the pergam server can't reach its Postgres. If using bundled compose, `docker compose restart` after the db is ready.
 - **400 "type must be one of […]"** → the message lists the types this server accepts (`PERGAM_TYPES`); pick one of those and retry.
 - **400 "Missing author"** → always pass `author`.
+- **401 "Missing X-Forwarded-User"** → the server trusts its reverse proxy for identity and the request did not come through it signed in. Use the URL the proxy serves and sign in there; never set the header yourself.
 - **405 on DELETE** → expected. Pergams are immutable. Post a new version to supersede, or `PATCH /{id}/meta` with `{"archived": true}` to hide it.
 - **404 on `PATCH /{id}/meta`** → the id has no versions on this server; check the id.
