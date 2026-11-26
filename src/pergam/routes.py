@@ -48,6 +48,7 @@ NO_STORE = "no-store"
 IMMUTABLE = "public, max-age=31536000, immutable"
 DERIVED = "public, max-age=300"
 NOSNIFF = (("X-Content-Type-Options", "nosniff"),)
+PAGE_HEADERS = (("Content-Security-Policy", "frame-ancestors 'self'"), ("X-Frame-Options", "SAMEORIGIN"))
 
 
 _LOG_ESCAPES = {code: f"\\x{code:02x}" for code in (*range(0x20), *range(0x7F, 0xA0))} | {ord("\\"): "\\\\"}
@@ -89,6 +90,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     frame: FramePolicy = FRAME_POLICY
     lint_slots = threading.BoundedSemaphore(LINT_CONCURRENCY)
     vary_accept = False
+    page = False
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         line = escape_log(format % args)
@@ -115,7 +117,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if headers is None or not varies_by_accept(self.command, path):
             super().send_error(code, message, explain)
             return
-        self.vary_accept = True
+        self.vary_accept = self.page = True
         try:
             if wants_error_page(self.command, path, headers.get("Accept")):
                 shown = message if message is not None else self.responses.get(code, ("Error",))[0]
@@ -123,12 +125,22 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
                 self.error_message_format = render_error(code, shown, host).replace("%", "%%")
             super().send_error(code, message, explain)
         finally:
-            self.vary_accept = False
+            self.vary_accept = self.page = False
             self.__dict__.pop("error_message_format", None)
 
     def end_headers(self) -> None:
+        """Adds `Vary: Accept` where the error body depends on it, and `PAGE_HEADERS` to every page.
+
+        A page is any HTML this server renders around its own controls: the index, view
+        and diff pages (`_send_page`) and errors on their routes. Only this origin may
+        frame them, so another site cannot overlay and clickjack the write controls.
+        `/content` is not a page: it keeps the frame policy of `view_page.frame_policy`.
+        """
         if self.vary_accept:
             self.send_header("Vary", "Accept")
+        if self.page:
+            for name, value in PAGE_HEADERS:
+                self.send_header(name, value)
         super().end_headers()
 
     def do_POST(self) -> None:
@@ -418,7 +430,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         access = self.store.access(pergam_id)
         page = render_view(pergam_id, versions, meta, shown, self.frame, access=access, editable=self._offers_edits(access))
-        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+        self._send_page(page)
 
     def _offers_edits(self, access: Access | None) -> bool:
         """Whether the view page shows the pin, archive and tag controls, which `PATCH /{id}/meta`.
@@ -449,7 +461,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         sections = self._diff(pergam_id, old.version, new.version, old.bytes, new.bytes)
         page = render_diff(pergam_id, old, new, sections, versions)
-        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"), cache_control=DERIVED)
+        self._send_page(page, cache_control=DERIVED)
 
     def _diff(self, pergam_id: str, old: int, new: int, *html_bytes: int) -> list[Section] | TooLargeToDiff:
         """The sections, or why the versions are too large to compare; oversized HTML is never read."""
@@ -543,7 +555,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if filters is None:
             return
         page = render_index(self.store.index(filters), filters, self.public.display)
-        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+        self._send_page(page)
 
     def _render_index_json(self, query: dict[str, list[str]]) -> None:
         filters = self._filters(query)
@@ -567,6 +579,14 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
 
     def _send_json(self, body: object, status: int = 200) -> None:
         self._send(status, "application/json", json.dumps(body).encode("utf-8"))
+
+    def _send_page(self, page: str, cache_control: str = NO_STORE) -> None:
+        """A rendered HTML page, sent with `PAGE_HEADERS` (see `end_headers`)."""
+        self.page = True
+        try:
+            self._send(200, "text/html; charset=utf-8", page.encode("utf-8"), cache_control=cache_control)
+        finally:
+            self.page = False
 
     def _send(
         self,
