@@ -184,6 +184,7 @@ def test_origin_of_an_existing_id_is_kept(target: Client) -> None:
     target.publish(id="abcd1234", title="Doc v1", html="<p>version 1</p>")
     doc = document(versions=2)
     doc["versions"][0]["created_at"] = "2020-01-01T00:00:00+00:00"
+    doc["versions"][1]["created_at"] = datetime.now(timezone.utc).isoformat()
 
     resp = target.post_json(doc, "/import")
 
@@ -255,6 +256,7 @@ def test_tags_merged_past_the_limit_are_400_and_write_nothing(target: Client, ta
     target.publish(id="abcd1234", title="Doc v1", html="<p>version 1</p>", tags=[f"a{i}" for i in range(15)])
     state = target_db.execute(STATE).fetchone()
     doc = document(meta={"tags": [f"b{i}" for i in range(10)]})
+    doc["versions"][1]["created_at"] = datetime.now(timezone.utc).isoformat()
 
     assert target.post_json(doc, "/import").status == 400
     assert target_db.execute(STATE).fetchone() == state
@@ -349,3 +351,32 @@ def test_gap_check_does_not_enumerate_up_to_the_largest_version(target: Client, 
     assert (resp.status, time.monotonic() - started < 2) == (409, True)
     assert b"v1 of abcd1234 missing" in resp.body
     assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+
+
+def test_versions_dated_backwards_in_the_document_are_400(target: Client, target_db: psycopg.Connection) -> None:
+    doc = document(versions=3)
+    doc["versions"][2]["created_at"] = "2024-12-31T00:00:00+00:00"
+
+    resp = target.post_json(doc, "/import")
+
+    assert resp.status == 400
+    assert b"v3 is dated before v2" in resp.body
+    assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+
+
+def test_equal_dates_are_accepted() -> None:
+    doc = document(versions=2)
+    doc["versions"][1]["created_at"] = doc["versions"][0]["created_at"]
+
+    assert len(parse_import(doc, TYPES).versions) == 2
+
+
+def test_imported_version_dated_before_one_already_here_is_409(target: Client, target_db: psycopg.Connection) -> None:
+    target.publish(id="abcd1234", title="Doc v1", html="<p>version 1</p>")
+    state = target_db.execute(STATE).fetchone()
+
+    resp = target.post_json(document(versions=2), "/import")
+
+    assert resp.status == 409
+    assert b"v2 of abcd1234 would be dated before v1" in resp.body
+    assert target_db.execute(STATE).fetchone() == state
