@@ -29,6 +29,7 @@ services:
       PUBLIC_HOST: "${PUBLIC_HOST:-localhost}"
       PUBLIC_PORT: "${PUBLIC_PORT:-1111}"
       PERGAM_TYPES: "${PERGAM_TYPES:-}"
+      PERGAM_MAX_BODY_MB: "${PERGAM_MAX_BODY_MB:-}"
     depends_on:
       db:
         condition: service_healthy

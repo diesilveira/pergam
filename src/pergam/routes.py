@@ -17,6 +17,7 @@ from pergam.diff_page import render_diff
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
 from pergam.index_page import render_index
+from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
 from pergam.meta import MetaError, parse_meta_change
 from pergam.notes import NoteError, parse_note
 from pergam.public_url import PublicAddress
@@ -67,6 +68,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     store: PergamStore
     public: PublicAddress
     types: tuple[str, ...] = DEFAULT_TYPES
+    max_body_bytes: int = DEFAULT_MAX_BODY_MB * MIB
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {format % args}\n")
@@ -260,10 +262,17 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self._send(200, "application/json", json.dumps(meta.to_json(pergam_id)).encode("utf-8"))
 
     def _read_json_object(self) -> dict[str, Any] | None:
-        """The request's JSON object body, or None after answering 400/415."""
-        length = int(self.headers.get("Content-Length", "0") or 0)
+        """The request's JSON object body, or None after answering 400/413/415."""
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self.send_error(400, "Invalid Content-Length")
+            return None
         if length <= 0:
             self.send_error(400, "Empty body")
+            return None
+        if length > self.max_body_bytes:
+            self.send_error(413, f"Body larger than {self.max_body_bytes // MIB} MB")
             return None
         ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
         if ctype != "application/json":

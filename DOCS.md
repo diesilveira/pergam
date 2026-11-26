@@ -189,11 +189,12 @@ App env vars follow 12-factor conventions; only the pergam-specific knobs carry 
 | `PUBLIC_HOST`       | `localhost`            | Host used in returned `view_url`s when `PUBLIC_URL` is unset. |
 | `PUBLIC_PORT`       | `PORT`                 | Port used in returned `view_url`s when `PUBLIC_URL` is unset; `443` means `https`, `80`/`443` are omitted from the URL. |
 | `PERGAM_TYPES`      | `plan,investigacion,informe,reporte,otro` | Accepted `type` values, comma separated (see [Pergam types](#pergam-types)). |
+| `PERGAM_MAX_BODY_MB` | `256`                | Largest request body, in MB, for `POST` and `PATCH`. A larger declared `Content-Length` is **413** and nothing is read; a `Content-Length` that is not a number is **400**. The default leaves room for a multi-version `POST /import`. |
 | `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
 | `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
 
-See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, or when `PUBLIC_PORT` is not a number.
+See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, or when `PERGAM_MAX_BODY_MB` is not a positive integer.
 
 ## Schema migrations
 
@@ -232,6 +233,7 @@ pergam/
 │   ├── feed.py              Atom feed of recent publications
 │   ├── templates/           index, view and diff pages (HTML + CSS)
 │   ├── public_url.py        host/URL used in view_url and on the index
+│   ├── limits.py            largest request body (PERGAM_MAX_BODY_MB)
 │   ├── taxonomy.py          accepted types and badge colours
 │   ├── tags.py              tag normalisation and limits
 │   ├── meta.py              per-id metadata and PATCH validation
