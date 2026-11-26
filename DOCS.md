@@ -125,7 +125,7 @@ curl -sS http://localhost:1111/abc12345/text
 
 `?q=` matches a pergam when its latest version's title contains `q` (case-insensitive substring, as before) **or** its title or text matches `q` as a full-text query.
 
-- **Text** is the visible text of the HTML, extracted at publish time with the same extractor as `GET /{id}/text`: the contents of `script`, `style`, `template`, `noscript` and `head` are never indexed.
+- **Text** is the visible text of the HTML, extracted at publish time by the same parse that serves `GET /{id}/text`, stored as plain lines (the same blocks without Markdown syntax, so snippets show no `#` or `|`). The contents of `script`, `style`, `template`, `noscript` and `head` are never indexed.
 - **Query syntax** is Postgres' web-search syntax: words are ANDed, `"quoted phrase"` matches the words in order, `or` and `-excluded` work. Matching is language-neutral (`simple` configuration): case-insensitive, no stemming, so `region` does not match `regions`. Title words weigh more than body words.
 - **Snippet**: when the text matched, the row shows the matching fragment with the hits highlighted. A title-only match shows no snippet.
 - **Order and paging** are the same as without `q` (pinned, newest, id), so the cursor works unchanged.

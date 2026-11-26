@@ -14,7 +14,7 @@ from pergam.cursor import IndexCursor
 from pergam.meta import Meta, MetaChange
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
 from pergam.tags import merge_tags
-from pergam.text import extract_markdown
+from pergam.text import extract_text
 
 
 @dataclass(frozen=True)
@@ -150,11 +150,11 @@ def add_tags(conn: psycopg.Connection, pergam_id: str, tags: list[str]) -> list[
 
 
 def save_text(conn: psycopg.Connection, versions: list[tuple[str, int, str]]) -> None:
-    """Store the extracted text and search document of each `(id, version, html)`; existing rows win."""
+    """Store the plain extracted text and search document of each `(id, version, html)`; existing rows win."""
     with conn.cursor() as cur:
         cur.executemany(
             INSERT_TEXT,
-            [{"id": pergam_id, "version": version, "body": extract_markdown(html)} for pergam_id, version, html in versions],
+            [{"id": pergam_id, "version": version, "body": extract_text(html).plain} for pergam_id, version, html in versions],
         )
 
 

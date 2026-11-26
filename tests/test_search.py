@@ -141,9 +141,9 @@ def test_backfill_fills_every_version_in_batches_and_is_idempotent(legacy_pool: 
     assert backfill_text(legacy_pool, batch_size=2) == 0
 
     assert filled == [
-        ("aaaa0001", 1, "# plan v1\n"),
-        ("aaaa0001", 2, "# plan v2\n"),
-        ("bbbb0002", 1, "ñ\n"),
+        ("aaaa0001", 1, "plan v1"),
+        ("aaaa0001", 2, "plan v2"),
+        ("bbbb0002", 1, "ñ"),
     ]
     assert text_rows(legacy_pool) == filled
     with legacy_pool.connection() as conn:

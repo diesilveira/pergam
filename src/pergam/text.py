@@ -1,9 +1,12 @@
-"""Visible text of a pergam's HTML as simple Markdown, for search and for `GET /{id}/text`.
+"""Visible text of a pergam's HTML, for `GET /{id}/text` and for search.
 
-Only the stdlib `html.parser`. The contents of `script`, `style`, `template`,
-`noscript` and `head` are dropped; headings become `#` lines, list items `-` or
-`1.` lines, tables pipe tables (first row as header) and `pre` fenced blocks.
-Everything else is paragraphs of whitespace-collapsed text.
+Only the stdlib `html.parser`, and one parse renders it twice: as simple
+Markdown for `/text`, and as plain lines (the same blocks without Markdown
+syntax) for the search index and its snippets. The contents of `script`,
+`style`, `template`, `noscript` and `head` are dropped. In Markdown, headings
+become `#` lines, list items `-` or `1.` lines, tables pipe tables (first row as
+header) and `pre` fenced blocks; everything else is paragraphs of
+whitespace-collapsed text.
 """
 
 from __future__ import annotations
@@ -54,12 +57,18 @@ class _Table:
         self.rows.append([])
 
     def markdown(self) -> str:
-        rows = [row for row in self.rows if any(row)]
+        rows = self._rows()
         if not rows:
             return ""
         width = max(len(row) for row in rows)
         lines = [_table_line(row + [""] * (width - len(row))) for row in rows]
         return "\n".join([lines[0], _table_line(["---"] * width), *lines[1:]])
+
+    def plain(self) -> str:
+        return "\n".join(" ".join(cell for cell in row if cell) for row in self._rows())
+
+    def _rows(self) -> list[list[str]]:
+        return [row for row in self.rows if any(row)]
 
 
 def _table_line(cells: list[str]) -> str:
@@ -71,10 +80,23 @@ def _fence(code: str) -> str:
     return "`" * (longest + 1)
 
 
-class _MarkdownBuilder(HTMLParser):
+@dataclass(frozen=True)
+class PageText:
+    markdown: str
+    plain: str
+
+
+@dataclass(frozen=True)
+class _Block:
+    markdown: str
+    plain: str
+    list_group: int = 0
+
+
+class _TextBuilder(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.blocks: list[tuple[str, int]] = []
+        self.blocks: list[_Block] = []
         self.list_group = 0
         self.inline: list[str] = []
         self.skip_depth = 0
@@ -136,7 +158,8 @@ class _MarkdownBuilder(HTMLParser):
         if tag == "table":
             self._end_table()
         elif tag == "caption" and self.table and self.table.caption is not None:
-            self._emit(collapse("".join(self.table.caption)))
+            caption = collapse("".join(self.table.caption))
+            self._emit(caption, caption)
             self.table.caption = None
         elif self.table_depth:
             if tag in CELLS and self.table_depth == 1 and self.table:
@@ -170,15 +193,16 @@ class _MarkdownBuilder(HTMLParser):
             self._end_pre()
         self._flush()
 
-    def markdown(self) -> str:
+    def page_text(self) -> PageText:
         out: list[str] = []
         previous_group = 0
-        for text, group in self.blocks:
+        for block in self.blocks:
             if out:
-                out.append("\n" if group and group == previous_group else "\n\n")
-            out.append(text)
-            previous_group = group
-        return "".join(out) + "\n" if out else ""
+                out.append("\n" if block.list_group and block.list_group == previous_group else "\n\n")
+            out.append(block.markdown)
+            previous_group = block.list_group
+        markdown = "".join(out) + "\n" if out else ""
+        return PageText(markdown=markdown, plain="\n".join(block.plain for block in self.blocks))
 
     def _write(self, text: str) -> None:
         if self.table:
@@ -207,16 +231,17 @@ class _MarkdownBuilder(HTMLParser):
         if not text:
             return
         if self.heading:
-            self._emit("#" * self.heading + " " + text)
+            self._emit("#" * self.heading + " " + text, text)
         elif self.lists or self.marker:
             marker, self.marker = self.marker, None
-            self.blocks.append((self._indent() + (marker or "  ") + text, self.list_group if self.lists else 0))
+            line = self._indent() + (marker or "  ") + text
+            self.blocks.append(_Block(line, text, self.list_group if self.lists else 0))
         else:
-            self._emit(text)
+            self._emit(text, text)
 
-    def _emit(self, text: str) -> None:
-        if text:
-            self.blocks.append((text, 0))
+    def _emit(self, markdown: str, plain: str) -> None:
+        if markdown:
+            self.blocks.append(_Block(markdown, plain))
 
     def _start_table(self) -> None:
         if self.table_depth == 0:
@@ -233,7 +258,7 @@ class _MarkdownBuilder(HTMLParser):
         if self.table_depth == 0 and self.table:
             self.table.close_cell()
             table, self.table = self.table, None
-            self._emit(table.markdown())
+            self._emit(table.markdown(), table.plain())
 
     def _end_pre(self) -> None:
         code = "".join(self.pre or []).removeprefix("\r").removeprefix("\n").rstrip()
@@ -241,12 +266,12 @@ class _MarkdownBuilder(HTMLParser):
         self.pre_depth = 0
         if code.strip():
             fence = _fence(code)
-            self._emit(f"{fence}\n{code}\n{fence}")
+            self._emit(f"{fence}\n{code}\n{fence}", code)
 
 
-def extract_markdown(html: str) -> str:
-    """The visible text of `html` as Markdown, ending in a newline; empty when nothing is visible."""
-    builder = _MarkdownBuilder()
+def extract_text(html: str) -> PageText:
+    """The visible text of `html`. `markdown` ends in a newline; both are empty when nothing is visible."""
+    builder = _TextBuilder()
     builder.feed(html)
     builder.close()
-    return builder.markdown()
+    return builder.page_text()

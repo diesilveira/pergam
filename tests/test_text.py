@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from pergam.text import extract_markdown
+from pergam.text import extract_text
+
+
+def extract_markdown(html: str) -> str:
+    return extract_text(html).markdown
 
 
 def test_skips_invisible_elements() -> None:
@@ -62,3 +66,13 @@ def test_nested_table_is_flattened_into_its_cell() -> None:
     html = "<table><tr><td>outer<table><tr><td>inner</td></tr></table></td></tr></table>"
 
     assert extract_markdown(html) == "| outer inner |\n| --- |\n"
+
+
+def test_plain_rendering_has_the_same_blocks_without_markdown_syntax() -> None:
+    html = (
+        "<h2>Status</h2><ul><li>east</li><li>west</li></ul>"
+        "<table><tr><th>Region</th><th>State</th></tr><tr><td>east</td><td></td><td>done</td></tr></table>"
+        "<pre>x = 1</pre>"
+    )
+
+    assert extract_text(html).plain == "Status\neast\nwest\nRegion State\neast done\nx = 1"

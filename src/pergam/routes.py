@@ -20,7 +20,7 @@ from pergam.public_url import PublicAddress
 from pergam.store import IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
-from pergam.text import extract_markdown
+from pergam.text import extract_text
 
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 VERSION_RE = re.compile(r"^v(\d+)$")
@@ -181,7 +181,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if html_text is None:
             self.send_error(404, "Pergam not found")
             return
-        body = extract_markdown(html_text) if kind == "text" else html_text
+        body = extract_text(html_text).markdown if kind == "text" else html_text
         cache_control = NO_STORE if version is None else IMMUTABLE
         self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control)
 
