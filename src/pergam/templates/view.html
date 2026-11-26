@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${page_title}</title>
+<style>
+${css}</style></head><body data-title-suffix="${title_suffix}">
+
+<header class="bar">
+  <a class="bar__home" href="/" title="pergam index"><span class="blocks">▮▮</span> pergam</a>
+  <h1 class="bar__title">${title}</h1>
+  <span class="type" style="--type-rgb:${type_rgb}">${type}</span>
+  ${tags}
+  <span class="bar__author">${author}</span>
+  ${origin}
+  <details class="versions">
+    <summary>v${version} of ${total}</summary>
+    <ol class="versions__list" reversed>${version_items}</ol>
+  </details>
+  <nav class="bar__links">
+    <a href="/">index</a>
+    <a href="${raw_href}">raw</a>
+    <a href="${text_href}">text</a>
+    ${changes_link}
+    <a href="${content_href}">open document</a>
+    <button type="button" class="bar__print" hidden>print</button>
+  </nav>
+</header>
+${outdated}
+<iframe ${frame_attributes}></iframe>
+
+<script>
+  (() => {
+    const MAX_LENGTH = 2048;
+    const MAX_TITLE = 200;
+    const frame = document.querySelector('iframe.doc');
+    const printButton = document.querySelector('.bar__print');
+    const titleSuffix = document.body.dataset.titleSuffix;
+    let bridged = false;
+    const toFrame = (type, value) => frame.contentWindow && frame.contentWindow.postMessage({ pergam: 1, type, value }, '*');
+    const forwardHash = () => { if (bridged && location.hash) toFrame('hash', location.hash); };
+    const print = () => toFrame('print', '');
+
+    addEventListener('hashchange', forwardHash);
+    printButton.addEventListener('click', print);
+    addEventListener('keydown', (event) => {
+      if (bridged && (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        print();
+      }
+    });
+    addEventListener('message', (event) => {
+      if (event.source !== frame.contentWindow) return;
+      if (event.origin !== location.origin && event.origin !== 'null') return;
+      const data = event.data;
+      if (!data || typeof data !== 'object' || data.pergam !== 1) return;
+      if (typeof data.type !== 'string' || typeof data.value !== 'string' || data.value.length > MAX_LENGTH) return;
+      if (data.type === 'ready') {
+        bridged = true;
+        printButton.hidden = false;
+        forwardHash();
+      } else if (data.type === 'title') {
+        const title = data.value.replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE);
+        if (title) document.title = title + titleSuffix;
+      } else if (data.type === 'hash' && data.value.startsWith('#') && data.value !== location.hash) {
+        history.replaceState(history.state, '', data.value);
+      }
+    });
+  })();
+</script>
+</body></html>

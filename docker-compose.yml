@@ -8,7 +8,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pergam}
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pergam -d pergam"]
       interval: 5s
@@ -26,8 +25,12 @@ services:
       HOST: "0.0.0.0"
       PORT: "1111"
       DATABASE_URL: "postgresql://pergam:${POSTGRES_PASSWORD:-pergam}@db:5432/pergam"
+      PUBLIC_URL: "${PUBLIC_URL:-}"
       PUBLIC_HOST: "${PUBLIC_HOST:-localhost}"
       PUBLIC_PORT: "${PUBLIC_PORT:-1111}"
+      PERGAM_TYPES: "${PERGAM_TYPES:-}"
+      PERGAM_MAX_BODY_MB: "${PERGAM_MAX_BODY_MB:-}"
+      TRUST_PROXY_USER: "${TRUST_PROXY_USER:-}"
     depends_on:
       db:
         condition: service_healthy

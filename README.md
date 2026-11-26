@@ -12,7 +12,7 @@ A tiny self-hostable service — or a hosted endpoint — that turns every HTML 
 [![Version](https://img.shields.io/github/v/tag/diesilveira/pergam?label=version&color=brightgreen)](https://github.com/diesilveira/pergam/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/diesilveira/pergam?style=flat&logo=github)](https://github.com/diesilveira/pergam/stargazers)
 
-[![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Postgres](https://img.shields.io/badge/Postgres-15-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-D97757?logo=anthropic&logoColor=white)](skills/post-pergam/SKILL.md)
@@ -38,10 +38,17 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 📦 **Publish HTML** via one `POST`, get a stable URL back.
 - 🕰️ **Versioned** — every logical `id` keeps full history. `v1`, `v2`, … all reachable forever.
 - 🔒 **Immutable** — pergams can't be edited or deleted, only superseded with a new version.
+- 🧭 **Visible versions** — every pergam opens under a slim bar with its title, type, tags, author and `v3 of 5`, a version selector with each version's note, and a notice on older versions linking to the current one. `/{id}/diff/v2..v5` shows what changed between two versions, section by section.
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
-- 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
-- 🏷️ **Typed taxonomy** — `plan`, `investigacion`, `informe`, `reporte`, `otro`. Filter the index by type, author, or substring.
-- 🐳 **Self-hostable** — one Python file (~500 LOC), one Postgres table, one `docker compose up`.
+- 🪞 **Built-in viewer** — on [pergam.dev](https://pergam.dev), a sandboxed iframe with strict CSP: Mermaid + jsDelivr allowed, everything else blocked. A self-hosted server frames each version under its version bar the same way: sandboxed in an opaque origin, with the hosted viewer's CSP, so a published script cannot reach the API.
+- 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag; pin what matters, archive what doesn't.
+- 🧹 **Lint before publishing** — `POST /lint` reports external resources, broken TOC anchors and malformed Mermaid blocks with their line and column, and stores nothing; the skill runs it before every self-hosted publish.
+- 🔎 **Searchable** — `?q=` searches titles and the visible text of every pergam, with highlighted snippets.
+- 📡 **Atom feed** — `/feed.atom` follows new publications, filtered by tag or author.
+- 🚚 **Portable** — `/{id}/export` and `POST /import` move a pergam to another server with its id, versions, dates, tags and notes; the skill promotes one between named servers in one command.
+- 🧩 **JSON API** — `/api/pergams` lists, filters, pages and counts like the index; `/api/pergams/{id}` returns one pergam with its versions.
+- 🔐 **Owners behind your proxy** — with `TRUST_PROXY_USER=1` the author comes from an authenticating reverse proxy (`X-Forwarded-User`), and only a pergam's owner and the collaborators they list can add versions or edit it.
+- 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.
 - 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. A tiny edge worker for the hosted variant. No framework, no build step.
 
@@ -93,10 +100,10 @@ Inside any project, ask Claude:
 
 > _"armá un pergam de X y publicalo"_
 
-The skill **auto-picks the backend** based on `$PERGAM_URL`:
+The skill **auto-picks the server and backend**: a server the user names ("publish it on team") from `~/.config/pergam/servers.json`, else `$PERGAM_URL`, else the file's `default`, else hosted:
 
-- Unset / `https://api.pergam.dev` → hosted (Flow A, 1-year TTL)
-- Local URL like `http://localhost:1111` → self-hosted (Flow B, versioned)
+- `https://api.pergam.dev` → hosted (Flow A, 1-year TTL)
+- Any other URL, like `http://localhost:1111` → self-hosted (Flow B, versioned), with an optional CA bundle per server for private TLS
 
 See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full contract — when to bump a version, the type taxonomy, and the HTML guidelines for what the AI should produce.
 
@@ -105,13 +112,13 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 ```
 ┌─────────────┐      ┌──────────────────┐      ┌──────────────┐
 │   Client    │ ───→ │      pergam      │ ───→ │   Postgres   │
-│ (AI / curl) │      │ (Python · 500 LOC)│      │  (1 table)   │
+│ (AI / curl) │      │ (Python, stdlib) │      │  (4 tables)  │
 └─────────────┘      └──────────────────┘      └──────────────┘
 ```
 
 - **One Python process**, no framework — just `http.server` + `psycopg`.
-- **One Postgres table**: `pergams (id, version, …)` with a composite key. Latest version per `id` resolved via a window function on read.
-- **Strict CSP per response**: sandboxed iframe, `frame-ancestors` allowlist, no inline scripts on the viewer chrome.
+- **Four Postgres tables**: immutable `pergams (id, version, …)` with a composite key, `pergam_meta (id, tags, archived, pinned, origin, collaborators)` for what belongs to the id rather than to a version, `pergam_text` with each version's extracted text and full-text search document, and `pergam_note` with the optional note of each version. Latest version per `id` resolved on read through the `pergams_latest` view.
+- **Framed documents**: the view page loads each version in an iframe from `/{id}/v{n}/content` and talks to it only through a `postMessage` bridge, so the frame is sandboxed without `allow-same-origin` and `/content` carries the hosted viewer's CSP (no connection, form or frame to the API, `frame-ancestors` limited to the server), with a CSP `sandbox` directive for when it is opened on its own.
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 
 Full schema, request flow, and config knobs → [DOCS.md](DOCS.md).

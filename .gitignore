@@ -18,3 +18,7 @@ web/worker/wrangler.toml
 
 # Claude Code (local tool config / worktrees)
 .claude/
+
+# Python virtualenv
+.venv/
+.pytest_cache/

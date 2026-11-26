@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pergam · index</title>
+<link rel="alternate" type="application/atom+xml" title="pergam · recent publications" href="/feed.atom">
+<style>
+${css}</style></head><body>
+
+<header class="topbar">
+  <span class="topbar__logo"><span class="blocks">▮▮</span> pergam</span>
+  <span class="topbar__pill">SELF-HOSTED</span>
+  <span class="topbar__url"><span class="topbar__dot"></span>${host_display}</span>
+  <nav class="topbar__nav">
+    <a href="/" class="active">Index</a>
+    <a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">API</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="title-row">
+    <h1>Index</h1>
+    <div class="sub">${showing_note}</div>
+  </div>
+
+  <section class="stats-grid" aria-label="Instance stats">
+    <div class="stat">
+      <div class="stat__value">${total_pergams}</div>
+      <div class="stat__label">PERGAMS</div>
+      ${new_pergams_delta}
+    </div>
+    <div class="stat">
+      <div class="stat__value">${total_authors}</div>
+      <div class="stat__label">AUTHORS</div>
+    </div>
+    <div class="stat">
+      <div class="stat__value">${total_versions}</div>
+      <div class="stat__label">VERSIONS</div>
+      ${new_versions_delta}
+    </div>
+    <div class="stat">
+      <div class="stat__value">${bytes_value}<span class="unit">${bytes_unit}</span></div>
+      <div class="stat__label">PAYLOAD</div>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    ${type_pills}
+    ${author_pills}
+    ${tag_pills}
+    <form class="search-form" method="get">
+      <input type="search" name="q" placeholder="search title and text…" value="${q_value}" autocomplete="off">
+      <input type="hidden" name="type" value="${type_value}">
+      <input type="hidden" name="author" value="${author_value}">
+      <input type="hidden" name="tag" value="${tag_value}">
+      <input type="hidden" name="archived" value="${archived_value}">
+    </form>
+    ${archived_toggle}
+    ${clear_link}
+  </div>
+
+  <section class="list" aria-label="Pergams">
+    ${rows}
+  </section>
+  ${pager}
+</main>
+
+<script>
+  // Make the whole row navigable, but defer to inner <a> and <details>
+  // so the type pill, author chip, and version dropdown still work.
+  document.querySelectorAll('.row[data-href]').forEach(row => {
+    const go = () => window.location.assign(row.getAttribute('data-href'));
+    row.addEventListener('click', ev => {
+      if (ev.target.closest('a, details, summary, input, button')) return;
+      go();
+    });
+    row.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' && ev.target === row) go();
+    });
+  });
+</script>
+</body></html>
