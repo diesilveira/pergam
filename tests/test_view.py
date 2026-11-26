@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timezone
 
@@ -7,8 +8,11 @@ import pytest
 
 from pergam.meta import Meta
 from pergam.store import VersionInfo
+from pergam.static_files import MERMAID_PATH, MERMAID_VERSION
 from pergam.view_page import BRIDGE_TAG, SANDBOX, FramePolicy, frame_policy, framed, render_view
 from support import Client
+
+MERMAID_SHA256 = "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8"
 
 
 def publish_versions(client: Client, count: int, **fields: str) -> str:
@@ -205,6 +209,31 @@ def test_bridge_script_is_served_with_a_short_cache(client: Client) -> None:
     assert resp.body.startswith(b"/*\n * pergam frame bridge")
 
 
-@pytest.mark.parametrize("path", ["/static/other.js", "/static/", "/static/../server.py", "/static/frame-bridge.js/x"])
-def test_only_the_bridge_is_served_from_static(client: Client, path: str) -> None:
+def test_vendored_mermaid_and_its_licence_are_served_for_good(client: Client) -> None:
+    script = client.get(MERMAID_PATH)
+    licence = client.get(f"/static/mermaid/{MERMAID_VERSION}/LICENSE")
+
+    assert script.status == 200
+    assert script.headers["content-type"] == "text/javascript; charset=utf-8"
+    assert script.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert script.headers["x-content-type-options"] == "nosniff"
+    assert hashlib.sha256(script.body).hexdigest() == MERMAID_SHA256
+    assert licence.headers["content-type"] == "text/plain; charset=utf-8"
+    assert licence.text.startswith("The MIT License (MIT)")
+
+
+def test_static_files_answer_head_without_a_body(client: Client) -> None:
+    resp = client.request("HEAD", MERMAID_PATH)
+
+    assert resp.status == 200
+    assert resp.body == b""
+    assert int(resp.headers["content-length"]) > 1_000_000
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/static/other.js", "/static/", "/static/../server.py", "/static/frame-bridge.js/x", "/static/mermaid/",
+     f"/static/mermaid/{MERMAID_VERSION}/", "/static/mermaid/11.4.1/mermaid.min.js", "/static/mermaid/../frame-bridge.js"],
+)
+def test_only_listed_files_are_served_from_static(client: Client, path: str) -> None:
     assert client.get(path).status == 404

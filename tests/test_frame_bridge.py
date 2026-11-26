@@ -11,6 +11,7 @@ from collections.abc import Iterator
 import psycopg
 import pytest
 
+from pergam.static_files import FILES, MERMAID_CDN_URL, MERMAID_PATH
 from support import Client
 
 sync_api = pytest.importorskip("playwright.sync_api")
@@ -40,6 +41,27 @@ form.innerHTML = '<input name="x" value="y">';
 document.body.append(form);
 form.submit();
 </script></body>"""
+
+
+VENDORED_MERMAID = FILES[MERMAID_PATH].body
+DIAGRAM = """<!doctype html><title>Diagram</title><body>
+<nav><a id="to-flow" href="#flow">flow</a></nav>
+<div style="height:3000px"></div>
+<h2 id="flow">Flow</h2>
+<pre class="mermaid">
+flowchart TB
+  classDef step fill:#161b22,stroke:#58a6ff,color:#e6edf3
+  A["Input"]:::step --> B{"decision"}:::step
+  B -- "ok" --> C["Result"]
+</pre>
+<pre class="mermaid">
+sequenceDiagram
+  Alice->>Bob: hello
+</pre>
+<div style="height:3000px"></div>
+<script src="{src}"></script>
+<script>mermaid.initialize({startOnLoad: true, theme: 'dark', securityLevel: 'loose'});</script>
+</body>"""
 
 
 @pytest.fixture(scope="module")
@@ -276,3 +298,23 @@ def test_messages_from_another_origin_are_dropped(view, browser) -> None:
     page.wait_for_function("document.querySelector('iframe.doc').contentWindow.length === 0")
     page.wait_for_timeout(300)
     assert page.evaluate("document.title") == "Inner title · v1 · pergam"
+
+
+@pytest.mark.parametrize("src", [MERMAID_PATH, MERMAID_CDN_URL], ids=["vendored", "jsdelivr"])
+def test_mermaid_diagrams_and_anchors_work_in_the_sandbox(view, src: str) -> None:
+    page, base, _ = view
+    client = Client(int(base.rsplit(":", 1)[1]))
+    pid = client.publish(title="Diagram", html=DIAGRAM.replace("{src}", src))["id"]
+    requested: list[str] = []
+    page.on("request", lambda request: requested.append(request.url))
+    page.route(MERMAID_CDN_URL, lambda route: route.fulfill(content_type="text/javascript", body=VENDORED_MERMAID))
+    frame = open_view(page, f"{base}/{pid}/view")
+
+    frame.wait_for_function("document.querySelectorAll('pre.mermaid svg').length === 2", timeout=15000)
+    frame.click("#to-flow")
+    page.wait_for_function("location.hash === '#flow'")
+
+    assert frame.evaluate("scrollY") > 2500
+    assert frame.evaluate("document.querySelector('pre.mermaid svg').textContent").count("Input") == 1
+    outside = [url for url in requested if not url.startswith(base)]
+    assert outside == ([] if src == MERMAID_PATH else [MERMAID_CDN_URL])

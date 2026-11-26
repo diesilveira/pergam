@@ -268,7 +268,7 @@ python3 <skill-dir>/pergam_promote.py abc12345 --from local --to team
 Shared between both flows.
 
 - Complete document: `<!doctype html><html lang="...">...</html>`.
-- Inline all CSS. **No external fonts.** **No external JS** except Mermaid (see below).
+- Inline all CSS. **No external fonts.** **No external JS**: Mermaid comes from the server on Flow B and from jsDelivr on Flow A (see below).
 - Both backends run the document sandboxed, in an opaque origin, under a strict CSP: no external images (use inline SVG or `data:` URIs), no `fetch`/XHR, no forms, no nested iframes, no `localStorage` or cookies. In-page anchors, links, inline scripts, printing and Mermaid keep working.
 - Use CSS Grid or flexbox for the actual layout.
 - Dark theme. Paleta from `polish-guide.md`: `bg:#0d1117`, `bg2:#161b22`, `text:#e6edf3`, `muted:#8b949e`, `border:#30363d`, accent `#58a6ff`, ok `#3fb950`, warn `#d29922`, critical `#f85149`.
@@ -286,7 +286,7 @@ If content has 5+ logical sections, diagrams, or schemas → long-form template.
 
 ## Diagrams
 
-Replace ASCII art with Mermaid in long-form content. Only allowed external dependency (`https://cdn.jsdelivr.net/npm/mermaid@11.4.1`). Use `flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `erDiagram`. Always set `theme: 'dark'` and define `classDef` colors per diagram. Full snippet in `polish-guide.md`.
+Replace ASCII art with Mermaid in long-form content. Flow B (self-hosted): `<script src="/static/mermaid/11.17.2/mermaid.min.js"></script>`, served by the pergam server itself, so the pergam makes no external request. Flow A (hosted): `<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"></script>`, the only allowed external dependency. Same version on both, so diagrams render the same. Use `flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `erDiagram`. Always set `theme: 'dark'` and define `classDef` colors per diagram. Full snippet in `polish-guide.md`.
 
 ## Troubleshooting
 

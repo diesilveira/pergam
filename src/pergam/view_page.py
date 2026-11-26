@@ -22,6 +22,7 @@ from string import Template
 from urllib.parse import urlencode, urlparse
 
 from pergam.meta import Meta, Origin
+from pergam.static_files import BRIDGE_PATH
 from pergam.store import VersionInfo
 from pergam.taxonomy import type_rgb
 
@@ -32,9 +33,7 @@ _CSS = (_TEMPLATES / "view.css").read_text(encoding="utf-8")
 esc = html_lib.escape
 
 
-BRIDGE_PATH = "/static/frame-bridge.js"
 BRIDGE_TAG = f'<script src="{BRIDGE_PATH}" defer></script>'
-BRIDGE_SCRIPT = (Path(__file__).resolve().parent / "static" / "frame-bridge.js").read_bytes()
 _LEADING_DOCTYPE = re.compile(r"\A\ufeff?(?:\s|<!--.*?-->)*<!doctype\b[^>]*>", re.IGNORECASE | re.DOTALL)
 
 
@@ -73,7 +72,7 @@ def frame_policy(own_origin: str | None) -> FramePolicy:
     or frame to this server, and its `sandbox` directive applies the same
     isolation when `/content` is opened directly. Scripts load only inline, from
     this server (the bridge, the vendored Mermaid in `/static/`) and from
-    jsDelivr, which documents published before `/static/` still use. A browser
+    jsDelivr, which documents published before `/static/` served Mermaid still use. A browser
     that does not match `'self'` from an opaque origin gets the server's public
     origin by name. The sandbox tokens keep scripts, links that leave the document
     (top navigation on a click), printing (`allow-modals`) and links that open a

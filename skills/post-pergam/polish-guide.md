@@ -72,10 +72,10 @@ flowchart TB
 </div>
 ```
 
-Mermaid initialization (one script tag at the bottom of the body):
+Mermaid initialization (one script tag at the bottom of the body). On a self-hosted server load it from the server itself, `/static/mermaid/11.17.2/mermaid.min.js`, so the pergam makes no external request; on the hosted backend (pergam.dev) use `https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js`:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script src="/static/mermaid/11.17.2/mermaid.min.js"></script>
 <script>
   mermaid.initialize({
     startOnLoad: true,
@@ -95,7 +95,7 @@ Mermaid initialization (one script tag at the bottom of the body):
 </script>
 ```
 
-This is the **one allowed CDN** for long-form HTML. Don't pull anything else (no fonts, no Prism, no Tailwind). Mermaid pays its weight by replacing ASCII art that doesn't survive screenshots.
+jsDelivr is the **one allowed CDN** for long-form HTML, and only on the hosted backend. Don't pull anything else (no fonts, no Prism, no Tailwind). Mermaid pays its weight by replacing ASCII art that doesn't survive screenshots.
 
 ### Mermaid types worth knowing
 

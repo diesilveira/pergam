@@ -29,6 +29,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `POST`   | `/import`             | Body: an export document. Recreates the versions this server lacks, keeping id, version numbers and `created_at`. Returns `{id, imported, skipped, origin, view_url}`. **409** when a version already here differs. See [Export and import](#export-and-import). |
 | `GET`    | `/feed.atom`          | Atom 1.0 feed of the 50 most recent publications; `?tag=<tag>`, `?author=<email>`. See [Feed](#feed). |
 | `GET`    | `/static/frame-bridge.js` | The frame bridge script (`text/javascript`, cached five minutes). |
+| `GET`    | `/static/mermaid/11.17.2/mermaid.min.js` | Mermaid 11.17.2, vendored (`text/javascript`, cached for good), next to its `LICENSE`. See [Mermaid](#mermaid). |
 | `GET`    | `/healthz`            | Liveness probe.                                                      |
 | `HEAD`   | any `GET` route       | Same status and headers as `GET`, without the body.                  |
 | `DELETE` | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |
@@ -123,10 +124,14 @@ A published document never runs with the server's privileges, framed or opened o
 - The iframe is `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation-by-user-activation"`, without `allow-same-origin`, and every `/content` response repeats those tokens in the `sandbox` directive of its `Content-Security-Policy`. The document runs in an opaque origin (`origin` is `"null"`): no cookies or `localStorage` of this server, and every request it makes to the API is cross-origin.
 - The rest of that CSP is the hosted viewer's: `default-src 'none'`; scripts inline, from this server and from `https://cdn.jsdelivr.net`; styles inline and from jsDelivr; images only `data:`; fonts `data:` and jsDelivr; `connect-src` only jsDelivr; `form-action 'none'`, `base-uri 'none'`; framed only by this server (`frame-ancestors`). "This server" is `'self'` plus its public origin by name (from `PUBLIC_URL`, or `PUBLIC_HOST`/`PUBLIC_PORT`), for browsers that do not match `'self'` from an opaque origin. `/content` also sends `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`; `/raw` is `text/plain` with `nosniff`, so it never renders.
 - So a script inside a pergam cannot read the index, post a version, patch metadata, submit a form, beacon or embed a frame against the API: the browser blocks the request before it leaves.
-- What still works: inline scripts and styles, Mermaid from `/static/` or jsDelivr, in-page anchors, links that leave the document (on a click), links that open a new tab (as an ordinary page outside the sandbox), printing, `data:` images.
+- What still works: inline scripts and styles, [Mermaid](#mermaid) from `/static/` or jsDelivr, in-page anchors, links that leave the document (on a click), links that open a new tab (as an ordinary page outside the sandbox), printing, `data:` images.
 - What a document loses: images, fonts, scripts and styles from anywhere else, `fetch` and XHR except to jsDelivr, forms, nested frames, `localStorage`/`sessionStorage`/cookies, and navigating the whole window without a click. The skill keeps documents within these limits.
 
 `/content` is cached for five minutes (`public, max-age=300`), not for good like `/raw`, because the bridge tag and these headers are the server's and may change with an upgrade.
+
+### Mermaid
+
+The server ships Mermaid 11.17.2 (`dist/mermaid.min.js` of the npm package, unchanged, MIT, with its licence at `/static/mermaid/11.17.2/LICENSE`) and serves it at `/static/mermaid/11.17.2/mermaid.min.js`, cached for good since the path names the version. A pergam that loads it from there renders its diagrams with no external request, and the skill's template does so on a self-hosted server. Pergams published earlier load Mermaid from `https://cdn.jsdelivr.net`, which the sandbox's CSP still allows, as the hosted viewer does, so they keep rendering. Published documents name that versioned path, so an upgrade adds the new version next to it and keeps shipping the old one.
 
 ## Diff
 
@@ -346,7 +351,8 @@ pergam/
 │   ├── api.py               JSON bodies of /api/pergams
 │   ├── feed.py              Atom feed of recent publications
 │   ├── templates/           index, view and diff pages (HTML + CSS)
-│   ├── static/              frame-bridge.js, appended to /content
+│   ├── static/              frame-bridge.js (added to /content) and vendored Mermaid
+│   ├── static_files.py      the files served under /static/
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── limits.py            largest request body (PERGAM_MAX_BODY_MB)
 │   ├── taxonomy.py          accepted types and badge colours
@@ -424,4 +430,4 @@ make test      # run the test suite (see Testing)
 
 ## Privacy
 
-No telemetry. No external network calls. The server only reads/writes its own Postgres. Embedded HTML may pull external resources (Mermaid CDN, fonts) if the publisher includes them — that's outside pergam's control.
+No telemetry. No external network calls. The server only reads/writes its own Postgres. A self-hosted pergam's CSP lets a document load only from the server itself and from jsDelivr (Mermaid in pergams published before the server served it), so nothing else leaves the reader's browser.

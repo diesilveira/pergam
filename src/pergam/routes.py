@@ -30,7 +30,8 @@ from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
 from pergam.text import extract_text
 from pergam.transfer import TransferError, export_json, parse_import
-from pergam.view_page import BRIDGE_PATH, BRIDGE_SCRIPT, FRAME_POLICY, FramePolicy, framed, render_view
+from pergam.static_files import FILES as STATIC_FILES
+from pergam.view_page import FRAME_POLICY, FramePolicy, framed, render_view
 
 VERSION_RE = re.compile(r"^v(\d+)$")
 RANGE_RE = re.compile(r"^v([1-9]\d*)\.\.v([1-9]\d*)$")
@@ -43,6 +44,7 @@ LATEST_KINDS = frozenset({"raw", "text"})
 NO_STORE = "no-store"
 IMMUTABLE = "public, max-age=31536000, immutable"
 DERIVED = "public, max-age=300"
+NOSNIFF = (("X-Content-Type-Options", "nosniff"),)
 
 
 def _utc_now_iso() -> str:
@@ -194,8 +196,10 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if path == "api/pergams":
             self._render_index_json(parse_qs(parsed.query))
             return
-        if path == BRIDGE_PATH.strip("/"):
-            self._send(200, "text/javascript; charset=utf-8", BRIDGE_SCRIPT, cache_control=DERIVED)
+        static = STATIC_FILES.get(parsed.path)
+        if static is not None:
+            cache_control = IMMUTABLE if static.versioned else DERIVED
+            self._send(200, static.content_type, static.body, cache_control=cache_control, headers=NOSNIFF)
             return
         if path == "healthz":
             self._send(200, "application/json", b'{"ok":true}')
@@ -311,7 +315,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         else:
             body = html_text
         cache_control = NO_STORE if version is None else IMMUTABLE if kind == "raw" else DERIVED
-        headers = self.frame.content_headers if kind == "content" else (("X-Content-Type-Options", "nosniff"),)
+        headers = self.frame.content_headers if kind == "content" else NOSNIFF
         self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control, headers=headers)
 
     def _render_view(self, pergam_id: str, version: int | None) -> None:
