@@ -83,14 +83,14 @@ def test_title_only_match_has_no_snippet(client: Client, searchable: dict[str, s
 
 
 def test_snippet_escapes_body_text_except_the_highlight(client: Client) -> None:
-    client.publish(html="<p>if a &lt; b then &lt;img src=x onerror=alert(1)&gt; needle  here</p>")
+    client.publish(html="<p>if a &lt; b then &lt;img src=x onerror=alert(1)&gt; needle \ue000 here</p>")
 
     page = client.get("/?q=needle").text
 
     assert "&lt;img src=x onerror=alert(1)&gt;" in page
     assert "<img src=x" not in page
     assert "<mark>needle</mark>" in page
-    assert "" not in page
+    assert "\ue000" not in page
 
 
 def test_matching_count_includes_body_matches(client: Client, searchable: dict[str, str]) -> None:
