@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
-from pergam.diff import diff_sections
+from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
@@ -229,9 +229,16 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if old is None or new is None:
             self.send_error(404, "Pergam or version not found")
             return
-        old_html, new_html = (self.store.html(pergam_id, info.version) or "" for info in (old, new))
-        page = render_diff(pergam_id, old, new, diff_sections(old_html, new_html))
+        page = render_diff(pergam_id, old, new, self._diff(pergam_id, old.version, new.version, old.bytes, new.bytes))
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"), cache_control=DERIVED)
+
+    def _diff(self, pergam_id: str, old: int, new: int, *html_bytes: int) -> list[Section] | TooLargeToDiff:
+        """The sections, or why the versions are too large to compare; oversized HTML is never read."""
+        try:
+            check_size(*html_bytes)
+            return diff_sections(*(self.store.html(pergam_id, version) or "" for version in (old, new)))
+        except TooLargeToDiff as exc:
+            return exc
 
     def _render_versions_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)

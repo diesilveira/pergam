@@ -69,6 +69,12 @@ The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notic
 
 The range is `v{a}..v{b}`, the newer side on the right; `a` may be larger than `b` (read backwards) or equal (no differences). A range that is not `v{a}..v{b}` with positive numbers without leading zeros is **400**; an unknown id or version is **404**.
 
+The work is bounded, so a diff answers in well under a second whatever the input:
+
+- Text both versions share at the start and at the end is matched without cost; lines or words that repeat more than 8 times on the newer side never anchor a match (they still extend one).
+- Matching is metered. A replaced line whose word comparison would overrun its share, or any once the request has spent its total, is marked as a whole line instead of word by word.
+- A version over 2 MB of HTML or 20,000 lines of text, or line matching that overruns its budget, gets a **too large to diff** page (still `200`) with links to both versions' `/text`.
+
 ## Tags and metadata
 
 Tags, `archived` and `pinned` belong to the logical `id`, not to a version, and live in `pergam_meta`. Changing them never creates a version. An id without a metadata row reads as no tags, not archived, not pinned.

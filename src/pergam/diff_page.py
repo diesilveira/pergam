@@ -10,7 +10,7 @@ import html as html_lib
 from pathlib import Path
 from string import Template
 
-from pergam.diff import DiffLine, Section
+from pergam.diff import DiffLine, Section, TooLargeToDiff
 from pergam.store import VersionInfo
 
 _TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -92,7 +92,23 @@ def _summary(sections: list[Section]) -> str:
     )
 
 
-def render_diff(pergam_id: str, old: VersionInfo, new: VersionInfo, sections: list[Section]) -> str:
+def _too_large(pergam_id: str, old: VersionInfo, new: VersionInfo, reason: str) -> str:
+    links = " and ".join(f'<a href="/{pergam_id}/v{info.version}/text">v{info.version}</a>' for info in (old, new))
+    return (
+        f'<section class="too-large" role="status"><h2>Too large to diff</h2>'
+        f"<p>{esc(reason[:1].upper() + reason[1:])}. Read the text of {links} instead.</p></section>"
+    )
+
+
+def render_diff(
+    pergam_id: str, old: VersionInfo, new: VersionInfo, sections: list[Section] | TooLargeToDiff
+) -> str:
+    """`sections` is what `diff_sections` returned, or the `TooLargeToDiff` it raised."""
+    if isinstance(sections, TooLargeToDiff):
+        summary, body = "Not compared.", _too_large(pergam_id, old, new, str(sections))
+    else:
+        body = "".join(_section(section) for section in sections) or '<p class="empty">Neither version has text.</p>'
+        summary = _summary(sections)
     return _PAGE.substitute(
         css=_CSS,
         page_title=esc(f"{new.title} · v{old.version} → v{new.version} · pergam"),
@@ -103,6 +119,6 @@ def render_diff(pergam_id: str, old: VersionInfo, new: VersionInfo, sections: li
         new_href=f"/{pergam_id}/v{new.version}/view",
         old_note=f'<span class="note">{esc(old.note)}</span>' if old.note else "",
         new_note=f'<span class="note">{esc(new.note)}</span>' if new.note else "",
-        summary=_summary(sections),
-        sections="".join(_section(section) for section in sections) or '<p class="empty">Neither version has text.</p>',
+        summary=summary,
+        sections=body,
     )

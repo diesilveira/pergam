@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+import time
 
 import pytest
 
-from pergam.diff import diff_sections
+from pergam.diff import MAX_HTML_BYTES, MAX_LINES, Budget, TooLargeToDiff, bounded_opcodes, diff_sections
 from support import Client
 
 V1 = (
@@ -142,3 +143,110 @@ def test_view_links_to_the_changes_and_to_what_changed_since(client: Client) -> 
     assert ">changes</a>" not in first
     assert f'<a href="/{pid}/diff/v1..v3">what changed since</a>' in first
     assert f'<a href="/{pid}/diff/v1..v2" title="diff with v1">changes</a>' in middle
+
+
+INTERLEAVED = 8_000
+PATHOLOGICAL = (
+    "<p>" + " ".join(["the"] * 20_000) + "</p>"
+    + "<p>" + " ".join(str(i) for i in range(INTERLEAVED)) + "</p>"
+    + "".join(f"<p>{i}</p>" for i in range(INTERLEAVED)),
+    "<p>" + " ".join(["the", "a"] * 10_000) + "</p>"
+    + "<p>" + " ".join(f"{i} f{i}" for i in range(INTERLEAVED)) + "</p>"
+    + "".join(f"<p>{i}</p><p>f{i}</p>" for i in range(INTERLEAVED)),
+)
+
+
+def test_pathological_pair_is_answered_within_a_time_bound() -> None:
+    started = time.perf_counter()
+
+    with pytest.raises(TooLargeToDiff, match="differ in too many places"):
+        diff_sections(*PATHOLOGICAL)
+
+    assert time.perf_counter() - started < 2
+
+
+def test_pair_over_the_budget_is_marked_as_whole_lines() -> None:
+    old = "<p>" + " ".join(str(i) for i in range(INTERLEAVED)) + "</p>"
+    new = "<p>" + " ".join(f"{i} f{i}" for i in range(INTERLEAVED)) + "</p>"
+    started = time.perf_counter()
+
+    lines = diff_sections(old, new)[0].lines
+
+    assert time.perf_counter() - started < 1
+    assert [(line.kind, [segment.changed for segment in line.segments]) for line in lines] == [
+        ("removed", [True]),
+        ("added", [True]),
+    ]
+
+
+def test_repeated_words_are_junk_and_still_diffed_word_by_word() -> None:
+    old, new = "<p>" + " ".join(["the"] * 20_000) + "</p>", "<p>" + " ".join(["the", "a"] * 10_000) + "</p>"
+
+    removed, added = diff_sections(old, new)[0].lines
+
+    assert len(added.segments) > 1
+
+
+def test_common_ends_cost_nothing() -> None:
+    words = [f"w{i}" for i in range(50_000)]
+    edited = words[:25_000] + ["changed"] + words[25_001:]
+
+    assert bounded_opcodes(words, edited, Budget(2)) == [
+        ("equal", 0, 25_000, 0, 25_000),
+        ("replace", 25_000, 25_001, 25_000, 25_001),
+        ("equal", 25_001, 50_000, 25_001, 50_000),
+    ]
+
+
+def test_matching_work_is_charged_and_refused_over_the_budget() -> None:
+    a = [str(i) for i in range(1_000)]
+    b = [x for i in range(1_000) for x in (str(i), f"f{i}")]
+    budget = Budget(10**9)
+
+    assert bounded_opcodes(a, b, budget) is not None
+    assert budget.spent > 1_000 * 1_000 // 2
+    assert bounded_opcodes(a, b, Budget(budget.spent - 1)) is None
+
+
+def test_request_budget_is_shared_by_every_pair() -> None:
+    old = "".join(f"<p>{' '.join(str(k) for k in range(i, i + 1_500))}</p>" for i in range(30))
+    new = "".join(f"<p>{' '.join(f'{k} z{k}' for k in range(i, i + 1_500))}</p>" for i in range(30))
+    started = time.perf_counter()
+
+    sections = diff_sections(old, new)
+
+    assert time.perf_counter() - started < 1
+    assert all(len(line.segments) == 1 for line in sections[0].lines)
+
+
+def test_pathological_pair_answers_over_http_within_a_time_bound(client: Client) -> None:
+    pid = client.publish(html=PATHOLOGICAL[0])["id"]
+    client.publish(id=pid, html=PATHOLOGICAL[1])
+
+    started = time.perf_counter()
+    get, head = client.get(f"/{pid}/diff/v1..v2"), client.request("HEAD", f"/{pid}/diff/v1..v2")
+
+    assert time.perf_counter() - started < 4
+    assert (get.status, head.status) == (200, 200)
+
+
+@pytest.mark.parametrize(
+    ("html", "reason"),
+    [
+        ("<p>x</p>" * (MAX_LINES + 1), "A version has more than 20,000 lines of text"),
+        (PATHOLOGICAL[1], "The versions differ in too many places to compare"),
+        ("<p>" + "x" * MAX_HTML_BYTES + "</p>", "A version is larger than 2 MB of HTML"),
+    ],
+    ids=["lines", "work", "bytes"],
+)
+def test_oversized_versions_get_a_too_large_page(client: Client, html: str, reason: str) -> None:
+    pid = client.publish(html=PATHOLOGICAL[0] if html == PATHOLOGICAL[1] else "<p>small</p>")["id"]
+    client.publish(id=pid, html=html)
+
+    resp = client.get(f"/{pid}/diff/v1..v2")
+
+    assert resp.status == 200
+    assert resp.headers["cache-control"] == "public, max-age=300"
+    assert '<section class="too-large" role="status"><h2>Too large to diff</h2>' in resp.text
+    assert reason in resp.text
+    assert f'<a href="/{pid}/v2/text">v2</a>' in resp.text
