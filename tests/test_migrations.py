@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import threading
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from pergam.migrate import MigrationError, apply_migrations, discover
 from support import MIGRATIONS_DIR, DatabaseFactory, ServerProcess, apply_legacy_schema
@@ -195,3 +199,66 @@ def test_server_refuses_to_start_when_a_migration_fails(
         server.stop()
 
     assert "migrations failed" in server.log()
+
+
+@contextmanager
+def app_role(admin_url: str, database_url: str, grants: list[str]) -> Iterator[str]:
+    """A login role that does not own `pergams`, holding only `grants` in that database."""
+    name, password = f"pergam_app_{uuid.uuid4().hex[:8]}", uuid.uuid4().hex
+    with connect(admin_url) as admin:
+        admin.execute(f"CREATE ROLE {name} LOGIN PASSWORD '{password}'")
+    try:
+        with connect(database_url) as owner:
+            for grant in grants:
+                owner.execute(grant.format(role=name))
+        params = conninfo_to_dict(database_url)
+        params.update(user=name, password=password)
+        yield make_conninfo(**params)
+    finally:
+        with connect(database_url) as owner:
+            owner.execute(f"DROP OWNED BY {name}")
+        with connect(admin_url) as admin:
+            admin.execute(f"DROP ROLE {name}")
+
+
+APP_GRANTS = [
+    "GRANT SELECT, INSERT ON pergams TO {role}",
+    "GRANT SELECT ON pergams_latest TO {role}",
+]
+
+
+@pytest.mark.parametrize(
+    "ledger_grants",
+    [
+        ["GRANT CREATE ON SCHEMA public TO {role}"],
+        [
+            "CREATE TABLE schema_migrations (version int PRIMARY KEY, name text NOT NULL,"
+            " applied_at timestamptz NOT NULL DEFAULT now())",
+            "GRANT SELECT, INSERT ON schema_migrations TO {role}",
+        ],
+    ],
+    ids=["role-creates-ledger", "ledger-precreated"],
+)
+def test_legacy_database_upgrades_with_a_non_owner_role(
+    admin_url: str, databases: DatabaseFactory, start_server, ledger_grants: list[str]
+) -> None:
+    url = databases.create()
+    apply_legacy_schema(url)
+    with connect(url) as owner:
+        seed_legacy_rows(owner)
+        fingerprint, schema = owner.execute(FINGERPRINT).fetchone(), schema_of(owner)
+
+    with app_role(admin_url, url, APP_GRANTS + ledger_grants) as role_url:
+        with connect(role_url) as conn:
+            assert [m.version for m in apply_migrations(conn, MIGRATIONS_DIR)] == [1]
+        client = start_server(role_url)
+
+        assert client.get("/aaaa0001/view").text == "<h1>plan v2</h1>"
+        assert client.get("/").status == 200
+        assert client.publish(id="aaaa0001")["version"] == 3
+
+    with connect(url) as owner:
+        assert owner.execute("SELECT count(*) FROM pergams").fetchone() == (len(LEGACY_ROWS) + 1,)
+        owner.execute("DELETE FROM pergams WHERE version = 3")
+        assert owner.execute(FINGERPRINT).fetchone() == fingerprint
+        assert schema_of(owner) == schema

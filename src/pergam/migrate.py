@@ -4,7 +4,8 @@ Files named `NNN_description.sql` are applied in numeric order and recorded in
 `schema_migrations`. Each migration runs in its own transaction, so a failure
 rolls that migration back completely and is raised to the caller, which aborts
 startup. A session advisory lock serializes servers that start concurrently
-against the same database.
+against the same database. The ledger is only created when missing, so a role
+without CREATE on the schema can run against a pre-created ledger.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ DEFAULT_MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "db" / "migration
 _FILENAME_RE = re.compile(r"^(\d{3})_[a-z0-9_]+\.sql$")
 
 _CREATE_LEDGER = """
-CREATE TABLE IF NOT EXISTS schema_migrations (
+CREATE TABLE schema_migrations (
     version     int PRIMARY KEY,
     name        text NOT NULL,
     applied_at  timestamptz NOT NULL DEFAULT now()
@@ -68,7 +69,8 @@ def apply_migrations(conn: psycopg.Connection, directory: Path) -> list[Migratio
     migrations = discover(directory)
     conn.execute("SELECT pg_advisory_lock(%s)", (ADVISORY_LOCK_KEY,))
     try:
-        conn.execute(_CREATE_LEDGER)
+        if conn.execute("SELECT to_regclass('schema_migrations')").fetchone() == (None,):
+            conn.execute(_CREATE_LEDGER)
         applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
         newly_applied: list[Migration] = []
         for migration in migrations:
