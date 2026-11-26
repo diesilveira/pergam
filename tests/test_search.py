@@ -12,6 +12,7 @@ from psycopg_pool import ConnectionPool
 from pergam import store
 from pergam.backfill import backfill_text
 from pergam.migrate import apply_migrations
+from pergam.search import EARLY_HEADLINE_CHARS, INDEXED_BODY_CHARS, MAX_QUERY_CHARS
 from pergam.text import EXTRACTOR_VERSION
 from support import (
     FINGERPRINT,
@@ -231,3 +232,27 @@ def test_upgraded_instance_re_extracts_text_from_the_first_extractor(
 
     assert listed_ids(client.get("/?q=omitted").text, "cccc0003") == {"cccc0003"}
     assert client.get("/cccc0003/text").text == "omitted head end tag\n"
+
+
+def test_snippet_finds_a_match_far_into_the_body(client: Client) -> None:
+    filler = "<p>" + "lorem ipsum dolor " * (EARLY_HEADLINE_CHARS // 18 + 100) + "</p>"
+    client.publish(html=f"{filler}<p>the faraway word</p>")
+
+    assert "<mark>faraway</mark>" in client.get("/?q=faraway").text
+
+
+def test_body_text_past_the_indexed_prefix_is_not_searchable(client: Client) -> None:
+    filler = "<p>" + "lorem ipsum dolor " * (INDEXED_BODY_CHARS // 18 + 1) + "</p>"
+    pid = client.publish(html=f"<p>opening word</p>{filler}<p>trailing word</p>")["id"]
+
+    assert listed_ids(client.get("/?q=opening").text, pid) == {pid}
+    assert listed_ids(client.get("/?q=trailing").text, pid) == set()
+
+
+@pytest.mark.parametrize("path", ["/", "/api/pergams"])
+def test_q_is_capped(client: Client, path: str) -> None:
+    assert client.get(f"{path}?q={'a' * MAX_QUERY_CHARS}").status == 200
+    resp = client.get(f"{path}?q={'a' * (MAX_QUERY_CHARS + 1)}")
+
+    assert resp.status == 400
+    assert f"q must be at most {MAX_QUERY_CHARS} characters" in resp.text

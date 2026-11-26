@@ -128,6 +128,7 @@ curl -sS http://localhost:1111/abc12345/text
 - **Text** is the visible text of the HTML, extracted at publish time by the same parse that serves `GET /{id}/text`, stored as plain lines (the same blocks without Markdown syntax, so snippets show no `#` or `|`). The contents of `script`, `style`, `template`, `noscript` and `head` are never indexed.
 - **Query syntax** is Postgres' web-search syntax: words are ANDed, `"quoted phrase"` matches the words in order, `or` and `-excluded` work. Matching is language-neutral (`simple` configuration): case-insensitive, no stemming, so `region` does not match `regions`. Title words weigh more than body words.
 - **Snippet**: when the text matched, the row shows the matching fragment with the hits highlighted. A title-only match shows no snippet.
+- `q` is at most 200 characters (after trimming); longer is **400**, on `/` and on `/api/pergams`.
 - **Order and paging** are the same as without `q` (pinned, newest, id), so the cursor works unchanged.
 - Only the first 100,000 characters of a version's text are indexed; the rest is still served by `/{id}/text`.
 

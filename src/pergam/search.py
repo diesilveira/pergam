@@ -6,6 +6,11 @@ stemmed, so matching is the same for every language. Only the first
 well under Postgres' 1 MB `tsvector` limit whatever the pergam's size. Snippets
 come from `ts_headline` with private-use sentinels as highlight markers, so the
 page can escape the whole snippet and only then turn the sentinels into `<mark>`.
+
+`ts_headline` re-parses the text it is given, so it only runs for rows whose
+body (weight B of the stored document) matches, first over the opening
+`EARLY_HEADLINE_CHARS` and over the whole indexed prefix only when that has no
+hit. `q` is capped at `MAX_QUERY_CHARS`.
 """
 
 from __future__ import annotations
@@ -14,6 +19,8 @@ import html
 from dataclasses import dataclass
 
 INDEXED_BODY_CHARS = 100_000
+MAX_QUERY_CHARS = 200
+EARLY_HEADLINE_CHARS = 8_000
 MARK_START, MARK_STOP = "", ""
 SENTINELS = MARK_START + MARK_STOP
 HEADLINE_OPTIONS = (
@@ -37,14 +44,40 @@ INSERT_TEXT = f"""
 
 MATCHES_SQL = "(l.title ILIKE %(q_like)s OR t.document @@ websearch_to_tsquery('simple', %(q)s))"
 
-HEADLINE_SQL = (
-    "ts_headline('simple', translate(t.body, %(sentinels)s, ''),"
+_HEADLINE_OF = (
+    "ts_headline('simple', translate(left(t.body, {chars}), %(sentinels)s, ''),"
     " websearch_to_tsquery('simple', %(q)s), %(headline_options)s)"
 )
 
+HEADLINE_SQL = f"""
+    CASE WHEN ts_filter(t.document, '{{b}}') @@ websearch_to_tsquery('simple', %(q)s) THEN (
+        SELECT CASE WHEN strpos(early.headline, %(mark_start)s) > 0 THEN early.headline
+                    ELSE {_HEADLINE_OF.format(chars=INDEXED_BODY_CHARS)} END
+        FROM (SELECT {_HEADLINE_OF.format(chars=EARLY_HEADLINE_CHARS)} AS headline) early
+    ) END
+"""
+
+
+class QueryError(ValueError):
+    pass
+
+
+def parse_query(raw: str | None) -> str | None:
+    """`q` trimmed, None when blank; raises `QueryError` above `MAX_QUERY_CHARS`."""
+    q = (raw or "").strip()
+    if len(q) > MAX_QUERY_CHARS:
+        raise QueryError(f"q must be at most {MAX_QUERY_CHARS} characters")
+    return q or None
+
 
 def search_params(q: str) -> dict[str, str]:
-    return {"q": q, "q_like": f"%{q}%", "sentinels": SENTINELS, "headline_options": HEADLINE_OPTIONS}
+    return {
+        "q": q,
+        "q_like": f"%{q}%",
+        "sentinels": SENTINELS,
+        "mark_start": MARK_START,
+        "headline_options": HEADLINE_OPTIONS,
+    }
 
 
 @dataclass(frozen=True)

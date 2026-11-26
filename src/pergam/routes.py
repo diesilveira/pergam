@@ -17,6 +17,7 @@ from pergam.feed import render_feed
 from pergam.index_page import render_index
 from pergam.meta import MetaError, parse_meta_change
 from pergam.public_url import PublicAddress
+from pergam.search import QueryError, parse_query
 from pergam.store import IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
@@ -42,13 +43,13 @@ def _first(query: dict[str, list[str]], key: str) -> str | None:
 
 
 def parse_filters(query: dict[str, list[str]]) -> IndexFilters:
-    """Index filters from a query string, shared by `/` and `/api/pergams`; raises `CursorError`."""
+    """Index filters from a query string, shared by `/` and `/api/pergams`; raises `CursorError` or `QueryError`."""
     token = _first(query, "cursor")
     return IndexFilters(
         type=normalise_type(_first(query, "type") or "") or None,
         author=_first(query, "author"),
         tag=normalise_tag(_first(query, "tag") or "") or None,
-        q=(_first(query, "q") or "").strip() or None,
+        q=parse_query(_first(query, "q")),
         archived=_first(query, "archived") in ("1", "true"),
         cursor=IndexCursor.decode(token) if token else None,
     )
@@ -231,12 +232,14 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         return data
 
     def _filters(self, query: dict[str, list[str]]) -> IndexFilters | None:
-        """Parsed filters, or None after answering 400 for a malformed cursor."""
+        """Parsed filters, or None after answering 400 for a malformed cursor or an overlong `q`."""
         try:
             return parse_filters(query)
         except CursorError:
             self.send_error(400, "Invalid cursor")
-            return None
+        except QueryError as exc:
+            self.send_error(400, str(exc))
+        return None
 
     def _render_index(self, query: dict[str, list[str]]) -> None:
         filters = self._filters(query)
