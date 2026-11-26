@@ -1,4 +1,4 @@
-"""Files served under `/static/`: the pages' stylesheet, theme and index scripts, the frame bridge and the vendored Mermaid with its licence.
+"""Files served under `/static/`: the pages' stylesheet, theme, shortcut and index scripts, the frame bridge and the vendored Mermaid with its licence.
 
 `storage-shim.js` lives here too but is not served: `/content` inlines it, without
 its leading comment, as `STORAGE_SHIM`.
@@ -25,6 +25,7 @@ MERMAID_CDN_URL = f"https://cdn.jsdelivr.net/npm/mermaid@{MERMAID_VERSION}/dist/
 BRIDGE_PATH = "/static/frame-bridge.js"
 STYLESHEET_PATH = "/static/pergam.css"
 THEME_SCRIPT_PATH = "/static/theme.js"
+SHORTCUTS_SCRIPT_PATH = "/static/shortcuts.js"
 INDEX_SCRIPT_PATH = "/static/index.js"
 STORAGE_SHIM = re.sub(
     r"\A/\*.*?\*/\s*", "", (STATIC_ROOT / "storage-shim.js").read_text(encoding="utf-8"), count=1, flags=re.DOTALL
@@ -53,6 +54,7 @@ def _load(relative: str, content_type: str, versioned: bool) -> StaticFile:
 FILES: dict[str, StaticFile] = {
     STYLESHEET_PATH: _load("pergam.css", "text/css; charset=utf-8", versioned=False),
     THEME_SCRIPT_PATH: _load("theme.js", "text/javascript; charset=utf-8", versioned=False),
+    SHORTCUTS_SCRIPT_PATH: _load("shortcuts.js", "text/javascript; charset=utf-8", versioned=False),
     INDEX_SCRIPT_PATH: _load("index.js", "text/javascript; charset=utf-8", versioned=False),
     BRIDGE_PATH: _load("frame-bridge.js", "text/javascript; charset=utf-8", versioned=False),
     MERMAID_PATH: _load(f"mermaid/{MERMAID_VERSION}/mermaid.min.js", "text/javascript; charset=utf-8", versioned=True),

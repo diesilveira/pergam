@@ -90,7 +90,7 @@ mark { background: var(--mark-bg); color: var(--text); border-radius: 3px; paddi
 .topbar__nav a { color: var(--muted); }
 .topbar__nav a:hover { color: var(--text); }
 .topbar__nav a[aria-current] { color: var(--accent); font-weight: 600; }
-/* Search field: rendered by top_bar when the page asks for one. */
+/* Search field: rendered by top_bar on every page, focused by "/" (shortcuts.js). */
 .topbar__search {
   flex: 1 1 16rem; max-width: 520px; min-width: 0; margin-inline: auto;
   display: flex; align-items: center; gap: var(--space-2); padding: .3rem .6rem;
@@ -105,6 +105,9 @@ mark { background: var(--mark-bg); color: var(--text); border-radius: 3px; paddi
 .topbar__search-input::-webkit-search-cancel-button { cursor: pointer; }
 @media (max-width: 640px) {
   .topbar__search { order: 10; flex-basis: 100%; max-width: none; }
+}
+@media (hover: none) {
+  .topbar__search-key { display: none; }
 }
 
 /* ── buttons ────────────────────────────────────────────────────────── */

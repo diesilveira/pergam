@@ -1,4 +1,4 @@
-"""The index's sort orders, pinned cards, date groups, summaries and filter column."""
+"""The index's sort orders, pinned cards, date groups, summaries, filter column and top-bar search."""
 
 from __future__ import annotations
 
@@ -205,6 +205,42 @@ def results(client: Client) -> dict[str, str]:
     return ids
 
 
+@pytest.mark.parametrize("query", ["?q=needle", "?q=needle&type=plan", "?q=needle&archived=1", "?q=needle&tag=ops"])
+def test_filter_counts_on_a_search_add_up_to_the_results(client: Client, results: dict[str, str], query: str) -> None:
+    body = client.get(f"/api/pergams{query}").json()
+
+    assert sum(item["count"] for item in body["counts"]["types"]) == body["matching"]
+    assert sum(item["count"] for item in body["counts"]["authors"]) == body["matching"]
+    assert body["matching"] == len(body["pergams"]) > 0
+
+
+def test_search_counts_cover_the_results_and_archived_matches(client: Client, results: dict[str, str]) -> None:
+    body = client.get("/api/pergams?q=needle").json()
+    page = client.get("/?q=needle").text
+
+    assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "reporte", "count": 1}]
+    assert body["counts"]["tags"] == [{"tag": "ops", "count": 2}, {"tag": "q3", "count": 1}]
+    assert body["archived_count"] == 1
+    assert re.search(r'>All<span class="facet__count">3</span>', page)
+    assert "<h1>3 results</h1>" in page
+    assert "for “needle” · the filters count these results only" in page
+
+
+def test_counts_without_a_search_still_cover_every_visible_pergam(client: Client, results: dict[str, str]) -> None:
+    body = client.get("/api/pergams?type=reporte").json()
+
+    assert {item["type"] for item in body["counts"]["types"]} == {"plan", "reporte", "informe"}
+    assert body["archived_count"] == 1
+
+
+def test_an_empty_search_says_what_was_searched_and_offers_to_widen_it(client: Client, results: dict[str, str]) -> None:
+    page = client.get("/?q=%3Cnothing%3E&type=plan").text
+
+    assert "Nothing matches “&lt;nothing&gt;” with type plan (archived pergams not included)." in page
+    assert '<a class="btn btn--primary" href="/?q=%3Cnothing%3E&amp;archived=1">Search every pergam</a>' in page
+    assert '<a class="btn" href="/">Clear search</a>' in page
+
+
 def test_empty_filters_offer_to_clear_them(client: Client, results: dict[str, str]) -> None:
     page = client.get("/?tag=nope&sort=title").text
 
@@ -252,7 +288,7 @@ def test_the_density_toggle_is_hidden_until_the_script_runs(client: Client) -> N
     assert re.search(r'<script src="/static/index.js\?v=[0-9a-f]{12}"></script>', page)
 
 
-@pytest.mark.parametrize("path", ["/static/index.js"])
+@pytest.mark.parametrize("path", ["/static/shortcuts.js", "/static/index.js"])
 def test_page_scripts_are_static_files(client: Client, path: str) -> None:
     resp = client.get(path)
 
@@ -260,7 +296,31 @@ def test_page_scripts_are_static_files(client: Client, path: str) -> None:
     assert resp.headers["cache-control"] == "public, max-age=300"
 
 
+def search_form(page: str) -> str:
+    return re.search(r'<form class="topbar__search".*?</form>', page).group(0)
 
 
+@pytest.mark.parametrize("path", ["/{id}/view", "/{id}/v1/view", "/{id}/diff/v1..v2", "/nope"])
+def test_every_page_has_the_search_field_in_its_top_bar(client: Client, path: str) -> None:
+    pid = client.publish(html="<p>one</p>")["id"]
+    client.publish(id=pid, html="<p>two</p>")
+
+    page = client.request("GET", path.format(id=pid), headers={"Accept": "text/html"}).text
+    form = search_form(page)
+
+    assert 'action="/" method="get" role="search"' in form
+    assert '<input class="topbar__search-input" type="search" name="q" value=""' in form
+    assert 'aria-label="Search title and text"' in form and "data-search" in form
+    assert 'type="hidden"' not in form
+    assert re.search(r'<script src="/static/shortcuts.js\?v=[0-9a-f]{12}" defer></script>', page)
 
 
+def test_the_index_search_field_shows_the_query_and_keeps_the_filters(client: Client) -> None:
+    form = search_form(client.get('/?q=%22a%22%3Cb&tag=ops&archived=1&sort=title').text)
+
+    assert 'value="&quot;a&quot;&lt;b"' in form
+    assert re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)">', form) == [
+        ("tag", "ops"),
+        ("archived", "1"),
+        ("sort", "title"),
+    ]

@@ -365,7 +365,7 @@ def heading(data: IndexData, filters: IndexFilters) -> str:
 def showing_note(data: IndexData, filters: IndexFilters) -> str:
     """Counts relative to what the list can show: archived pergams count only when they are listed."""
     if filters.q:
-        return f"for “{esc(filters.q)}”"
+        return f"for “{esc(filters.q)}” · the filters count these results only"
     stats = data.stats
     hidden = 0 if filters.archived else data.archived_count
     visible = stats.total_pergams - hidden

@@ -457,7 +457,8 @@ class PergamStore:
         `recent` sorts pinned first, then newest first, then by id; `title` sorts by
         `lower(title)`, then id. Both orders are total, so a page resumes strictly
         after `filters.cursor`. Pill counts cover every visible pergam (archived ones
-        only with `filters.archived`), not just the page. `pinned` holds the first
+        only with `filters.archived`), not just the page; on a search they cover the
+        results instead, so they add up to `matching`. `pinned` holds the first
         `page_size` pinned pergams that match, in the same order, whatever the page.
         """
         scope = "" if filters.archived else " AND NOT COALESCE(m.archived, false)"
@@ -489,7 +490,7 @@ class PergamStore:
         params["pinned_limit"] = page_size
         joined = "FROM pergams_latest l LEFT JOIN pergam_meta m ON m.id = l.id"
         searched = joined + " LEFT JOIN pergam_text t ON t.id = l.id AND t.version = l.version"
-        counted_from, counted_where = joined, ""
+        counted_from, counted_where = (searched, narrowed) if filters.q else (joined, "")
         headline = HEADLINE_SQL if filters.q else "NULL"
         columns = f"""
             l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,

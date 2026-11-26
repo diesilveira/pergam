@@ -324,14 +324,15 @@ def test_error_page_fits_a_phone(browser, site, scheme: str) -> None:
     context.close()
 
 
-def test_error_page_has_no_scripted_content_beyond_the_theme_script(browser, site) -> None:
+def test_error_page_has_no_scripted_content_beyond_the_theme_and_shortcut_scripts(browser, site) -> None:
     context, page = page_in(browser, "light")
 
     page.goto(f"{site['base']}/nope")
 
     sources = page.evaluate("Array.from(document.scripts).map((s) => s.getAttribute('src'))")
 
-    assert len(sources) == 1 and sources[0].startswith("/static/theme.js?v=")
+    assert len(sources) == 2
+    assert sources[0].startswith("/static/theme.js?v=") and sources[1].startswith("/static/shortcuts.js?v=")
     context.close()
 
 
@@ -340,7 +341,7 @@ def test_error_page_has_no_scripted_content_beyond_the_theme_script(browser, sit
 def test_search_field_shows_a_focus_outline_from_the_keyboard(browser, site, path: str, scheme: str) -> None:
     context, page = page_in(browser, scheme)
     page.goto(site["base"] + path)
-    field = page.get_by_role("searchbox")
+    field = page.get_by_role("searchbox", name="Search title and text")
 
     for _ in range(30):
         page.keyboard.press("Tab")

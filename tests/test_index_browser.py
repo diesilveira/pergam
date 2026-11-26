@@ -1,4 +1,4 @@
-"""The index in a real browser: density, the filter column, "Load more", keyboard and phone width.
+"""The index and the top-bar search in a real browser: shortcuts, density, the filter column, "Load more".
 
 Needs Playwright and a Chrome or Chromium it can launch. Without them the tests are
 skipped, except when `CI` is set: there they fail.
@@ -67,6 +67,79 @@ def site(client: Client) -> dict[str, str]:
 def open_page(browser, scheme: str = "light", **options):
     context = browser.new_context(color_scheme=scheme, **options)
     return context, context.new_page()
+
+
+def active(page) -> dict[str, object]:
+    return page.evaluate("({tag: document.activeElement.tagName, search: document.activeElement.hasAttribute('data-search')})")
+
+
+@pytest.mark.parametrize("name", ["index", "view", "diff"])
+def test_slash_focuses_the_search_field_and_escape_clears_it(browser, site, name: str) -> None:
+    context, page = open_page(browser)
+    page.goto(site[name])
+
+    page.keyboard.press("/")
+    assert active(page) == {"tag": "INPUT", "search": True}
+    page.keyboard.type("plan")
+    page.keyboard.press("Escape")
+    assert page.locator("[data-search]").input_value() == ""
+    page.keyboard.press("Escape")
+    assert active(page)["search"] is False
+    context.close()
+
+
+def test_shortcuts_do_not_fire_while_typing_in_a_field(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["index"])
+    page.evaluate("document.body.append(Object.assign(document.createElement('textarea'), {id: 'scratch'}))")
+
+    page.locator("#scratch").focus()
+    page.keyboard.type("a/b")
+    assert page.locator("#scratch").input_value() == "a/b"
+    page.locator("[data-search]").focus()
+    page.keyboard.type("x/y")
+
+    assert page.locator("[data-search]").input_value() == "x/y"
+    context.close()
+
+
+@pytest.mark.parametrize("name", ["view", "diff"])
+def test_searching_from_a_document_lands_on_the_index_with_the_query(browser, site, name: str) -> None:
+    context, page = open_page(browser)
+    page.goto(site[name])
+
+    page.keyboard.press("/")
+    page.keyboard.type("cutover window")
+    page.keyboard.press("Enter")
+
+    page.wait_for_url(f"{site['base']}/?q=cutover+window")
+    assert page.locator("h1").inner_text() == "1 result"
+    assert page.locator(".row__snippet mark").first.inner_text().lower() in {"cutover", "window"}
+    assert page.locator("[data-search]").input_value() == "cutover window"
+    context.close()
+
+
+def test_a_search_from_the_index_keeps_the_active_filters(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(f"{site['base']}/?type=plan&sort=title")
+
+    page.locator("[data-search]").fill("cutover")
+    page.keyboard.press("Enter")
+
+    page.wait_for_url(f"{site['base']}/?q=cutover&type=plan&sort=title")
+    context.close()
+
+
+def test_filter_counts_on_a_search_add_up_to_the_results(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(f"{site['base']}/?q=note")
+
+    results = int(page.locator("h1").inner_text().split()[0])
+    every, *counts = [int(text) for text in page.locator("section[aria-labelledby=facets-type] .facet__count").all_inner_texts()]
+
+    assert results == every == 12
+    assert sum(counts) == results
+    context.close()
 
 
 @pytest.mark.parametrize("scheme", SCHEMES)
