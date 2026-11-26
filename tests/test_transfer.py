@@ -281,7 +281,18 @@ def test_parse_import_normalises_and_recomputes_bytes() -> None:
 
 @pytest.mark.parametrize(
     "raw",
-    ["ftp://example.com", "https://", "https://example.com/?x=1", "https://example.com/#a", "https://exa mple.com", "x" * 3000],
+    [
+        "ftp://example.com",
+        "https://",
+        "https://example.com/?x=1",
+        "https://example.com/#a",
+        "https://exa mple.com",
+        "x" * 3000,
+        "http://[::1",
+        "http://example.com:abc",
+        "http://example.com:99999",
+        "http://example.com:",
+    ],
 )
 def test_parse_server_url_rejects(raw: str) -> None:
     with pytest.raises(TransferError):
@@ -403,3 +414,15 @@ def test_duplicates_are_found_in_a_full_import_without_quadratic_cost() -> None:
     with pytest.raises(TransferError, match="v5000 appears more than once"):
         parse_import(doc, TYPES)
     assert time.monotonic() - started < 1
+
+
+@pytest.mark.parametrize("server", ["http://[::1", "http://example.com:abc"])
+def test_malformed_server_url_is_400(target: Client, target_db: psycopg.Connection, server: str) -> None:
+    resp = target.post_json(document(server=server), "/import")
+
+    assert resp.status == 400
+    assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+
+
+def test_server_url_with_ipv6_and_port_is_accepted() -> None:
+    assert parse_server_url("http://[::1]:1111/") == "http://[::1]:1111"

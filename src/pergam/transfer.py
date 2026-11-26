@@ -90,10 +90,15 @@ def parse_server_url(value: object) -> str:
     """An absolute http(s) URL without credentials, query or fragment, trailing `/` dropped."""
     if not isinstance(value, str) or len(value) > MAX_SERVER_URL_LENGTH:
         raise TransferError("server must be a URL string")
-    parsed = urlparse(value)
+    try:
+        parsed = urlparse(value)
+        parsed.port
+    except ValueError:
+        raise TransferError("server must be an absolute http(s) URL with a valid host and port") from None
     if (
         parsed.scheme not in ("http", "https")
         or not parsed.hostname
+        or parsed.netloc.endswith(":")
         or "@" in value
         or any(char in value for char in "?#")
         or any(char.isspace() or ord(char) < 0x20 for char in value)
