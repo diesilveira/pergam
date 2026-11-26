@@ -167,7 +167,11 @@ SEEDED = 230
 
 
 def seed(db: psycopg.Connection) -> dict[str, tuple[bool, bool, bool]]:
-    """Ids with shared timestamps (to exercise the id tie-break), some pinned, archived or tagged."""
+    """Ids with shared timestamps (to exercise the id tie-break), some pinned, archived or tagged.
+
+    Ids with none of those flags get no `pergam_meta` row on every other index, so pages mix
+    rows with and without metadata.
+    """
     flags: dict[str, tuple[bool, bool, bool]] = {}
     with db.cursor() as cur:
         for i in range(SEEDED):
@@ -179,10 +183,11 @@ def seed(db: psycopg.Connection) -> dict[str, tuple[bool, bool, bool]]:
                 " VALUES (%s, 1, %s, '<p>x</p>', %s, 'you@example.com', 8, '2025-01-01'::timestamptz + %s * interval '1 hour')",
                 (pid, f"Doc {i}", "plan" if i % 2 else "otro", i // 4),
             )
-            cur.execute(
-                "INSERT INTO pergam_meta (id, tags, archived, pinned) VALUES (%s, %s, %s, %s)",
-                (pid, ["seeded"] if tagged else [], archived, pinned),
-            )
+            if pinned or archived or tagged or i % 2:
+                cur.execute(
+                    "INSERT INTO pergam_meta (id, tags, archived, pinned) VALUES (%s, %s, %s, %s)",
+                    (pid, ["seeded"] if tagged else [], archived, pinned),
+                )
     return flags
 
 
@@ -212,9 +217,10 @@ def crawl(client: Client, path: str) -> list[str]:
 def test_paging_visits_every_pergam_once_in_order(client: Client, db: psycopg.Connection, query: str, keep) -> None:
     flags = seed(db)
     rows = db.execute(
-        "SELECT l.id, l.type FROM pergams_latest l JOIN pergam_meta m USING (id)"
-        " ORDER BY m.pinned DESC, l.created_at DESC, l.id DESC"
+        "SELECT l.id, l.type FROM pergams_latest l LEFT JOIN pergam_meta m USING (id)"
+        " ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC"
     ).fetchall()
+    assert db.execute("SELECT count(*) FROM pergams_latest WHERE id NOT IN (SELECT id FROM pergam_meta)").fetchone()[0] > 0
     type_filter = "plan" if "type=plan" in query else None
     expected = [pid for pid, kind in rows if keep(*flags[pid]) and (type_filter is None or kind == type_filter)]
 
