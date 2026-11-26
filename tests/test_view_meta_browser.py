@@ -88,7 +88,7 @@ def base(client: Client) -> str:
 
 
 def status_text(page) -> str:
-    page.wait_for_selector("[data-meta-status]:not([hidden])")
+    page.wait_for_function("document.querySelector('[data-meta-status]').textContent !== ''")
     return page.locator("[data-meta-status]").inner_text()
 
 
@@ -264,7 +264,7 @@ def test_a_published_script_cannot_pin_archive_or_tag(
         page.wait_for_timeout(500)
         attempts = frame.evaluate("window.attempts")
         pressed = page.locator("[data-meta-flag]").evaluate_all("nodes => nodes.map(node => node.ariaPressed)")
-        status_hidden = page.locator("[data-meta-status]").evaluate_all("nodes => nodes.every(node => node.hidden)")
+        status_silent = page.locator("[data-meta-status]").evaluate_all("nodes => nodes.every(node => !node.textContent)")
     finally:
         page.close()
 
@@ -277,4 +277,28 @@ def test_a_published_script_cannot_pin_archive_or_tag(
     }
     assert db.execute("SELECT count(*) FROM pergam_meta").fetchone() == (0,)
     assert pressed == (["false", "false"] if opened == "framed" else [])
-    assert status_hidden
+    assert status_silent
+
+
+def test_status_region_is_there_before_any_message_and_repeats_are_announced(open_page, client: Client) -> None:
+    pid = client.publish()["id"]
+    page = open_page(f"{base(client)}/{pid}/view")
+    region = page.get_by_role("status")
+    page.route(f"**/{pid}/meta", lambda route: route.fulfill(status=403, body=""))
+    page.evaluate(
+        """() => {
+            window.spoken = [];
+            const node = document.querySelector('[data-meta-status]');
+            new MutationObserver(() => window.spoken.push(node.textContent))
+              .observe(node, { childList: true, characterData: true, subtree: true });
+        }"""
+    )
+
+    assert region.count() == 1
+    assert region.evaluate("node => !node.hidden && getComputedStyle(node).display !== 'none'")
+    for _ in range(2):
+        page.get_by_role("button", name="Pin", exact=True).click()
+        page.wait_for_function("window.spoken.at(-1) && window.spoken.at(-1).startsWith('Only the owner')")
+
+    refusal = "Only the owner of this pergam or one of its collaborators can change it. Nothing was changed."
+    assert page.evaluate("window.spoken") == [refusal, "", refusal]

@@ -108,10 +108,13 @@
     const busy = (on) => {
       [...flags, ...(tagForm ? tagForm.querySelectorAll('button') : [])].forEach((button) => { button.disabled = on; });
     };
+    const ANNOUNCE_DELAY = 100;
+    let pending;
     const say = (text, failed) => {
-      status.textContent = text;
+      clearTimeout(pending);
+      status.textContent = '';
       status.classList.toggle('meta-status--error', Boolean(failed));
-      status.hidden = !text;
+      if (text) pending = setTimeout(() => { status.textContent = text; }, ANNOUNCE_DELAY);
     };
 
     const show = (meta) => {
@@ -129,6 +132,7 @@
     };
 
     const patch = async (change) => {
+      say('');
       busy(true);
       try {
         const response = await fetch(url, {

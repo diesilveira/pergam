@@ -33,7 +33,7 @@ def test_without_trusted_identity_everyone_gets_the_controls_with_the_current_st
     assert controls(page) == {"url": f"/{pid}/meta", "pinned": "false", "archived": "true", "tags": "ops, q3"}
     assert '<button type="button" class="icon-btn bar__tag-edit" data-tags-edit aria-label="Edit tags"' in page
     assert re.search(r'<button [^>]*data-tags-edit[^>]*hidden>', page)
-    assert '<p class="meta-status" data-meta-status role="status" hidden></p>' in page
+    assert '<p class="meta-status" data-meta-status role="status"></p>' in page
 
 
 def test_tag_field_escapes_the_tags(client: Client) -> None:

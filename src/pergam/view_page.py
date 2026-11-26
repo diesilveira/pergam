@@ -248,7 +248,7 @@ def render_view(
             middle=_bar_middle(pergam_id, shown, meta, versions, editable),
             actions=_bar_actions(pergam_id, meta, version, editable),
         ),
-        meta_status='<p class="meta-status" data-meta-status role="status" hidden></p>' if editable else "",
+        meta_status='<p class="meta-status" data-meta-status role="status"></p>' if editable else "",
         outdated=_outdated(pergam_id, shown, versions[0].version, now),
         frame_attributes=_attributes(frame + policy.iframe_attributes),
         panel=render_panel(pergam_id, versions, version, meta.origin, access, now),

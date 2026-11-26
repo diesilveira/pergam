@@ -15,7 +15,7 @@
   .meta-controls[hidden] { display:none; }
   .meta-status { flex:0 0 auto; margin:0; padding:.45rem .9rem; font-size:.82rem; color:var(--text);
                   background:var(--accent-soft); border-bottom:1px solid var(--border); }
-  .meta-status[hidden] { display:none; }
+  .meta-status:empty { padding:0; border:0; }
   .meta-status--error { color:var(--danger); background:var(--raised); font-weight:600; }
   .bar__origin a { color:var(--accent); overflow-wrap:anywhere; }
   .bar__origin a:hover { text-decoration:underline; }
