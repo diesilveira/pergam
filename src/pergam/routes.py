@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from pergam.access import CollaboratorError, Forbidden, parse_collaborators
+from pergam.access import Access, CollaboratorError, Forbidden, parse_collaborators
 from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
 from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
@@ -416,8 +416,24 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if meta is None or all(info.version != shown for info in versions):
             self.send_error(404, "Pergam not found")
             return
-        page = render_view(pergam_id, versions, meta, shown, self.frame, access=self.store.access(pergam_id))
+        access = self.store.access(pergam_id)
+        page = render_view(pergam_id, versions, meta, shown, self.frame, access=access, editable=self._offers_edits(access))
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+
+    def _offers_edits(self, access: Access | None) -> bool:
+        """Whether the view page shows the pin, archive and tag controls, which `PATCH /{id}/meta`.
+
+        Without trusted identity anyone who reaches the server may already PATCH, so they
+        are shown. With it they are shown to the owner and the collaborators, and to a
+        request whose user is unknown, which the page then tells why the server refused.
+        """
+        if not self.trust_proxy_user or access is None:
+            return True
+        try:
+            user = single_proxy_user(self.headers.get_all(PROXY_USER_HEADER) or [])
+        except IdentityError:
+            return True
+        return access.may_edit(user)
 
     def _render_diff(self, pergam_id: str, version_range: str) -> None:
         """`v{a}..v{b}` in either order, `b` read as the newer side; 400 when malformed, 404 when unknown."""

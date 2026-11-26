@@ -133,12 +133,28 @@ def _version_item(pergam_id: str, info: VersionInfo, current: int, latest: int) 
     )
 
 
-def _tags(tags: list[str]) -> str:
-    links = "".join(f'<a class="tag" href="/?{esc(urlencode({"tag": tag}))}">{esc(tag)}</a>' for tag in tags)
-    return f'<span class="bar__tags">{links}</span>' if links else ""
+def _tag_links(tags: list[str]) -> str:
+    return "".join(f'<a class="tag" href="/?{esc(urlencode({"tag": tag}))}">{esc(tag)}</a>' for tag in tags)
 
 
-def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[VersionInfo]) -> str:
+def _tags(tags: list[str], editable: bool) -> str:
+    shown = f'<span class="bar__tags" data-tags>{_tag_links(tags)}</span>'
+    if not editable:
+        return shown
+    return (
+        f"{shown}"
+        '<button type="button" class="icon-btn bar__tag-edit" data-tags-edit aria-label="Edit tags" title="Edit tags" '
+        'hidden><span aria-hidden="true">✎</span></button>'
+        '<form class="tag-form" data-tags-form hidden>'
+        '<label class="sr-only" for="tag-input">Tags, separated by commas</label>'
+        '<input class="input" id="tag-input" name="tags" autocomplete="off" spellcheck="false" '
+        f'value="{esc(", ".join(tags))}" placeholder="q3, budget">'
+        '<button type="submit" class="btn btn--primary">Save</button>'
+        '<button type="button" class="btn" data-tags-cancel>Cancel</button></form>'
+    )
+
+
+def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[VersionInfo], editable: bool) -> str:
     latest = versions[0].version
     items = "".join(_version_item(pergam_id, info, shown.version, latest) for info in versions)
     return (
@@ -146,9 +162,19 @@ def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[V
         '<span class="crumbs__sep" aria-hidden="true">/</span>'
         f'<h1 class="bar__title">{esc(shown.title)}</h1></div>'
         f'<span class="badge" style="--type-rgb:{",".join(map(str, type_rgb(shown.type)))}">{esc(shown.type)}</span>'
-        f"{_tags(meta.tags)}"
+        f"{_tags(meta.tags, editable)}"
         f'<details class="dropdown versions"><summary class="ver dropdown__toggle">v{shown.version} of {len(versions)}</summary>'
         f'<ol class="dropdown__menu versions__list" reversed>{items}</ol></details>'
+    )
+
+
+def _meta_controls(pergam_id: str, meta: Meta) -> str:
+    def toggle(flag: str, label: str, on: bool) -> str:
+        return f'<button type="button" class="btn" data-meta-flag="{flag}" aria-pressed="{str(on).lower()}">{label}</button>'
+
+    return (
+        f'<span class="meta-controls" data-meta-url="/{pergam_id}/meta" hidden>'
+        f'{toggle("pinned", "Pin", meta.pinned)}{toggle("archived", "Archive", meta.archived)}</span>'
     )
 
 
@@ -161,7 +187,7 @@ def _compare_link(pergam_id: str, version: int) -> str:
     )
 
 
-def _bar_actions(pergam_id: str, version: int) -> str:
+def _bar_actions(pergam_id: str, meta: Meta, version: int, editable: bool) -> str:
     more = (
         '<details class="dropdown more"><summary class="icon-btn dropdown__toggle" aria-label="More actions" '
         'title="Raw HTML, export, open document"><span aria-hidden="true">⋯</span></summary>'
@@ -171,6 +197,7 @@ def _bar_actions(pergam_id: str, version: int) -> str:
         f'<li><a href="{content_path(pergam_id, version)}">Open document</a></li></ul></details>'
     )
     return (
+        f"{_meta_controls(pergam_id, meta) if editable else ''}"
         '<nav class="bar__links" aria-label="Pergam">'
         f"{_compare_link(pergam_id, version)}"
         f'<a class="btn" href="/{pergam_id}/v{version}/text">Text</a>'
@@ -200,9 +227,14 @@ def render_view(
     policy: FramePolicy = FRAME_POLICY,
     *,
     access: Access | None = None,
+    editable: bool = False,
     now: datetime | None = None,
 ) -> str:
-    """`versions` newest first, as `PergamStore.versions` returns them; `version` must be one of them."""
+    """`versions` newest first, as `PergamStore.versions` returns them; `version` must be one of them.
+
+    `editable` adds the pin, archive and tag controls, which `static/pages.js` shows
+    and wires to `PATCH /{id}/meta`; the caller decides who gets them.
+    """
     now = now or datetime.now(timezone.utc)
     shown = next(info for info in versions if info.version == version)
     frame = (("class", "doc"), ("src", content_path(pergam_id, version)), ("title", shown.title))
@@ -213,9 +245,10 @@ def render_view(
         page_title=esc(f"{shown.title} · v{version} · pergam"),
         title_suffix=esc(f" · v{version} · pergam"),
         top_bar=top_bar(
-            middle=_bar_middle(pergam_id, shown, meta, versions),
-            actions=_bar_actions(pergam_id, version),
+            middle=_bar_middle(pergam_id, shown, meta, versions, editable),
+            actions=_bar_actions(pergam_id, meta, version, editable),
         ),
+        meta_status='<p class="meta-status" data-meta-status role="status" hidden></p>' if editable else "",
         outdated=_outdated(pergam_id, shown, versions[0].version, now),
         frame_attributes=_attributes(frame + policy.iframe_attributes),
         panel=render_panel(pergam_id, versions, version, meta.origin, access, now),

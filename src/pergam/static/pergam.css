@@ -175,3 +175,5 @@ a.tag:hover { color: var(--accent); border-color: var(--accent); }
 @media (max-width: 700px) {
   .dropdown__menu, .dropdown__menu--end { position: fixed; top: auto; left: var(--space-4); right: var(--space-4); max-width: none; }
 }
+.btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.btn:disabled { cursor: progress; opacity: .7; }

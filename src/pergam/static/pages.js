@@ -5,8 +5,12 @@
  * on <html data-panel="open|closed"> before first paint. On a wide screen the
  * reader's last choice is remembered under pergam-history-panel; on a narrow
  * one the panel starts closed and opens over the document. Dropdowns (<details
- * class="dropdown">) close on Escape and on a click elsewhere. This script never
- * listens to messages from the framed document.
+ * class="dropdown">) close on Escape and on a click elsewhere.
+ *
+ * The pin, archive and tag controls, rendered hidden only when the server offers
+ * them, call PATCH /{id}/meta with a JSON body (which a cross-site form cannot send)
+ * and show what it answers. Nothing here listens to messages: the framed
+ * document cannot reach these controls.
  */
 (() => {
   'use strict';
@@ -80,8 +84,123 @@
     });
   };
 
+  const REFUSED = {
+    400: 'The server did not accept that change. Tags are at most 40 characters, at most 20 of them.',
+    401: 'The server does not know who you are, so nothing was changed. Sign in and reload the page.',
+    403: 'Only the owner of this pergam or one of its collaborators can change it. Nothing was changed.',
+    404: 'This pergam no longer exists.',
+  };
+
+  const isMeta = (meta) => meta && typeof meta.pinned === 'boolean' && typeof meta.archived === 'boolean'
+    && Array.isArray(meta.tags) && meta.tags.every((tag) => typeof tag === 'string');
+
+  const setUpMetaControls = () => {
+    const controls = document.querySelector('[data-meta-url]');
+    const status = document.querySelector('[data-meta-status]');
+    if (!controls || !status) return;
+    const url = controls.dataset.metaUrl;
+    const flags = Array.from(controls.querySelectorAll('[data-meta-flag]'));
+    const tagList = document.querySelector('[data-tags]');
+    const tagEdit = document.querySelector('[data-tags-edit]');
+    const tagForm = document.querySelector('[data-tags-form]');
+    const tagInput = tagForm && tagForm.querySelector('input');
+    const busy = (on) => {
+      [...flags, ...(tagForm ? tagForm.querySelectorAll('button') : [])].forEach((button) => { button.disabled = on; });
+    };
+    const say = (text, failed) => {
+      status.textContent = text;
+      status.classList.toggle('meta-status--error', Boolean(failed));
+      status.hidden = !text;
+    };
+
+    const show = (meta) => {
+      flags.forEach((button) => button.setAttribute('aria-pressed', String(meta[button.dataset.metaFlag])));
+      if (tagList) {
+        tagList.replaceChildren(...meta.tags.map((tag) => {
+          const link = document.createElement('a');
+          link.className = 'tag';
+          link.href = '/?' + new URLSearchParams({ tag });
+          link.textContent = tag;
+          return link;
+        }));
+      }
+      if (tagInput) tagInput.defaultValue = tagInput.value = meta.tags.join(', ');
+    };
+
+    const patch = async (change) => {
+      busy(true);
+      try {
+        const response = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(change),
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!response.ok) {
+          say(REFUSED[response.status] || `The server refused the change (${response.status}). Nothing was changed.`, true);
+          return false;
+        }
+        const meta = await response.json();
+        if (!isMeta(meta)) throw new TypeError('unexpected answer');
+        show(meta);
+        return true;
+      } catch (error) {
+        say('Could not reach the server. Nothing was changed.', true);
+        return false;
+      } finally {
+        busy(false);
+      }
+    };
+
+    const DONE = {
+      pinned: ['Pinned: it shows first on the index.', 'Unpinned.'],
+      archived: ['Archived: the index hides it unless archived pergams are shown.', 'Unarchived.'],
+    };
+    flags.forEach((button) => {
+      button.addEventListener('click', async () => {
+        const flag = button.dataset.metaFlag;
+        const wanted = button.getAttribute('aria-pressed') !== 'true';
+        if (await patch({ [flag]: wanted })) say(DONE[flag][wanted ? 0 : 1]);
+      });
+    });
+
+    if (tagEdit && tagForm && tagInput) {
+      const editing = (on) => {
+        tagForm.hidden = !on;
+        tagEdit.hidden = on;
+        if (tagList) tagList.hidden = on;
+        if (on) tagInput.focus();
+        else tagEdit.focus();
+      };
+      tagEdit.hidden = false;
+      tagEdit.addEventListener('click', () => editing(true));
+      const cancel = () => {
+        tagForm.reset();
+        editing(false);
+      };
+      tagForm.querySelector('[data-tags-cancel]').addEventListener('click', cancel);
+      tagForm.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          cancel();
+        }
+      });
+      tagForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const tags = tagInput.value.split(',').map((tag) => tag.trim()).filter(Boolean);
+        if (await patch({ tags })) {
+          editing(false);
+          say('Tags saved.');
+        }
+      });
+    }
+    controls.hidden = false;
+  };
+
   document.addEventListener('DOMContentLoaded', () => {
     setUpPanel();
     setUpDropdowns();
+    setUpMetaControls();
   });
 })();

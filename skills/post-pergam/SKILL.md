@@ -206,7 +206,7 @@ Optional. Send `tags` when the user names topics, a project, a quarter or a team
 - On a new version, `tags` are **merged** with the ones the id already has; omitting `tags` leaves them untouched. You don't need to resend old tags.
 - Limits: 20 tags per id, 40 characters per tag, no control characters.
 
-**Tagging, pinning or archiving an already-published pergam** ("tagueá el informe de ayer con billing", "archivá ese plan", "pin it"): don't post a new version. `PATCH` its metadata instead; this never creates a version.
+**Tagging, pinning or archiving an already-published pergam** ("tagueá el informe de ayer con billing", "archivá ese plan", "pin it"): don't post a new version. `PATCH` its metadata instead; this never creates a version. (On a self-hosted server the reader can also do this from the view page's Pin, Archive and ✎ tag buttons.)
 
 ```bash
 curl -sS "$PERGAM_URL/abc12345/meta"      # -> {"id":"abc12345","tags":["q3"],"archived":false,"pinned":false}
