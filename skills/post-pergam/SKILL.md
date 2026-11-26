@@ -155,6 +155,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 
 - `PATCH` `tags` **replaces** the set: to add a tag, `GET /{id}/meta` first and send the old tags plus the new one. `[]` clears them.
 - `archived: true` hides it from the index (still reachable by URL); `pinned: true` lists it first. Send only the fields you change.
+- Archiving and pinning belong to the id: a **new version of an archived pergam stays archived** and hidden from the index, and the POST response doesn't say so. When the user iterates on a pergam they archived, check `GET /{id}/meta` and, if it is archived, either tell them or `PATCH` `{"archived": false}` when they clearly want it visible again.
 
 ### Flow B endpoints
 

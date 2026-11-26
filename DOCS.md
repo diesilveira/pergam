@@ -43,6 +43,7 @@ Tags, `archived` and `pinned` belong to the logical `id`, not to a version, and 
 - Tags are free-form and normalised: trimmed, lowercased, runs of whitespace, `_` and `-` collapsed to one `-`, empties dropped, duplicates removed, stored sorted. `" Q3  Review_notes "` → `q3-review-notes`.
 - At most 20 tags per id, each at most 40 characters after normalisation; beyond that the request gets **400** and nothing is written.
 - `POST /pergam` with `tags` **merges** them into the id's existing tags; posting without `tags` (or `"tags": null`) leaves them as they are.
+- A new version never changes `archived` or `pinned`: posting to an archived id keeps it archived (and out of the index).
 - `PATCH /{id}/meta` edits metadata of an id that already has versions. Fields it omits keep their value; `tags` **replaces** the whole set (`[]` clears it); `archived` and `pinned` must be JSON booleans. Unknown fields, an empty object or a wrong type are **400**.
 
 ```bash
@@ -57,7 +58,7 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 `GET /` lists the latest version of every pergam.
 
 - **Filters** combine with AND: `type`, `author`, `tag` (normalised like stored tags, so `?tag=Q3` matches `q3`) and `q` (case-insensitive title substring). Clicking a type, author or tag pill sets that filter and keeps the others; clicking the active one clears it.
-- **Archived** pergams are left out unless `?archived=1`, which lists them alongside the rest, marked `archived`. They stay reachable by URL either way.
+- **Archived** pergams are left out unless `?archived=1`, which lists them alongside the rest, marked `archived`. They stay reachable by URL either way. Archiving belongs to the id, so a new version of an archived pergam stays archived and hidden, and the `201` does not say so; un-archive it with `PATCH /{id}/meta` `{"archived": false}`.
 - **Order**: pinned first, then by the latest version's `created_at` (newest first), then by id. The order is total, so paging is stable.
 - **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters. While the data does not change, following the links visits every matching pergam exactly once. A pergam that gets a new version or is pinned, unpinned, archived or retagged mid-crawl changes its sort key or match, so it can move to a page already seen (skipped) or one still ahead (seen twice). A malformed `cursor` is **400**.
 - Pill counts (type, author, tag) and the count under the title cover every visible pergam, not only the current page: hidden archived pergams are left out of them and the title line says how many are hidden. The stats cards cover the whole instance, archived included. "clear all" drops every filter, `archived=1` included.
