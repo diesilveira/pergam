@@ -36,12 +36,28 @@ def test_resolve(env: dict[str, str], view_url: str, display: str) -> None:
         {"PUBLIC_URL": "ftp://docs.example.com"},
         {"PUBLIC_URL": "https://docs.example.com/?x=1"},
         {"PUBLIC_URL": "https://"},
+        {"PUBLIC_URL": "https://docs.example.com?"},
+        {"PUBLIC_URL": "https://docs.example.com/#"},
+        {"PUBLIC_URL": "https://docs.example.com:https"},
+        {"PUBLIC_URL": "https://docs.example.com:99999"},
+        {"PUBLIC_URL": "https://docs.example.com:"},
+        {"PUBLIC_URL": "https://user:secret@docs.example.com"},
+        {"PUBLIC_URL": "https://user@docs.example.com"},
+        {"PUBLIC_URL": "user:secret@docs.example.com"},
         {"PUBLIC_PORT": "https"},
     ],
 )
 def test_resolve_rejects_invalid_configuration(env: dict[str, str]) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="PUBLIC_"):
         resolve(env, 1111)
+
+
+@pytest.mark.parametrize("raw", ["https://user:secret@docs.example.com", "user:secret@docs.example.com"])
+def test_rejection_does_not_echo_credentials(raw: str) -> None:
+    with pytest.raises(ValueError) as info:
+        resolve({"PUBLIC_URL": raw}, 1111)
+
+    assert "secret" not in str(info.value)
 
 
 def test_server_uses_public_url(session_database: str, client: Client, start_server) -> None:

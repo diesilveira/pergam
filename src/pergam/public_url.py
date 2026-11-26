@@ -22,9 +22,20 @@ class PublicAddress:
 
 
 def from_public_url(raw: str) -> PublicAddress:
+    """Validate `PUBLIC_URL`; credentials are rejected without echoing the value."""
+    if "@" in raw:
+        raise ValueError("PUBLIC_URL must not contain credentials or '@'")
     parsed = urlparse(raw)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.query or parsed.fragment or parsed.params:
-        raise ValueError(f"PUBLIC_URL must be an http(s) URL without query or fragment, got {raw!r}")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError(f"PUBLIC_URL must be an absolute http(s) URL, got {raw!r}")
+    if "?" in raw or "#" in raw or parsed.params:
+        raise ValueError(f"PUBLIC_URL must not contain a query, fragment or parameters, got {raw!r}")
+    try:
+        parsed.port
+    except ValueError:
+        raise ValueError(f"PUBLIC_URL has an invalid port, got {raw!r}") from None
+    if parsed.netloc.endswith(":"):
+        raise ValueError(f"PUBLIC_URL has an empty port, got {raw!r}")
     base = raw.rstrip("/")
     return PublicAddress(base_url=base, display=(parsed.netloc + parsed.path).rstrip("/"))
 
