@@ -100,6 +100,14 @@ For a single internal team, the easiest path is:
 
 For larger teams, swap `tls internal` for an OIDC sidecar (e.g. `oauth2-proxy`) so per-user attribution flows in via `X-Forwarded-User`.
 
+## Testing
+
+```bash
+make test
+```
+
+That creates `.venv`, installs `requirements-dev.txt` and runs `pytest`. The suite boots the real server (`python3 src/pergam/server.py`) against a throwaway Postgres: by default it starts a `postgres:15-alpine` container named `pergam-test-*` on a random local port with no volume, and removes it at the end. Set `TEST_DATABASE_URL` to an admin connection string to use an existing server instead (CI does this with a `services: postgres` container). Either way every run works in its own `pergam_test_*` database, dropped afterwards; the bundled compose database is never touched.
+
 ## Make targets
 
 ```
@@ -110,6 +118,7 @@ make logs      # tail logs from both services
 make ps        # show service status
 make health    # curl /healthz
 make clean     # stop everything and wipe the bundled db volume
+make test      # run the test suite (see Testing)
 ```
 
 ## Privacy

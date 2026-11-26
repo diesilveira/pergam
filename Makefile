@@ -1,4 +1,7 @@
-.PHONY: up down restart logs ps health clean psql post-example
+.PHONY: up down restart logs ps health clean psql post-example test
+
+PYTHON ?= python3
+VENV   := .venv
 
 up:
 	docker compose up -d --build
@@ -31,3 +34,13 @@ post-example:
 	@python3 -c "import json,pathlib; pathlib.Path('/tmp/pergam-example.json').write_text(json.dumps({'title':'Example','html':'<!doctype html><html><head><title>Example</title></head><body style=\"font-family:sans-serif;background:#0d1117;color:#e6edf3;padding:2rem\"><h1 style=\"color:#58a6ff\">Hello, pergam</h1><p>Posted from the Makefile.</p></body></html>','type':'otro','author':'you@example.com'}))"
 	@curl -sS -X POST http://localhost:1111/pergam -H 'Content-Type: application/json' --data-binary @/tmp/pergam-example.json
 	@echo
+
+# Run the test suite. Starts its own throwaway Postgres in docker, or uses
+# TEST_DATABASE_URL when set. Never touches the bundled compose database.
+$(VENV)/.installed: requirements.txt requirements-dev.txt
+	$(PYTHON) -m venv $(VENV)
+	$(VENV)/bin/pip install -q -r requirements-dev.txt
+	@touch $@
+
+test: $(VENV)/.installed
+	$(VENV)/bin/pytest

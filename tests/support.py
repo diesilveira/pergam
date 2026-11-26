@@ -1,0 +1,198 @@
+"""Test infrastructure: throwaway Postgres, real server processes and a tiny HTTP client."""
+
+from __future__ import annotations
+
+import http.client
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import uuid
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import psycopg
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SERVER_SCRIPT = REPO_ROOT / "src" / "pergam" / "server.py"
+POSTGRES_IMAGE = "postgres:15-alpine"
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def with_dbname(url: str, dbname: str) -> str:
+    params = conninfo_to_dict(url)
+    params["dbname"] = dbname
+    return make_conninfo(**params)
+
+
+def wait_for_postgres(url: str, timeout: float = 60.0) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with psycopg.connect(url, connect_timeout=2):
+                return
+        except psycopg.OperationalError:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.3)
+
+
+@contextmanager
+def throwaway_postgres() -> Iterator[str]:
+    """Run a disposable Postgres container on a random port, no named volume, tmpfs data dir."""
+    name = f"pergam-test-{uuid.uuid4().hex[:10]}"
+    password = uuid.uuid4().hex
+    subprocess.run(
+        [
+            "docker", "run", "-d", "--rm", "--name", name,
+            "-e", f"POSTGRES_PASSWORD={password}",
+            "-p", "127.0.0.1::5432",
+            "--tmpfs", "/var/lib/postgresql/data:rw",
+            POSTGRES_IMAGE, "-c", "fsync=off",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    try:
+        mapping = subprocess.run(
+            ["docker", "port", name, "5432/tcp"], check=True, capture_output=True, text=True
+        ).stdout.split()[0]
+        port = mapping.rsplit(":", 1)[1]
+        url = f"postgresql://postgres:{password}@127.0.0.1:{port}/postgres"
+        wait_for_postgres(url)
+        yield url
+    finally:
+        subprocess.run(["docker", "rm", "-fv", name], capture_output=True)
+
+
+class DatabaseFactory:
+    """Creates isolated databases on an admin connection and drops them on close."""
+
+    def __init__(self, admin_url: str) -> None:
+        self.admin_url = admin_url
+        self._created: list[str] = []
+
+    def create(self) -> str:
+        dbname = f"pergam_test_{uuid.uuid4().hex[:12]}"
+        with psycopg.connect(self.admin_url, autocommit=True) as conn:
+            conn.execute(f'CREATE DATABASE "{dbname}"')
+        self._created.append(dbname)
+        return with_dbname(self.admin_url, dbname)
+
+    def close(self) -> None:
+        with psycopg.connect(self.admin_url, autocommit=True) as conn:
+            for dbname in self._created:
+                conn.execute(f'DROP DATABASE IF EXISTS "{dbname}" WITH (FORCE)')
+        self._created.clear()
+
+
+@dataclass(frozen=True)
+class Response:
+    status: int
+    headers: Mapping[str, str]
+    body: bytes
+
+    def json(self) -> Any:
+        return json.loads(self.body)
+
+    @property
+    def text(self) -> str:
+        return self.body.decode("utf-8")
+
+
+class Client:
+    def __init__(self, port: int) -> None:
+        self.port = port
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        body: bytes | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> Response:
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            conn.request(method, path, body=body, headers=dict(headers or {}))
+            resp = conn.getresponse()
+            return Response(resp.status, {k.lower(): v for k, v in resp.getheaders()}, resp.read())
+        finally:
+            conn.close()
+
+    def get(self, path: str) -> Response:
+        return self.request("GET", path)
+
+    def post_json(self, payload: Any, path: str = "/pergam") -> Response:
+        return self.request(
+            "POST", path, json.dumps(payload).encode("utf-8"), {"Content-Type": "application/json"}
+        )
+
+    def publish(self, **fields: Any) -> dict[str, Any]:
+        payload = {"title": "Doc", "html": "<h1>doc</h1>", "type": "otro", "author": "you@example.com"}
+        payload.update(fields)
+        resp = self.post_json(payload)
+        assert resp.status == 201, resp.body
+        return resp.json()
+
+
+class ServerProcess:
+    """The real server, started as `python server.py` the way the Docker image runs it."""
+
+    def __init__(self, database_url: str, log_dir: Path, env: Mapping[str, str] | None = None) -> None:
+        self.port = free_port()
+        self.env = {
+            **{k: v for k, v in os.environ.items() if not k.startswith(("PUBLIC_", "PG"))},
+            "DATABASE_URL": database_url,
+            "HOST": "127.0.0.1",
+            "PORT": str(self.port),
+            **(env or {}),
+        }
+        self.log_path = log_dir / f"pergam-server-{self.port}.log"
+        self.process: subprocess.Popen[bytes] | None = None
+
+    def launch(self) -> None:
+        with self.log_path.open("wb") as log:
+            self.process = subprocess.Popen(
+                [sys.executable, str(SERVER_SCRIPT)], env=self.env, stdout=log, stderr=subprocess.STDOUT
+            )
+
+    def start(self, timeout: float = 15.0) -> Client:
+        self.launch()
+        assert self.process is not None
+        client = Client(self.port)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                raise RuntimeError(f"server exited with {self.process.returncode}:\n{self.log()}")
+            try:
+                if client.get("/healthz").status == 200:
+                    return client
+            except OSError:
+                time.sleep(0.1)
+        raise RuntimeError(f"server did not become healthy:\n{self.log()}")
+
+    def wait_exit(self, timeout: float = 15.0) -> int:
+        assert self.process is not None
+        return self.process.wait(timeout=timeout)
+
+    def log(self) -> str:
+        return self.log_path.read_text(errors="replace") if self.log_path.exists() else ""
+
+    def stop(self) -> None:
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
