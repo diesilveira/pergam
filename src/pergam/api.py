@@ -8,13 +8,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from pergam.cursor import DEFAULT_SORT
 from pergam.meta import Meta
 from pergam.public_url import PublicAddress
 from pergam.store import IndexData, IndexRow, VersionInfo
 
 
 def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
-    return {
+    """`summary` is left out, not null, while the version's text has not been extracted."""
+    body = {
         "id": row.id,
         "version": row.version,
         "title": row.title,
@@ -26,16 +28,21 @@ def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
         "tags": row.tags,
         "archived": row.archived,
         "pinned": row.pinned,
+        "pinned_at": row.pinned_at.isoformat() if row.pinned_at else None,
         "view_url": public.view_url(row.id),
         "text_url": public.url(f"{row.id}/text"),
         "snippet": row.snippet.text() if row.snippet else None,
     }
+    if row.summary is not None:
+        body["summary"] = row.summary
+    return body
 
 
-def index_json(data: IndexData, public: PublicAddress) -> dict[str, Any]:
+def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT) -> dict[str, Any]:
     stats = data.stats
     return {
         "pergams": [_row(row, public) for row in data.rows],
+        "sort": sort,
         "matching": data.matching,
         "next_cursor": data.next_cursor.encode() if data.next_cursor else None,
         "archived_count": data.archived_count,
@@ -51,6 +58,8 @@ def index_json(data: IndexData, public: PublicAddress) -> dict[str, Any]:
             "bytes": stats.total_bytes,
             "new_pergams_7d": stats.new_pergams_7d,
             "new_versions_7d": stats.new_versions_7d,
+            "pinned": stats.total_pinned,
+            "max_pinned": stats.max_pinned,
         },
     }
 
@@ -84,6 +93,7 @@ def pergam_json(pergam_id: str, versions: list[VersionInfo], meta: Meta, public:
         "tags": meta.tags,
         "archived": meta.archived,
         "pinned": meta.pinned,
+        "pinned_at": meta.pinned_at.isoformat() if meta.pinned_at else None,
         "origin": meta.origin.to_json() if meta.origin else None,
         "view_url": public.view_url(pergam_id),
         "text_url": public.url(f"{pergam_id}/text"),

@@ -12,9 +12,11 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from pergam.access import Access, require_editor, require_import_authors, require_owner
-from pergam.cursor import IndexCursor
+from pergam.cursor import DEFAULT_SORT, Cursor, IndexCursor, TitleCursor
 from pergam.meta import Meta, MetaChange, Origin
+from pergam.pins import ARCHIVED_REASON, DEFAULT_MAX_PINNED, PinRefused, over_cap_reason
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
+from pergam.summary import SOURCE_CHARS, summarise
 from pergam.tags import merge_tags
 from pergam.text import EXTRACTOR_VERSION, PageText, extract_text
 from pergam.transfer import ExportedVersion, ImportDocument, check_written_authors
@@ -66,7 +68,8 @@ class IndexFilters:
     tag: str | None = None
     q: str | None = None
     archived: bool = False
-    cursor: IndexCursor | None = None
+    cursor: Cursor | None = None
+    sort: str = DEFAULT_SORT
 
     @property
     def active(self) -> bool:
@@ -87,9 +90,13 @@ class IndexRow:
     archived: bool = False
     pinned: bool = False
     snippet: Snippet | None = None
+    summary: str | None = None
+    title_key: str = ""
+    pinned_at: datetime | None = None
 
-    @property
-    def cursor(self) -> IndexCursor:
+    def cursor(self, sort: str) -> Cursor:
+        if sort == "title":
+            return TitleCursor(self.title_key, self.id)
         return IndexCursor(self.pinned, self.created_at, self.id)
 
 
@@ -101,6 +108,9 @@ class IndexStats:
     total_bytes: int
     new_pergams_7d: int
     new_versions_7d: int
+    total_archived: int = 0
+    total_pinned: int = 0
+    max_pinned: int = DEFAULT_MAX_PINNED
 
 
 @dataclass(frozen=True)
@@ -112,7 +122,9 @@ class IndexData:
     stats: IndexStats
     matching: int
     archived_count: int
-    next_cursor: IndexCursor | None
+    next_cursor: Cursor | None
+    pinned: list[IndexRow] = field(default_factory=list)
+    pinned_ids: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -128,10 +140,24 @@ class FeedEntry:
 
 
 PAGE_SIZE = 100
+LISTED = "FROM pergams_latest l LEFT JOIN pergam_meta m ON m.id = l.id"
+SEARCHED = LISTED + " LEFT JOIN pergam_text t ON t.id = l.id AND t.version = l.version"
+ORDERS = {
+    "recent": (
+        "COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC",
+        "p.pinned DESC, p.created_at DESC, p.id DESC",
+    ),
+    "title": ("lower(l.title), l.id", "p.title_key, p.id"),
+    "pinned": (
+        "m.pinned_at DESC NULLS LAST, l.created_at DESC, l.id DESC",
+        "p.pinned_at DESC NULLS LAST, p.created_at DESC, p.id DESC",
+    ),
+}
 FEED_SIZE = 50
 SUMMARY_CHARS = 280
 
 VERSION_LOCK_NAMESPACE = 0x7067
+PIN_LOCK_NAMESPACE = 0x7070
 
 
 def new_id() -> str:
@@ -163,6 +189,21 @@ def add_tags(conn: psycopg.Connection, pergam_id: str, tags: list[str]) -> list[
         (pergam_id, merged),
     )
     return merged
+
+
+def claim_pin(conn: psycopg.Connection, pergam_id: str, limit: int) -> None:
+    """Raise `PinRefused` unless one more pergam may be pinned; call before writing the pin.
+
+    Every new pin takes one instance-wide lock until its transaction ends, so
+    concurrent pins are counted one after another and never pass `limit`. Only
+    pins of pergams that are not archived count.
+    """
+    conn.execute("SELECT pg_advisory_xact_lock(%s, 0)", (PIN_LOCK_NAMESPACE,))
+    pinned = conn.execute(
+        "SELECT count(*) FROM pergam_meta WHERE pinned AND NOT archived AND id <> %s", (pergam_id,)
+    ).fetchone()[0]
+    if pinned >= limit:
+        raise PinRefused(over_cap_reason(pinned, limit))
 
 
 def read_access(conn: psycopg.Connection, pergam_id: str) -> Access | None:
@@ -245,9 +286,40 @@ def save_text(conn: psycopg.Connection, versions: list[tuple[str, int, str]]) ->
         )
 
 
+def page_query(source: str, condition: str, sort: str, headline: str, limit: str) -> str:
+    """The rows of one index page: chosen and ordered first, then joined to their text.
+
+    The version count, text prefix and headline are computed for the page's rows
+    only, never for every pergam the sort has to look at.
+    """
+    order, page_order = ORDERS[sort]
+    return f"""
+        SELECT p.id, p.version, p.title, p.type, p.author, p.created_at, p.bytes,
+               (SELECT count(*) FROM pergams v WHERE v.id = p.id),
+               p.tags, p.archived, p.pinned, {headline}, left(t.body, %(source_chars)s), p.title_key, p.pinned_at
+        FROM (
+            SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
+                   COALESCE(m.tags, '{{}}') AS tags, COALESCE(m.archived, false) AS archived,
+                   COALESCE(m.pinned, false) AS pinned, lower(l.title) AS title_key, m.pinned_at
+            {source} {condition} ORDER BY {order} LIMIT {limit}
+        ) p
+        LEFT JOIN pergam_text t ON t.id = p.id AND t.version = p.version
+        ORDER BY {page_order}
+    """
+
+
+def index_row(row: tuple[Any, ...]) -> IndexRow:
+    """An `IndexRow` from the index query's columns: the row, its headline, text prefix and title key."""
+    *fields, headline, body, title_key, pinned_at = row
+    return IndexRow(
+        *fields, snippet=Snippet.of(headline), summary=summarise(body, fields[2]), title_key=title_key, pinned_at=pinned_at
+    )
+
+
 class PergamStore:
-    def __init__(self, pool: ConnectionPool) -> None:
+    def __init__(self, pool: ConnectionPool, max_pinned: int = DEFAULT_MAX_PINNED) -> None:
         self.pool = pool
+        self.max_pinned = max_pinned
 
     def publish(self, pergam: NewPergam, existing_id: str | None, editor: str | None = None) -> Published:
         """Insert a new version and, when `pergam.tags` is given, merge them into the id's tags.
@@ -291,7 +363,7 @@ class PergamStore:
             row = conn.execute(
                 """
                 SELECT COALESCE(m.tags, '{}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
-                       m.origin_url, m.origin_id
+                       m.origin_url, m.origin_id, m.pinned_at
                 FROM (SELECT DISTINCT id FROM pergams WHERE id = %(id)s) p
                 LEFT JOIN pergam_meta m ON m.id = p.id
                 """,
@@ -299,35 +371,55 @@ class PergamStore:
             ).fetchone()
         if row is None:
             return None
-        tags, archived, pinned, origin_url, origin_id = row
+        tags, archived, pinned, origin_url, origin_id, pinned_at = row
         origin = Origin(origin_url, origin_id) if origin_url and origin_id else None
-        return Meta(tags, archived, pinned, origin)
+        return Meta(tags, archived, pinned, origin, pinned_at)
 
     def update_meta(self, pergam_id: str, change: MetaChange, editor: str | None = None) -> Meta | None:
         """Apply `change` without touching any version; None when the id has no versions.
 
+        Pinning a pergam that is not pinned yet stamps `pinned_at` and must fit under
+        the instance's cap (`PinRefused` otherwise); pinning an archived one is
+        refused too. Archiving unpins, unpinning clears `pinned_at`, and patching a
+        pinned pergam again leaves its `pinned_at` alone. A row left both archived
+        and pinned by an older build reads as not pinned and is normalised here.
         A trusted `editor` must be the owner or a collaborator (`Forbidden` otherwise).
+        Nothing is written when anything is refused.
         """
-        params = {"id": pergam_id, "tags": change.tags, "archived": change.archived, "pinned": change.pinned}
         with self.pool.connection() as conn, conn.transaction():
             lock_id(conn, pergam_id)
-            if conn.execute("SELECT 1 FROM pergams WHERE id = %(id)s LIMIT 1", params).fetchone() is None:
+            if conn.execute("SELECT 1 FROM pergams WHERE id = %s LIMIT 1", (pergam_id,)).fetchone() is None:
                 return None
             check_editor(conn, pergam_id, editor)
+            current = conn.execute(
+                "SELECT tags, archived, pinned, pinned_at FROM pergam_meta WHERE id = %s", (pergam_id,)
+            ).fetchone()
+            tags, archived, pinned, pinned_at = current or ([], False, False, None)
+            pinned = pinned and not archived
+            tags = tags if change.tags is None else change.tags
+            archived = archived if change.archived is None else change.archived
+            stamp = False
+            if change.pinned and not pinned:
+                if archived:
+                    raise PinRefused(ARCHIVED_REASON)
+                claim_pin(conn, pergam_id, self.max_pinned)
+                pinned, stamp = True, True
+            elif change.pinned is False or archived:
+                pinned = False
             row = conn.execute(
                 """
-                INSERT INTO pergam_meta (id, tags, archived, pinned)
-                VALUES (%(id)s, COALESCE(%(tags)s::text[], '{}'),
-                        COALESCE(%(archived)s::boolean, false), COALESCE(%(pinned)s::boolean, false))
+                INSERT INTO pergam_meta (id, tags, archived, pinned, pinned_at)
+                VALUES (%(id)s, %(tags)s, %(archived)s, %(pinned)s,
+                        CASE WHEN %(stamp)s THEN clock_timestamp() WHEN %(pinned)s THEN %(pinned_at)s::timestamptz END)
                 ON CONFLICT (id) DO UPDATE SET
-                    tags     = COALESCE(%(tags)s::text[], pergam_meta.tags),
-                    archived = COALESCE(%(archived)s::boolean, pergam_meta.archived),
-                    pinned   = COALESCE(%(pinned)s::boolean, pergam_meta.pinned)
-                RETURNING tags, archived, pinned
+                    tags = EXCLUDED.tags, archived = EXCLUDED.archived,
+                    pinned = EXCLUDED.pinned, pinned_at = EXCLUDED.pinned_at
+                RETURNING tags, archived, pinned, pinned_at
                 """,
-                params,
+                {"id": pergam_id, "tags": tags, "archived": archived, "pinned": pinned, "stamp": stamp, "pinned_at": pinned_at},
             ).fetchone()
-        return Meta(*row)
+        tags, archived, pinned, pinned_at = row
+        return Meta(tags, archived, pinned, pinned_at=pinned_at)
 
     def access(self, pergam_id: str) -> Access | None:
         with self.pool.connection() as conn:
@@ -413,14 +505,24 @@ class PergamStore:
                 origin = self._origin(conn, doc.id)
             else:
                 origin = doc.origin
+                pinned = doc.pinned and not doc.archived and self._has_pin_room(conn, doc.id)
                 conn.execute(
-                    "INSERT INTO pergam_meta (id, tags, archived, pinned, origin_url, origin_id)"
-                    " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET tags = EXCLUDED.tags,"
-                    " archived = EXCLUDED.archived, pinned = EXCLUDED.pinned,"
+                    "INSERT INTO pergam_meta (id, tags, archived, pinned, pinned_at, origin_url, origin_id)"
+                    " VALUES (%s, %s, %s, %s, CASE WHEN %s THEN COALESCE(%s::timestamptz, clock_timestamp()) END, %s, %s)"
+                    " ON CONFLICT (id) DO UPDATE SET tags = EXCLUDED.tags,"
+                    " archived = EXCLUDED.archived, pinned = EXCLUDED.pinned, pinned_at = EXCLUDED.pinned_at,"
                     " origin_url = EXCLUDED.origin_url, origin_id = EXCLUDED.origin_id",
-                    (doc.id, doc.tags, doc.archived, doc.pinned, origin and origin.url, origin and origin.id),
+                    (doc.id, doc.tags, doc.archived, pinned, pinned, doc.pinned_at, origin and origin.url, origin and origin.id),
                 )
         return ImportResult([v.version for v in missing], sorted(set(present) & {v.version for v in doc.versions}), origin)
+
+    def _has_pin_room(self, conn: psycopg.Connection, pergam_id: str) -> bool:
+        """Whether an imported pin fits under the cap; an import over it arrives unpinned rather than failing."""
+        try:
+            claim_pin(conn, pergam_id, self.max_pinned)
+        except PinRefused:
+            return False
+        return True
 
     @staticmethod
     def _origin(conn: psycopg.Connection, pergam_id: str) -> Origin | None:
@@ -439,61 +541,88 @@ class PergamStore:
             ).fetchall()
         return [VersionInfo(*row) for row in rows]
 
-    def index(self, filters: IndexFilters, page_size: int = PAGE_SIZE) -> IndexData:
+    def index(self, filters: IndexFilters, page_size: int = PAGE_SIZE, cards: bool = False) -> IndexData:
         """One page of the index plus the counts around it.
 
-        Rows sort pinned first, then newest first, then by id, so the order is total
-        and a page resumes strictly after `filters.cursor`. Pill counts cover every
-        visible pergam (archived ones only with `filters.archived`), not just the page.
+        `recent` sorts pinned first, then newest first, then by id; `title` sorts by
+        `lower(title)`, then id. Both orders are total, so a page resumes strictly
+        after `filters.cursor`. The page is chosen first and only its rows get their
+        version count, text prefix and headline.
+
+        Counts are facets over every visible pergam, not just the page: each one
+        (type, author, tag, and `archived_count` for the archived state) applies `q`
+        and every other active filter but not its own, so the other values of a facet
+        stay listed with what choosing them would give.
+
+        `cards` asks for the pinned pergams the HTML lifts into cards (the first
+        `page_size` that match, in the page's order): their rows on the first page,
+        only their ids on later pages, where the list still has to leave them out.
         """
         scope = "" if filters.archived else " AND NOT COALESCE(m.archived, false)"
-        where = "WHERE true" + scope
-        params: dict[str, Any] = {}
+        conditions: dict[str, str] = {}
+        params: dict[str, Any] = {"source_chars": SOURCE_CHARS, "limit": page_size + 1, "pinned_limit": page_size}
         if filters.type:
-            where += " AND l.type = %(type)s"
+            conditions["type"] = "l.type = %(type)s"
             params["type"] = filters.type
         if filters.author:
-            where += " AND l.author = %(author)s"
+            conditions["author"] = "l.author = %(author)s"
             params["author"] = filters.author
         if filters.tag:
-            where += " AND m.tags @> ARRAY[%(tag)s]::text[]"
+            conditions["tag"] = "m.tags @> ARRAY[%(tag)s]::text[]"
             params["tag"] = filters.tag
         if filters.q:
-            where += f" AND {MATCHES_SQL}"
+            conditions["q"] = MATCHES_SQL
             params.update(search_params(filters.q))
+
+        def narrowed(*without: str) -> str:
+            return "".join(f" AND {sql}" for name, sql in conditions.items() if name not in without)
+
+        where = f"WHERE true{scope}{narrowed()}"
         page_where = where
-        if filters.cursor:
+        if isinstance(filters.cursor, TitleCursor):
+            page_where += " AND (lower(l.title), l.id) > (%(c_title)s, %(c_id)s)"
+            params.update(c_title=filters.cursor.title_key, c_id=filters.cursor.id)
+        elif isinstance(filters.cursor, IndexCursor):
             page_where += " AND (COALESCE(m.pinned, false), l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
             params.update(c_pinned=filters.cursor.pinned, c_at=filters.cursor.created_at, c_id=filters.cursor.id)
-        params["limit"] = page_size + 1
-        joined = "FROM pergams_latest l LEFT JOIN pergam_meta m ON m.id = l.id"
-        searched = joined + " LEFT JOIN pergam_text t ON t.id = l.id AND t.version = l.version" if filters.q else joined
+        order = ORDERS[filters.sort][0]
+        source = SEARCHED if filters.q else LISTED
         headline = HEADLINE_SQL if filters.q else "NULL"
 
+        def page_of(condition: str, limit: str, sort: str = filters.sort) -> str:
+            return page_query(source, condition, sort, headline, limit)
+
+        pinned_where = f"{where} AND m.pinned AND NOT m.archived"
         with self.pool.connection() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
-                       (SELECT count(*) FROM pergams p WHERE p.id = l.id),
-                       COALESCE(m.tags, '{{}}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
-                       {headline}
-                {searched} {page_where}
-                ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC
-                LIMIT %(limit)s
-                """,
+            rows = conn.execute(page_of(page_where, "%(limit)s"), params).fetchall()
+            pinned: list[IndexRow] = []
+            pinned_ids: frozenset[str] = frozenset()
+            if cards and filters.cursor:
+                pinned_ids = frozenset(
+                    pid
+                    for (pid,) in conn.execute(
+                        f"SELECT l.id {source} {pinned_where} ORDER BY {ORDERS['pinned'][0]} LIMIT %(pinned_limit)s",
+                        params,
+                    ).fetchall()
+                )
+            elif cards:
+                pinned = [index_row(row) for row in conn.execute(page_of(pinned_where, "%(pinned_limit)s", "pinned"), params)]
+                pinned_ids = frozenset(row.id for row in pinned)
+            matching = conn.execute(f"SELECT count(*) {source} {where}", params).fetchone()[0]
+            type_counts = conn.execute(
+                f"SELECT l.type, count(*) {source} WHERE true{scope}{narrowed('type')} GROUP BY 1 ORDER BY 2 DESC, 1",
                 params,
             ).fetchall()
-            matching = conn.execute(f"SELECT count(*) {searched} {where}", params).fetchone()[0]
-            type_counts = conn.execute(
-                f"SELECT l.type, count(*) {joined} WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
-            ).fetchall()
             author_counts = conn.execute(
-                f"SELECT l.author, count(*) {joined} WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
+                f"SELECT l.author, count(*) {source} WHERE true{scope}{narrowed('author')} GROUP BY 1 ORDER BY 2 DESC, 1",
+                params,
             ).fetchall()
             tag_counts = conn.execute(
-                f"SELECT t, count(*) {joined} CROSS JOIN unnest(m.tags) t WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
+                f"SELECT tag, count(*) {source} CROSS JOIN unnest(m.tags) tag WHERE true{scope}{narrowed('tag')}"
+                " GROUP BY 1 ORDER BY 2 DESC, 1",
+                params,
             ).fetchall()
-            archived_count = conn.execute("SELECT count(*) " + joined + " WHERE m.archived").fetchone()[0]
+            archived_count = conn.execute(f"SELECT count(*) {source} WHERE m.archived{narrowed()}", params).fetchone()[0]
             stats = conn.execute(
                 """
                 SELECT
@@ -502,20 +631,24 @@ class PergamStore:
                   (SELECT count(*) FROM pergams),
                   (SELECT COALESCE(SUM(bytes), 0) FROM pergams),
                   (SELECT count(*) FROM pergams_latest WHERE created_at >= now() - interval '7 days'),
-                  (SELECT count(*) FROM pergams         WHERE created_at >= now() - interval '7 days')
+                  (SELECT count(*) FROM pergams         WHERE created_at >= now() - interval '7 days'),
+                  (SELECT count(*) FROM pergams_latest l JOIN pergam_meta m ON m.id = l.id WHERE m.archived),
+                  (SELECT count(*) FROM pergam_meta WHERE pinned AND NOT archived)
                 """
             ).fetchone()
 
-        page = [IndexRow(*row[:-1], snippet=Snippet.of(row[-1])) for row in rows[:page_size]]
+        page = [index_row(row) for row in rows[:page_size]]
         return IndexData(
             rows=page,
             type_counts=[(t, c) for t, c in type_counts],
             author_counts=[(a, c) for a, c in author_counts],
             tag_counts=[(t, c) for t, c in tag_counts],
-            stats=IndexStats(*stats),
+            stats=IndexStats(*stats, max_pinned=self.max_pinned),
             matching=matching,
             archived_count=archived_count,
-            next_cursor=page[-1].cursor if len(rows) > page_size else None,
+            next_cursor=page[-1].cursor(filters.sort) if len(rows) > page_size else None,
+            pinned=pinned,
+            pinned_ids=pinned_ids,
         )
 
     def feed(self, tag: str | None, author: str | None, limit: int = FEED_SIZE) -> list[FeedEntry]:

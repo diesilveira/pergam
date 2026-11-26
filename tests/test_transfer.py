@@ -72,7 +72,9 @@ def test_export_returns_every_version_with_html_and_meta(client: Client) -> None
 
     assert doc["format_version"] == FORMAT_VERSION
     assert (doc["id"], doc["server"]) == (pid, f"http://localhost:{client.port}")
+    pinned_at = doc["meta"].pop("pinned_at")
     assert doc["meta"] == {"tags": ["q3"], "archived": False, "pinned": True}
+    assert datetime.fromisoformat(pinned_at).tzinfo is not None
     assert [v["version"] for v in doc["versions"]] == [1, 2, 3]
     assert [v["note"] for v in doc["versions"]] == ["draft", None, "adds costs"]
     assert doc["versions"][2]["html"] == "<h1>plan</h1><p>costs added</p>"

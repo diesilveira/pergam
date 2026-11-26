@@ -93,14 +93,17 @@ def throwaway_postgres() -> Iterator[str]:
         subprocess.run(["docker", "rm", "-fv", name], capture_output=True)
 
 
-def listed_ids(html: str, *ids: str) -> set[str]:
-    """The ids among `ids` that the index page lists."""
-    return {pid for pid in ids if f'data-href="/{pid}/view"' in html}
+LISTED = re.compile(r'<a class="(?:pin|row)__title" href="/([a-f0-9]+)/view"')
 
 
 def listed_order(html: str) -> list[str]:
-    """Ids the index page lists, in page order."""
-    return re.findall(r'data-href="/([a-f0-9]+)/view"', html)
+    """Ids the index page lists, pinned cards then rows, in page order."""
+    return LISTED.findall(html)
+
+
+def listed_ids(html: str, *ids: str) -> set[str]:
+    """The ids among `ids` that the index page lists."""
+    return set(listed_order(html)) & set(ids)
 
 
 SEEDED = 230
@@ -129,6 +132,17 @@ def seed(db: psycopg.Connection) -> dict[str, tuple[bool, bool, bool]]:
                     (pid, ["seeded"] if tagged else [], archived, pinned),
                 )
     return flags
+
+
+def as_listed(expected: list[str], flags: dict[str, tuple[bool, bool, bool]], by_date: list[str] | None = None) -> list[str]:
+    """The HTML index's order for `expected`: pinned pergams that are not archived as cards first, the rest after.
+
+    Cards follow pin time, newest first; seeded pins have none, so they follow `by_date`
+    (newest first, `expected` itself when it is in the recent order).
+    """
+    wanted = set(expected)
+    cards = [pid for pid in (by_date or expected) if pid in wanted and flags[pid][0] and not flags[pid][1]]
+    return cards + [pid for pid in expected if pid not in cards]
 
 
 def crawl(client: Client, path: str) -> list[str]:

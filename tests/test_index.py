@@ -6,7 +6,7 @@ import re
 import psycopg
 import pytest
 
-from support import Client, crawl, listed_ids, listed_order, patch_meta, seed
+from support import Client, as_listed, crawl, listed_ids, listed_order, patch_meta, seed
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def test_index_lists_latest_version_of_every_pergam(client: Client, catalogue: d
     assert resp.headers["content-type"] == "text/html; charset=utf-8"
     assert listed_ids(resp.text, *catalogue.values()) == set(catalogue.values())
     assert "Release notes v2" in resp.text
-    assert f'href="/{catalogue["notes"]}/v1/view"' in resp.text
+    assert 'title="2 versions">v2</span>' in resp.text
     assert "3 pergams · 2 authors · 4 versions" in resp.text
 
 
@@ -59,7 +59,7 @@ def test_empty_index_shows_hint(client: Client) -> None:
     resp = client.get("/")
 
     assert resp.status == 200
-    assert "No pergams match." in resp.text
+    assert "No pergams yet." in resp.text
 
 
 def test_index_escapes_user_content(client: Client) -> None:
@@ -111,17 +111,17 @@ def test_tag_filter_composes_and_archived_stay_hidden(
 def test_tag_pills_count_visible_pergams(client: Client, tagged: dict[str, str]) -> None:
     hidden, shown = client.get("/").text, client.get("/?archived=1").text
 
-    assert re.search(r'href="/\?tag=ops"[^>]*>ops <span class="cnt">2</span>', hidden)
-    assert re.search(r'href="/\?tag=q3"[^>]*>q3 <span class="cnt">2</span>', hidden)
-    assert re.search(r'href="/\?tag=ops&amp;archived=1"[^>]*>ops <span class="cnt">3</span>', shown)
-    assert "show archived (1)" in hidden
-    assert "hide archived" in shown
+    assert re.search(r'href="/\?tag=ops"><span class="facet__hash" aria-hidden="true">#</span>ops<span class="facet__count">2</span>', hidden)
+    assert re.search(r'href="/\?tag=q3"><span[^>]*>#</span>q3<span class="facet__count">2</span>', hidden)
+    assert re.search(r'href="/\?tag=ops&amp;archived=1"><span[^>]*>#</span>ops<span class="facet__count">3</span>', shown)
+    assert '<a class="facet" href="/?archived=1">Archived<span class="facet__count">1</span>' in hidden
+    assert '<a class="facet is-on" href="/" aria-current="true">Archived' in shown
 
 
 def test_active_tag_pill_links_back_to_unfiltered(client: Client, tagged: dict[str, str]) -> None:
     resp = client.get("/?tag=ops&type=plan")
 
-    assert re.search(r'<a href="/\?type=plan" class="active"[^>]*>ops ', resp.text)
+    assert re.search(r'<a class="facet is-on" href="/\?type=plan" aria-current="true"><span[^>]*>#</span>ops<', resp.text)
     assert "showing 1 of 4" in resp.text
 
 
@@ -129,7 +129,7 @@ def test_active_tag_pill_links_back_to_unfiltered(client: Client, tagged: dict[s
     ("query", "note"),
     [
         ("/", "showing 4 of 5 · 1 archived hidden"),
-        ("/?archived=1", "5 pergams · 2 authors · 5 versions"),
+        ("/?archived=1", ""),
         ("/?tag=ops", "showing 2 of 4"),
         ("/?tag=ops&archived=1", "showing 3 of 5"),
     ],
@@ -137,7 +137,10 @@ def test_active_tag_pill_links_back_to_unfiltered(client: Client, tagged: dict[s
 def test_header_counts_follow_the_archived_filter(
     client: Client, tagged: dict[str, str], query: str, note: str
 ) -> None:
-    assert f'<div class="sub">{note}</div>' in client.get(query).text
+    page = client.get(query).text
+
+    assert f'<p class="index-head__note">{note}</p>' in page
+    assert '<p class="index-stats">5 pergams · 2 authors · 5 versions · ' in page
 
 
 @pytest.mark.parametrize(("query", "clear"), [("/", False), ("/?archived=1", True), ("/?tag=ops", True)])
@@ -153,8 +156,12 @@ def test_rows_show_tags_and_flags(client: Client, tagged: dict[str, str]) -> Non
     resp = client.get("/?archived=1")
 
     assert '<a class="tag" href="/?tag=q3&amp;archived=1"' in resp.text
-    assert 'class="flag flag--pinned"' in resp.text
-    assert f'<div class="row row--archived" data-href="/{tagged["archived"]}/view"' in resp.text
+    assert f'<li class="pin" data-href="/{tagged["q3_plan"]}/view"><a class="pin__title" href="/{tagged["q3_plan"]}/view">' in resp.text
+    assert re.search(
+        rf'<li class="row row--archived" data-href="/{tagged["archived"]}/view">.*?<span class="flag flag--archived">archived</span>'
+        rf'<a class="row__title" href="/{tagged["archived"]}/view">',
+        resp.text,
+    )
 
 
 def test_pinned_pergams_sort_first(client: Client, tagged: dict[str, str]) -> None:
@@ -190,7 +197,7 @@ def test_paging_visits_every_pergam_once_in_order(client: Client, db: psycopg.Co
 
     visited = crawl(client, query)
 
-    assert visited == expected
+    assert visited == as_listed(expected, flags)
     assert len(visited) == len(set(visited))
 
 

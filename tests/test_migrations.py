@@ -239,6 +239,7 @@ OWNER_PRECREATED = [
     MIGRATIONS_DIR / "005_pergam_note.sql",
     MIGRATIONS_DIR / "006_pergam_origin.sql",
     MIGRATIONS_DIR / "007_pergam_collaborators.sql",
+    MIGRATIONS_DIR / "008_pergam_pinned_at.sql",
 ]
 
 
@@ -351,7 +352,7 @@ def test_collaborators_migration_keeps_every_row_of_a_populated_database(
         )
         before = [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)]
 
-        assert [m.name for m in apply_migrations(conn, MIGRATIONS_DIR)] == ["007_pergam_collaborators"]
+        assert [m.name for m in apply_migrations(conn, MIGRATIONS_DIR)][0] == "007_pergam_collaborators"
 
         assert [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)] == before
         assert conn.execute("SELECT count(*) FROM pergam_meta WHERE collaborators IS NOT NULL").fetchone() == (0,)
@@ -362,3 +363,31 @@ def test_collaborators_migration_keeps_every_row_of_a_populated_database(
     assert client.get("/bbbb0002/collaborators").json() == {"id": "bbbb0002", "owner": "bo@example.com", "collaborators": []}
     assert client.as_user("ana@example.com").publish(id="aaaa0001")["version"] == 3
     assert client.as_user("bo@example.com").post_json({"id": "aaaa0001", "html": "<p>x</p>", "type": "plan"}).status == 403
+
+
+def test_pinned_at_migration_keeps_every_row_of_a_populated_database(
+    databases: DatabaseFactory, tmp_path: Path, start_server
+) -> None:
+    previous = migrations_through(tmp_path / "previous", 7)
+    url = databases.create()
+    with connect(url) as conn:
+        apply_migrations(conn, previous)
+        seed_legacy_rows(conn)
+        conn.execute(
+            "INSERT INTO pergam_meta (id, tags, archived, pinned, collaborators)"
+            " VALUES ('aaaa0001', '{ops}', true, true, '{bo@example.com}'), ('bbbb0002', '{}', false, true, NULL)"
+        )
+        before = [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)]
+
+        assert [m.name for m in apply_migrations(conn, MIGRATIONS_DIR)] == ["008_pergam_pinned_at"]
+
+        assert [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)] == before
+        assert conn.execute("SELECT count(*) FROM pergam_meta WHERE pinned_at IS NOT NULL").fetchone() == (0,)
+        assert conn.execute("SELECT collaborators FROM pergam_meta WHERE id = 'aaaa0001'").fetchone() == (["bo@example.com"],)
+        assert apply_migrations(conn, MIGRATIONS_DIR) == []
+
+    client = start_server(url)
+    body = client.get("/api/pergams?archived=1").json()
+
+    assert {row["id"]: row["pinned_at"] for row in body["pergams"]} == {"aaaa0001": None, "bbbb0002": None}
+    assert body["stats"]["pinned"] == 1

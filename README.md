@@ -41,12 +41,12 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🧭 **Visible versions** — every pergam opens under a bar with its title, type, tags, `v3 of 5` and a version selector, next to a collapsible history panel (each version's note, author and date, compare with current) and its details; older versions say when they were published and link to the current one. `/{id}/diff/v2..v5` shows what changed between two versions, section by section, with a list of the sections and pickers for the pair.
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
 - 🪞 **Built-in viewer** — on [pergam.dev](https://pergam.dev), a sandboxed iframe with strict CSP: Mermaid + jsDelivr allowed, everything else blocked. A self-hosted server frames each version under its version bar the same way: sandboxed in an opaque origin, with the hosted viewer's CSP, so a published script cannot reach the API.
-- 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag; pin what matters, archive what doesn't, from the view page or the API.
+- 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag from a side column with counts, sort it by date or title; pin what matters (a row of cards on top, a dozen at most by default), archive what doesn't, from the view page or the API.
 - 🧹 **Lint before publishing** — `POST /lint` reports external resources, broken TOC anchors and malformed Mermaid blocks with their line and column, and stores nothing; the skill runs it before every self-hosted publish.
-- 🔎 **Searchable** — `?q=` searches titles and the visible text of every pergam, with highlighted snippets.
+- 🔎 **Searchable** — the search field in every page's top bar (press `/`) searches titles and the visible text of every pergam, with highlighted snippets.
 - 📡 **Atom feed** — `/feed.atom` follows new publications, filtered by tag or author.
 - 🚚 **Portable** — `/{id}/export` and `POST /import` move a pergam to another server with its id, versions, dates, tags and notes; the skill promotes one between named servers in one command.
-- 🧩 **JSON API** — `/api/pergams` lists, filters, pages and counts like the index; `/api/pergams/{id}` returns one pergam with its versions.
+- 🧩 **JSON API** — `/api/pergams` lists, filters, sorts, pages and counts like the index, with a one-line summary per pergam; `/api/pergams/{id}` returns one pergam with its versions.
 - 🔐 **Owners behind your proxy** — with `TRUST_PROXY_USER=1` the author comes from an authenticating reverse proxy (`X-Forwarded-User`), and only a pergam's owner and the collaborators they list can add versions or edit it.
 - 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.

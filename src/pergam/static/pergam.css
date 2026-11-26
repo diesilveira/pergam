@@ -90,6 +90,40 @@ mark { background: var(--mark-bg); color: var(--text); border-radius: 3px; paddi
 .topbar__nav a { color: var(--muted); }
 .topbar__nav a:hover { color: var(--text); }
 .topbar__nav a[aria-current] { color: var(--accent); font-weight: 600; }
+/* Search field: rendered by top_bar on every page, focused by "/" (shortcuts.js). */
+.topbar__search {
+  flex: 1 1 16rem; max-width: 520px; min-width: 0; margin-inline: auto;
+  display: flex; align-items: center; gap: var(--space-2); padding: .3rem .6rem;
+  background: var(--bg); color: var(--muted); border: 1px solid var(--border-strong); border-radius: 9px;
+}
+.topbar__search:focus-within { border-color: var(--accent); }
+.topbar__search-input {
+  flex: 1; min-width: 0; padding: .1rem .2rem; border: 0; border-radius: 4px; background: transparent; color: var(--text); font-size: .84rem;
+}
+.topbar__search-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.topbar__search-input::placeholder { color: var(--muted); }
+.topbar__search-input::-webkit-search-cancel-button { cursor: pointer; }
+.topbar__search-icon { cursor: text; }
+@media (max-width: 640px) {
+  .topbar__search { order: 10; flex-basis: 100%; max-width: none; }
+  :where(.topbar:has(.topbar__search--compact)) { position: relative; }
+  .topbar__search--compact {
+    order: 0; flex: 0 0 28px; width: 28px; height: 24px; margin: -2px 0; padding: 0; justify-content: center;
+    background: transparent; border-color: transparent;
+  }
+  .topbar__search--compact .topbar__search-icon { width: 28px; height: 24px; display: grid; place-items: center; cursor: pointer; }
+  .topbar__search--compact .topbar__search-input { flex: 0 0 0; width: 0; padding: 0; }
+  .topbar__search--compact .topbar__search-key { display: none; }
+  .topbar__search--compact:focus-within {
+    position: absolute; z-index: 20; top: .4rem; left: var(--space-4); right: var(--space-4); width: auto; height: auto; margin: 0;
+    padding: .3rem .6rem; justify-content: flex-start; background: var(--bg); border-color: var(--accent); box-shadow: var(--shadow);
+  }
+  .topbar__search--compact:focus-within .topbar__search-icon { width: auto; height: auto; }
+  .topbar__search--compact:focus-within .topbar__search-input { flex: 1; width: auto; padding: .1rem .2rem; }
+}
+@media (hover: none) {
+  .topbar__search-key { display: none; }
+}
 
 /* ── buttons ────────────────────────────────────────────────────────── */
 .btn {
@@ -131,6 +165,11 @@ a.tag:hover { color: var(--accent); border-color: var(--accent); }
   font-size: .6rem; font-weight: 700; color: #ffffff; background: hsl(var(--h) 55% 38%);
 }
 .ver { font-family: var(--mono); font-size: .76rem; font-weight: 700; color: var(--accent); }
+/* Type dot: a filter's swatch, --type-rgb as on .badge. */
+.type-dot {
+  --type-rgb: 138, 145, 160;
+  width: 8px; height: 8px; flex: 0 0 8px; border-radius: 3px; background: rgb(var(--type-rgb));
+}
 
 /* ── form field ─────────────────────────────────────────────────────── */
 .input {

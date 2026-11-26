@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 from pergam.access import Access, CollaboratorError, Forbidden, parse_collaborators
 from pergam.api import index_json, pergam_json
-from pergam.cursor import CursorError, IndexCursor
+from pergam.cursor import CursorError, SortError, decode_cursor, parse_sort
 from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
 from pergam.error_page import render_error, varies_by_accept, wants_error_page
@@ -26,6 +26,7 @@ from pergam.lint import LINT_CONCURRENCY, LINT_MAX_BODY_BYTES, lint_html
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
 from pergam.meta import MetaError, parse_meta_change
 from pergam.notes import NoteError, parse_note
+from pergam.pins import PinRefused
 from pergam.public_url import PublicAddress
 from pergam.search import QueryError, parse_query
 from pergam.store import ImportConflict, IndexFilters, NewPergam, PergamStore
@@ -68,15 +69,17 @@ def _first(query: dict[str, list[str]], key: str) -> str | None:
 
 
 def parse_filters(query: dict[str, list[str]]) -> IndexFilters:
-    """Index filters from a query string, shared by `/` and `/api/pergams`; raises `CursorError` or `QueryError`."""
+    """Index filters from a query string, shared by `/` and `/api/pergams`; raises `CursorError`, `SortError` or `QueryError`."""
     token = _first(query, "cursor")
+    sort = parse_sort(_first(query, "sort"))
     return IndexFilters(
         type=normalise_type(_first(query, "type") or "") or None,
         author=_first(query, "author"),
         tag=normalise_tag(_first(query, "tag") or "") or None,
         q=parse_query(_first(query, "q")),
         archived=_first(query, "archived") in ("1", "true"),
-        cursor=IndexCursor.decode(token) if token else None,
+        cursor=decode_cursor(token, sort) if token else None,
+        sort=sort,
     )
 
 
@@ -356,6 +359,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         except Forbidden as exc:
             self.send_error(403, str(exc))
             return
+        except PinRefused as exc:
+            self.send_error(409, str(exc))
+            return
         if meta is None:
             self.send_error(404, "Pergam not found")
             return
@@ -541,12 +547,12 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         return data
 
     def _filters(self, query: dict[str, list[str]]) -> IndexFilters | None:
-        """Parsed filters, or None after answering 400 for a malformed cursor or an overlong `q`."""
+        """Parsed filters, or None after answering 400 for a malformed cursor or `sort`, or an overlong `q`."""
         try:
             return parse_filters(query)
         except CursorError:
             self.send_error(400, "Invalid cursor")
-        except QueryError as exc:
+        except (SortError, QueryError) as exc:
             self.send_error(400, str(exc))
         return None
 
@@ -554,14 +560,14 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         filters = self._filters(query)
         if filters is None:
             return
-        page = render_index(self.store.index(filters), filters, self.public.display)
+        page = render_index(self.store.index(filters, cards=True), filters, self.public.display)
         self._send_page(page)
 
     def _render_index_json(self, query: dict[str, list[str]]) -> None:
         filters = self._filters(query)
         if filters is None:
             return
-        self._send_json(index_json(self.store.index(filters), self.public))
+        self._send_json(index_json(self.store.index(filters), self.public, filters.sort))
 
     def _render_pergam_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)

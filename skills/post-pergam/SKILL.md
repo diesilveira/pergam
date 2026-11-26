@@ -179,7 +179,7 @@ curl -sS "$PERGAM_URL/abc12345/v2/text"    # a specific version
 
 - It returns only what a reader sees: headings as `#`, lists as `-`/`1.`, tables as pipe tables, code as fenced blocks; scripts and styles are dropped. **404** means the id (or version) doesn't exist on this server.
 - To iterate, build the new version from that text plus the user's changes, then POST it with the same `id` (see [§ Versioning](#versioning-flow-b)). Fetch `/{id}/raw` only when the new version must keep the old markup or styling exactly.
-- To find a pergam whose id you don't have, search: `curl -sS "$PERGAM_URL/api/pergams?q=<words>"` and pick from `pergams[].id` (each row has `title`, `author`, `created_at` and a `snippet` of the match).
+- To find a pergam whose id you don't have, search: `curl -sS "$PERGAM_URL/api/pergams?q=<words>"` and pick from `pergams[].id` (each row has `title`, `author`, `created_at`, a `snippet` of the match and, once its text is extracted, a one-line `summary`).
 - Search limits: words match exactly (no stemming, no accent folding: try `información` and `informacion` if unsure), only the first 100,000 characters of each pergam's text are searchable, and `q` is at most 200 characters. When a long pergam isn't found by a word from its end, look it up by title or author instead.
 
 ### Pergam types (Flow B)
@@ -216,7 +216,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 ```
 
 - `PATCH` `tags` **replaces** the set: to add a tag, `GET /{id}/meta` first and send the old tags plus the new one. `[]` clears them.
-- `archived: true` hides it from the index (still reachable by URL); `pinned: true` lists it first. Send only the fields you change.
+- `archived: true` hides it from the index (still reachable by URL); `pinned: true` shows it as a card at the top of the index (first in the `recent` order). A server pins at most `stats.max_pinned` pergams (`GET /api/pergams`, default 12): pinning one more is **409**; tell the user and offer to unpin another. Archiving unpins, and an archived pergam cannot be pinned (**409**, unarchive it first; sending both `archived: true` and `pinned: true` is **400**). Send only the fields you change.
 - On a server that trusts its proxy for identity, only the owner (the author of v1) and its collaborators may version or `PATCH` a pergam; the owner manages the list:
   ```bash
   curl -sS -X PUT "$PERGAM_URL/abc12345/collaborators" -H "Content-Type: application/json" \
@@ -246,8 +246,8 @@ python3 <skill-dir>/pergam_promote.py abc12345 --from local --to team
 | Method | Path                  | Description                                                          |
 | ------ | --------------------- | -------------------------------------------------------------------- |
 | POST   | `/pergam`             | Body `{title, html, type, author, id?, tags?, note?}`. Returns `{id, version, view_url, title, type, author}` (+ `tags`, `note` when sent). |
-| GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=words`; `q` searches titles and visible text (`"quoted phrase"` for exact order); `?archived=1` includes archived ones. |
-| GET    | `/api/pergams`        | JSON index with the same filters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`): `{pergams, matching, next_cursor, counts, stats}`. Use it to find or count pergams instead of scraping `/`. |
+| GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=words`; `q` searches titles and visible text (`"quoted phrase"` for exact order); `?archived=1` includes archived ones; `?sort=title` orders by title instead of most recent. |
+| GET    | `/api/pergams`        | JSON index with the same filters as `/` (`type`, `author`, `tag`, `q`, `archived`, `sort`, `cursor`): `{pergams, sort, matching, next_cursor, counts, stats}`. Use it to find or count pergams instead of scraping `/`. |
 | GET    | `/api/pergams/{id}`   | JSON: latest title/type/author, `tags`, `archived`, `pinned`, `origin` (server it was imported from, or `null`) and `versions` (newest first). |
 | GET    | `/{id}/view`          | View page of the latest version: bar with title, type, tags, `v3 of 5`, a version selector and actions, a history panel, document in a frame. |
 | GET    | `/{id}/v{n}/view`     | View page of a specific version; says so when a newer one exists.    |
