@@ -247,3 +247,23 @@ CONTRAST_OF = """
   });
 }
 """
+
+
+CURRENT_IN_PANEL = """() => {
+  const panel = document.getElementById('panel').getBoundingClientRect();
+  const item = document.querySelector('.history__link[aria-current]').closest('li').getBoundingClientRect();
+  return item.top >= panel.top && item.bottom <= panel.bottom;
+}"""
+
+
+@pytest.mark.parametrize("viewport", [WIDE, PHONE], ids=["wide", "phone"])
+def test_the_version_shown_is_scrolled_into_view_in_a_long_history(open_page, client: Client, viewport) -> None:
+    pid = client.publish(title="Long", html="<p>1</p>", note="first")["id"]
+    for n in range(2, 41):
+        client.publish(id=pid, title="Long", html=f"<p>{n}</p>", note=f"version {n}")
+    page = open_page(f"http://127.0.0.1:{client.port}/{pid}/v3/view", viewport=viewport)
+    if viewport is PHONE:
+        page.get_by_role("button", name="History", exact=True).click()
+
+    assert page.evaluate("document.getElementById('panel').scrollTop") > 0
+    assert page.evaluate(CURRENT_IN_PANEL)

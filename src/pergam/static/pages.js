@@ -44,12 +44,22 @@
     const close = document.querySelector('[data-panel-close]');
     if (!panel || !toggle) return;
     const sync = () => toggle.setAttribute('aria-expanded', String(root.dataset.panel === 'open'));
+    const showCurrent = () => {
+      const current = panel.querySelector('.history__link[aria-current]');
+      if (!current || root.dataset.panel !== 'open') return;
+      const box = panel.getBoundingClientRect();
+      const item = current.closest('li').getBoundingClientRect();
+      if (item.top < box.top || item.bottom > box.bottom) {
+        panel.scrollTop += item.top - box.top - Math.max(0, (box.height - item.height) / 2);
+      }
+    };
     const set = (state, { focus = false } = {}) => {
       root.dataset.panel = state;
       if (wide.matches) remember(state);
       sync();
-      if (focus && state === 'open') panel.querySelector('h2').focus();
+      if (focus && state === 'open') panel.querySelector('h2').focus({ preventScroll: true });
       if (focus && state === 'closed') toggle.focus();
+      showCurrent();
     };
     panel.querySelector('h2').tabIndex = -1;
     toggle.hidden = false;
@@ -63,7 +73,9 @@
     wide.addEventListener('change', () => {
       root.dataset.panel = initialPanel();
       sync();
+      showCurrent();
     });
+    showCurrent();
   };
 
   const setUpDropdowns = () => {
