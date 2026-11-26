@@ -22,14 +22,16 @@ from pergam.store import IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
 from pergam.text import extract_text
+from pergam.view_page import FRAME_POLICY, render_view
 
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 VERSION_RE = re.compile(r"^v(\d+)$")
 CONTENT_TYPES = {
-    "view": "text/html; charset=utf-8",
+    "content": "text/html; charset=utf-8",
     "raw": "text/plain; charset=utf-8",
     "text": "text/markdown; charset=utf-8",
 }
+LATEST_KINDS = frozenset({"raw", "text"})
 NO_STORE = "no-store"
 IMMUTABLE = "public, max-age=31536000, immutable"
 DERIVED = "public, max-age=300"
@@ -140,12 +142,18 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             if parts[1] == "meta":
                 self._render_meta_json(parts[0])
                 return
-            if parts[1] in CONTENT_TYPES:
+            if parts[1] == "view":
+                self._render_view(parts[0], None)
+                return
+            if parts[1] in LATEST_KINDS:
                 self._serve_pergam(parts[0], None, parts[1])
                 return
-        if len(parts) == 3 and parts[2] in CONTENT_TYPES and ID_RE.match(parts[0]):
+        if len(parts) == 3 and ID_RE.match(parts[0]):
             match = VERSION_RE.match(parts[1])
-            if match:
+            if match and parts[2] == "view":
+                self._render_view(parts[0], int(match.group(1)))
+                return
+            if match and parts[2] in CONTENT_TYPES:
                 self._serve_pergam(parts[0], int(match.group(1)), parts[2])
                 return
 
@@ -178,14 +186,26 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self.send_error(405, "Pergams are immutable")
 
     def _serve_pergam(self, pergam_id: str, version: int | None, kind: str) -> None:
-        """`kind` is `view` (the HTML), `raw` (the HTML as plain text) or `text` (its visible text as Markdown)."""
+        """`kind` is `content` (the HTML the view frames), `raw` (that HTML as plain text) or `text` (Markdown)."""
         html_text = self.store.html(pergam_id, version)
         if html_text is None:
             self.send_error(404, "Pergam not found")
             return
         body = extract_text(html_text).markdown if kind == "text" else html_text
         cache_control = NO_STORE if version is None else DERIVED if kind == "text" else IMMUTABLE
-        self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control)
+        headers = FRAME_POLICY.content_headers if kind == "content" else ()
+        self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control, headers=headers)
+
+    def _render_view(self, pergam_id: str, version: int | None) -> None:
+        """The view page names how many versions exist, so it changes with every new one: never cached."""
+        versions = self.store.versions(pergam_id)
+        meta = self.store.meta(pergam_id) if versions else None
+        shown = versions[0].version if versions and version is None else version
+        if meta is None or all(info.version != shown for info in versions):
+            self.send_error(404, "Pergam not found")
+            return
+        page = render_view(pergam_id, versions, meta, shown)
+        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
 
     def _render_versions_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)
@@ -272,7 +292,14 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     def _send_json(self, body: object, status: int = 200) -> None:
         self._send(status, "application/json", json.dumps(body).encode("utf-8"))
 
-    def _send(self, status: int, content_type: str, payload: bytes, cache_control: str = NO_STORE) -> None:
+    def _send(
+        self,
+        status: int,
+        content_type: str,
+        payload: bytes,
+        cache_control: str = NO_STORE,
+        headers: tuple[tuple[str, str], ...] = (),
+    ) -> None:
         """Version-pinned content never changes, so those routes pass `IMMUTABLE`.
 
         Content derived from a pinned version (its `/text`) changes when the
@@ -282,6 +309,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", cache_control)
+        for name, value in headers:
+            self.send_header(name, value)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(payload)

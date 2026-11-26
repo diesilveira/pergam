@@ -19,6 +19,8 @@ def test_head_mirrors_get_on_every_route(client: Client) -> None:
         f"/{pid}/raw",
         f"/{pid}/v1/view",
         f"/{pid}/v1/raw",
+        f"/{pid}/v1/content",
+        f"/{pid}/v9/content",
         f"/{pid}/text",
         f"/{pid}/v1/text",
         f"/{pid}/v9/text",

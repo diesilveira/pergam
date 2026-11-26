@@ -15,17 +15,6 @@ def test_healthz(client: Client) -> None:
     assert resp.json() == {"ok": True}
 
 
-def test_view_serves_latest_html(client: Client) -> None:
-    first = client.publish(html="<p>one</p>")
-    client.publish(id=first["id"], html="<p>two</p>")
-
-    resp = client.get(f"/{first['id']}/view")
-
-    assert resp.status == 200
-    assert resp.headers["content-type"] == "text/html; charset=utf-8"
-    assert resp.text == "<p>two</p>"
-
-
 def test_raw_serves_latest_source_as_plain_text(client: Client) -> None:
     first = client.publish(html="<p>one</p>")
     client.publish(id=first["id"], html="<p>two</p>")
@@ -37,7 +26,7 @@ def test_raw_serves_latest_source_as_plain_text(client: Client) -> None:
     assert resp.text == "<p>two</p>"
 
 
-@pytest.mark.parametrize(("kind", "content_type"), [("view", "text/html"), ("raw", "text/plain")])
+@pytest.mark.parametrize(("kind", "content_type"), [("content", "text/html"), ("raw", "text/plain")])
 def test_pinned_version_serves_that_version(client: Client, kind: str, content_type: str) -> None:
     first = client.publish(html="<p>one</p>")
     client.publish(id=first["id"], html="<p>two</p>")
@@ -53,7 +42,7 @@ def test_body_is_utf8_with_matching_length(client: Client) -> None:
     html = "<p>ñandú — 日本</p>"
     body = client.publish(html=html)
 
-    resp = client.get(f"/{body['id']}/view")
+    resp = client.get(f"/{body['id']}/v1/content")
 
     assert resp.body == html.encode("utf-8")
     assert resp.headers["content-length"] == str(len(html.encode("utf-8")))
@@ -82,6 +71,8 @@ def test_versions_lists_newest_first(client: Client) -> None:
         "/abcdef12/view",
         "/abcdef12/raw",
         "/abcdef12/v1/view",
+        "/abcdef12/v1/content",
+        "/abcdef12/content",
         "/abcdef12/versions",
         "/ZZZ/view",
         "/abcdef12/vx/view",
@@ -104,11 +95,12 @@ def test_missing_version_is_not_found(client: Client) -> None:
 def test_latest_index_and_json_routes_are_no_store(client: Client) -> None:
     body = client.publish()
 
-    for path in ["/", "/healthz", f"/{body['id']}/view", f"/{body['id']}/raw", f"/{body['id']}/versions"]:
+    paths = ["/", "/healthz", f"/{body['id']}/view", f"/{body['id']}/v1/view", f"/{body['id']}/raw", f"/{body['id']}/versions"]
+    for path in paths:
         assert client.get(path).headers["cache-control"] == "no-store", path
 
 
-@pytest.mark.parametrize("kind", ["view", "raw"])
+@pytest.mark.parametrize("kind", ["content", "raw"])
 def test_pinned_versions_are_cached_as_immutable(client: Client, kind: str) -> None:
     body = client.publish()
 
@@ -120,7 +112,7 @@ def test_pinned_versions_are_cached_as_immutable(client: Client, kind: str) -> N
 def test_missing_pinned_version_is_not_cached_as_immutable(client: Client) -> None:
     body = client.publish()
 
-    resp = client.get(f"/{body['id']}/v2/view")
+    resp = client.get(f"/{body['id']}/v2/content")
 
     assert resp.status == 404
     assert "immutable" not in resp.headers.get("cache-control", "")

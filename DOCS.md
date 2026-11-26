@@ -12,8 +12,9 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<search>` (title or text), `?archived=1`. See [Index](#index) and [Search](#search). |
 | `GET`    | `/api/pergams`        | JSON index: the same filters, order, pages and counts as `/`. See [JSON API](#json-api). |
 | `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags and every version of one pergam. **404** for an unknown id. |
-| `GET`    | `/{id}/view`          | Render the latest version.                                           |
-| `GET`    | `/{id}/v{n}/view`     | Render a specific version.                                           |
+| `GET`    | `/{id}/view`          | View page of the latest version: a bar with title, type, tags, author and versions, and the document in a frame. See [View](#view). |
+| `GET`    | `/{id}/v{n}/view`     | View page of a specific version; tells when a newer one exists.      |
+| `GET`    | `/{id}/v{n}/content`  | The HTML exactly as posted (`text/html`), what the view page frames. Version-pinned only. |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
 | `GET`    | `/{id}/v{n}/raw`      | Raw HTML source (specific version).                                  |
 | `GET`    | `/{id}/text`          | Visible text of the latest version as Markdown (`text/markdown`). See [Text](#text). |
@@ -37,9 +38,20 @@ Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `v
 
 Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails.
 
-Caching: a version-pinned route (`/{id}/v{n}/view`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. `/{id}/v{n}/text` is derived from that version by the text extractor, which can improve with an upgrade, so it is cached for five minutes only (`public, max-age=300`). Everything else (latest `/{id}/view`, `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
+Caching: a version-pinned content route (`/{id}/v{n}/content`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. `/{id}/v{n}/text` is derived from that version by the text extractor, which can improve with an upgrade, so it is cached for five minutes only (`public, max-age=300`). Everything else (both view pages, which count the versions, latest `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
 
 Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id; to hide it, archive it with `PATCH /{id}/meta`.
+
+## View
+
+`/{id}/view` and `/{id}/v{n}/view` are pergam's own page around the document, which is never altered:
+
+- **A slim bar** with the version's title, type, the id's tags, the author, `v3 of 5`, a version selector (every version, newest first, with its date) and links to the index, the version's `raw` HTML and its `text`.
+- **A notice** on any version that is not the latest, linking to the current one (`/{id}/view`).
+- **The document** in a full-height iframe loaded from `/{id}/v{n}/content`, always version-pinned, so the browser caches it for good. `/content` and `/raw` return the bytes that were posted, nothing added; `/raw` as `text/plain`.
+- **Anchors**: in-document links (`#section`) work inside the frame, and a fragment on the view URL (`/{id}/view#costs`) is forwarded into the frame, also when it changes later.
+
+Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
 
 ## Tags and metadata
 
@@ -197,9 +209,10 @@ pergam/
 │   ├── routes.py            HTTP routing and request validation
 │   ├── store.py             data access (all SQL)
 │   ├── index_page.py        HTML index renderer
+│   ├── view_page.py         view page: version bar around the framed document
 │   ├── api.py               JSON bodies of /api/pergams
 │   ├── feed.py              Atom feed of recent publications
-│   ├── templates/           index.html + index.css
+│   ├── templates/           index and view pages (HTML + CSS)
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── taxonomy.py          accepted types and badge colours
 │   ├── tags.py              tag normalisation and limits

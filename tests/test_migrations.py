@@ -131,7 +131,7 @@ def test_server_serves_a_legacy_database(databases: DatabaseFactory, start_serve
 
     client = start_server(url)
 
-    assert client.get("/aaaa0001/view").text == "<h1>plan v2</h1>"
+    assert client.get("/aaaa0001/raw").text == "<h1>plan v2</h1>"
     assert client.publish(id="aaaa0001")["version"] == 3
 
 
@@ -273,7 +273,7 @@ def test_legacy_database_upgrades_with_a_non_owner_role(
             assert apply_migrations(conn, MIGRATIONS_DIR) == discover(MIGRATIONS_DIR)
         client = start_server(role_url)
 
-        assert client.get("/aaaa0001/view").text == "<h1>plan v2</h1>"
+        assert client.get("/aaaa0001/raw").text == "<h1>plan v2</h1>"
         assert client.get("/").status == 200
         assert client.publish(id="aaaa0001", tags=["legacy"])["version"] == 3
         assert client.get("/aaaa0001/meta").json()["tags"] == ["legacy"]

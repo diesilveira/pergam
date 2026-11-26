@@ -89,7 +89,7 @@ def test_stored_types_no_longer_listed_still_render_and_filter(custom: tuple[Cli
 
     page = client.get("/?type=informe").text
 
-    assert client.get("/0dd00001/view").text == "<p>old</p>"
+    assert client.get("/0dd00001/v1/content").text == "<p>old</p>"
     assert 'data-href="/0dd00001/view"' in page
     assert re.search(r'class="type" style="--type-rgb:86,211,100"[^>]*>informe</a>', page)
     assert re.search(r'>informe <span class="cnt">1</span>', page)

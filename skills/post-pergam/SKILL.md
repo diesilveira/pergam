@@ -103,7 +103,7 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
    Response: `{"id":"abc12345", "version": 2, "view_url":"http://localhost:1111/abc12345/view", "title":"...", "type":"...", "author":"..."}`
 
 7. **Report the `view_url` AND `version`** to the user. Mention "v{n}" if not v1, and the `tags` if you sent any.
-   The `view_url` is built by the server from its `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`); report it as returned instead of rebuilding it from `$PERGAM_URL`. It always shows the latest version; when the link must keep showing exactly this version, replace its trailing `/view` with `/v{n}/view` (served as immutable and cacheable).
+   The `view_url` is built by the server from its `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`); report it as returned instead of rebuilding it from `$PERGAM_URL`. It always shows the latest version; when the link must keep showing exactly this version, replace its trailing `/view` with `/v{n}/view` (that page keeps showing v{n} and says when a newer version exists).
 
 ### Versioning (Flow B)
 
@@ -179,8 +179,9 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=words`; `q` searches titles and visible text (`"quoted phrase"` for exact order); `?archived=1` includes archived ones. |
 | GET    | `/api/pergams`        | JSON index with the same filters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`): `{pergams, matching, next_cursor, counts, stats}`. Use it to find or count pergams instead of scraping `/`. |
 | GET    | `/api/pergams/{id}`   | JSON: latest title/type/author, `tags`, `archived`, `pinned` and `versions` (newest first). |
-| GET    | `/{id}/view`          | Render latest version.                                               |
-| GET    | `/{id}/v{n}/view`     | Render specific version.                                             |
+| GET    | `/{id}/view`          | View page of the latest version: bar with title, type, tags, author, `v3 of 5` and a version selector, document in a frame. |
+| GET    | `/{id}/v{n}/view`     | View page of a specific version; says so when a newer one exists.    |
+| GET    | `/{id}/v{n}/content`  | The posted HTML as `text/html`, nothing added (what the view frames). |
 | GET    | `/{id}/raw`           | Raw HTML (latest).                                                   |
 | GET    | `/{id}/v{n}/raw`      | Raw HTML (specific).                                                 |
 | GET    | `/{id}/text`          | Visible text of the latest version as Markdown (headings, lists, tables). Cheapest way to read a pergam. |

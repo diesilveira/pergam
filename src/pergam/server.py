@@ -11,6 +11,7 @@ Modules
   routes.py      HTTP routing and request validation
   store.py       data access (all SQL)
   index_page.py  the HTML index, from templates/index.html + index.css
+  view_page.py   the view page: version bar and the document in a frame
   public_url.py  host and URL used in `view_url` and on the index
   taxonomy.py    accepted types and type badge colours
   migrate.py     numbered migrations applied at startup
