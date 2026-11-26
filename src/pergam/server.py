@@ -19,8 +19,9 @@ Env (12-factor)
   HOST           bind host                     (default 0.0.0.0)
   PORT           bind port                     (default 1111)
   DATABASE_URL   postgres connection string    (required)
-  PUBLIC_HOST    host for returned URLs        (default localhost)
-  PUBLIC_PORT    port for returned URLs        (default PORT)
+  PUBLIC_URL     base of returned URLs         (e.g. https://docs.example.com)
+  PUBLIC_HOST    host when PUBLIC_URL is unset (default localhost)
+  PUBLIC_PORT    port when PUBLIC_URL is unset (default PORT)
   MIGRATIONS_DIR directory of NNN_*.sql files  (default <repo>/db/migrations)
 """
 
@@ -38,6 +39,7 @@ if __package__ in (None, ""):
 import psycopg
 from psycopg_pool import ConnectionPool
 
+from pergam import public_url
 from pergam.migrate import MigrationError, apply_migrations, migrations_dir
 from pergam.routes import PergamHandler
 from pergam.store import PergamStore
@@ -62,6 +64,11 @@ def main() -> int:
 
     host = os.environ.get("HOST", DEFAULT_HOST)
     port = int(os.environ.get("PORT", DEFAULT_PORT))
+    try:
+        PergamHandler.public = public_url.resolve(os.environ, port)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
     pool = ConnectionPool(db_url, min_size=1, max_size=8, kwargs={"autocommit": True}, open=True)
     pool.wait(timeout=10.0)

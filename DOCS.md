@@ -53,13 +53,14 @@ App env vars follow 12-factor conventions (no `PERGAM_*` prefix inside the conta
 | `DATABASE_URL`      | bundled `db` service   | Postgres connection string.                  |
 | `HOST`              | `0.0.0.0`              | Bind host inside the container.              |
 | `PORT`              | `1111`                 | Bind port inside the container.              |
-| `PUBLIC_HOST`       | `localhost`            | Host used in returned `view_url`s.           |
-| `PUBLIC_PORT`       | `1111`                 | Port used in returned `view_url`s.           |
+| `PUBLIC_URL`        | unset                  | Base of returned `view_url`s, e.g. `https://docs.example.com` → `https://docs.example.com/{id}/view`. Takes precedence over `PUBLIC_HOST`/`PUBLIC_PORT`. |
+| `PUBLIC_HOST`       | `localhost`            | Host used in returned `view_url`s when `PUBLIC_URL` is unset. |
+| `PUBLIC_PORT`       | `PORT`                 | Port used in returned `view_url`s when `PUBLIC_URL` is unset; `443` means `https`, `80`/`443` are omitted from the URL. |
 | `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
 | `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
 
-See `.env.example` for the full set.
+See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an `http(s)` URL or `PUBLIC_PORT` is not a number.
 
 ## Schema migrations
 

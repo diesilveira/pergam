@@ -9,8 +9,8 @@ import sys
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
-from pergam import public_url
 from pergam.index_page import render_index
+from pergam.public_url import PublicAddress
 from pergam.store import IndexFilters, NewPergam, PergamStore
 
 VALID_TYPES = {"plan", "investigacion", "informe", "reporte", "otro"}
@@ -29,13 +29,10 @@ def _first(query: dict[str, list[str]], key: str) -> str | None:
 class PergamHandler(http.server.BaseHTTPRequestHandler):
     server_version = "pergam/2.0"
     store: PergamStore
+    public: PublicAddress
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {format % args}\n")
-
-    @property
-    def _server_port(self) -> int:
-        return self.server.server_address[1]
 
     def do_POST(self) -> None:
         if urlparse(self.path).path != "/pergam":
@@ -83,7 +80,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         response = json.dumps({
             "id": pergam_id,
             "version": version,
-            "view_url": public_url.view_url(pergam_id, self._server_port),
+            "view_url": self.public.view_url(pergam_id),
             "title": title,
             "type": pergam_type,
             "author": author,
@@ -156,7 +153,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             author=_first(query, "author"),
             q=_first(query, "q"),
         )
-        page = render_index(self.store.index(filters), filters, public_url.host_display(self._server_port))
+        page = render_index(self.store.index(filters), filters, self.public.display)
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
 
     def _send(self, status: int, content_type: str, payload: bytes) -> None:

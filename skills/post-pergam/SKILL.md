@@ -102,6 +102,7 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
    Response: `{"id":"abc12345", "version": 2, "view_url":"http://localhost:1111/abc12345/view", "title":"...", "type":"...", "author":"..."}`
 
 7. **Report the `view_url` AND `version`** to the user. Mention "v{n}" if not v1.
+   The `view_url` is built by the server from its `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`); report it as returned instead of rebuilding it from `$PERGAM_URL`.
 
 ### Versioning (Flow B)
 

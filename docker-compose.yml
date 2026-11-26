@@ -25,6 +25,7 @@ services:
       HOST: "0.0.0.0"
       PORT: "1111"
       DATABASE_URL: "postgresql://pergam:${POSTGRES_PASSWORD:-pergam}@db:5432/pergam"
+      PUBLIC_URL: "${PUBLIC_URL:-}"
       PUBLIC_HOST: "${PUBLIC_HOST:-localhost}"
       PUBLIC_PORT: "${PUBLIC_PORT:-1111}"
     depends_on:
