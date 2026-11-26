@@ -79,32 +79,82 @@ def test_pages_follow_the_system_scheme(browser, site, name: str, scheme: str) -
     context.close()
 
 
+def stored_theme(page) -> str | None:
+    return page.evaluate(f"localStorage.getItem('{THEME_KEY}')")
+
+
+def choose(page, theme: str) -> None:
+    """Click the toggle until `theme` is the explicit choice; it cycles system, light, dark."""
+    for _ in range(3):
+        if page.evaluate("document.documentElement.dataset.theme") == theme:
+            return
+        page.locator("[data-theme-toggle]").click()
+    pytest.fail(f"the toggle never reached {theme}")
+
+
 @pytest.mark.parametrize("scheme", ["light", "dark"])
-def test_toggle_switches_theme_and_the_choice_survives_reload_and_other_pages(browser, site, scheme: str) -> None:
+def test_toggle_cycles_system_light_dark_and_back_and_remembers_each_step(browser, site, scheme: str) -> None:
     context, page = page_in(browser, scheme)
     page.goto(site["index"])
     toggle = page.locator("[data-theme-toggle]")
+    steps = [("system", "light", None, scheme), ("light", "dark", "light", "light"), ("dark", "system", "dark", "dark"), ("system", "light", None, scheme)]
 
-    assert toggle.get_attribute("aria-label") == f"Switch to {OTHER[scheme]} theme"
-    toggle.click()
+    for mode, upcoming, stored, shown in steps:
+        assert toggle.get_attribute("aria-label") == f"Theme: {mode}. Switch to {upcoming}"
+        assert toggle.get_attribute("data-theme-mode") == mode
+        assert page_background(page) == BACKGROUND[shown]
+        page.reload()
+        assert stored_theme(page) == stored
+        assert page_background(page) == BACKGROUND[shown]
+        toggle.click()
+    context.close()
 
-    assert page_background(page) == BACKGROUND[OTHER[scheme]]
-    assert toggle.get_attribute("aria-label") == f"Switch to {scheme} theme"
-    page.reload()
-    assert page_background(page) == BACKGROUND[OTHER[scheme]]
-    for name in ("view", "diff"):
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_an_explicit_choice_survives_other_pages(browser, site, scheme: str) -> None:
+    context, page = page_in(browser, scheme)
+    page.goto(site["index"])
+    choose(page, OTHER[scheme])
+
+    for name in ("view", "diff", "index"):
         page.goto(site[name])
         assert page_background(page) == BACKGROUND[OTHER[scheme]]
-    page.locator("[data-theme-toggle]").click()
+    context.close()
+
+
+def test_back_to_system_forgets_the_choice(browser, site) -> None:
+    context, page = page_in(browser, "light")
     page.goto(site["index"])
-    assert page_background(page) == BACKGROUND[scheme]
+    choose(page, "dark")
+
+    page.locator("[data-theme-toggle]").click()
+
+    assert page.evaluate("document.documentElement.dataset.theme") is None
+    assert stored_theme(page) is None
+    context.close()
+
+
+def test_other_open_tabs_follow_a_change(browser, site) -> None:
+    context, first = page_in(browser, "light")
+    first.goto(site["index"])
+    second = context.new_page()
+    second.goto(site["view"])
+
+    choose(first, "dark")
+
+    second.wait_for_function("document.documentElement.dataset.theme === 'dark'")
+    assert page_background(second) == BACKGROUND["dark"]
+    assert second.locator("[data-theme-toggle]").get_attribute("data-theme-mode") == "dark"
+    first.locator("[data-theme-toggle]").click()
+    second.wait_for_function("document.documentElement.dataset.theme === undefined")
+    assert page_background(second) == BACKGROUND["light"]
     context.close()
 
 
 def test_remembered_choice_is_on_the_page_before_it_is_painted(browser, site) -> None:
     context, page = page_in(browser, "light")
     page.goto(site["index"])
-    page.locator("[data-theme-toggle]").click()
+    choose(page, "dark")
     page.add_init_script(
         """
         window.atBody = null;
@@ -149,6 +199,8 @@ def test_toggle_works_from_the_keyboard_with_a_visible_focus(browser, site) -> N
 
     assert page.evaluate("getComputedStyle(document.activeElement).outlineStyle") != "none"
     page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    assert page.evaluate("document.documentElement.dataset.theme") == "dark"
     assert page_background(page) == BACKGROUND["dark"]
     context.close()
 
@@ -243,7 +295,7 @@ def test_missing_pergam_shows_the_styled_page_with_status_404(browser, site, sch
     assert page.locator("h1").inner_text() == "Not found"
     assert page.locator(".error__code").inner_text() == "404 · NOT FOUND"
     assert page_background(page) == BACKGROUND[scheme]
-    page.locator("[data-theme-toggle]").click()
+    choose(page, OTHER[scheme])
     assert page_background(page) == BACKGROUND[OTHER[scheme]]
     context.close()
 
