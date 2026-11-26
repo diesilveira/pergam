@@ -5,7 +5,8 @@
   ----------------------------------------------------------------------------
   Reusable skeleton for specs, design docs, reports, comparison boards.
   Includes: sticky TOC (right), Mermaid diagrams (dark theme), syntax
-  highlighting tokens, callouts, badges, severity tables. Replace the
+  highlighting tokens, callouts, badges, severity tables, and print styles
+  (light, single column, no TOC) for Save as PDF. Replace the
   REPLACE_ME blocks with your content and remove this comment.
   ============================================================================
 -->
@@ -291,6 +292,40 @@
   }
   @media (max-width: 600px) {
     header.page-h, .stats, .layout, footer.page-f .inner { padding-left: 1rem; padding-right: 1rem; }
+  }
+
+  /* ===== Print / Save as PDF: light, single column, no TOC ===== */
+  @media print {
+    :root {
+      --bg: #fff; --bg2: #fff; --bg3: #f6f8fa; --bg-soft: #fff;
+      --text: #1f2328; --text-soft: #1f2328; --muted: #57606a; --muted2: #6e7781;
+      --accent: #0550ae; --accent2: #6639ba; --accent3: #116329;
+      --border: #d0d7de; --border-soft: #d8dee4;
+      --ok: #1a7f37; --warn: #9a6700; --crit: #cf222e; --info: #0969da;
+      --pad-x: 0;
+    }
+    @page { margin: 16mm 14mm; }
+    html { scroll-behavior: auto; }
+    body { font-size: 11pt; line-height: 1.5; }
+    header.page-h { background: none; padding: 0 0 1rem; }
+    aside.toc { display: none; }
+    .layout { display: block; max-width: none; padding: 1rem 0 0; }
+    .stats { padding: .8rem 0; }
+    .split-2, .split-3 { grid-template-columns: 1fr; }
+    section.sec { background: none; border: 0; border-top: 1px solid var(--border); border-radius: 0;
+                  padding: 1rem 0 0; margin-bottom: 1rem; box-shadow: none; }
+    section.sec > h2, section.sec h3, section.sec h4 { break-after: avoid; }
+    pre, table, .callout, .mermaid-wrap, .key-list li { break-inside: avoid; }
+    pre { background: #f6f8fa; color: #1f2328; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .tok-kw { color: #cf222e; } .tok-typ, .tok-id { color: #953800; } .tok-str { color: #0a3069; }
+    .tok-num { color: #0550ae; } .tok-com { color: #6e7781; } .tok-fn { color: #8250df; }
+    tr:hover td { background: none; }
+    .mermaid-wrap { overflow: visible; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    section.sec .mermaid-wrap p { color: #c9d1d9; }
+    pre.mermaid { background: none; border: 0; padding: 0; margin: 0; white-space: pre; }
+    footer.page-f { background: none; padding: 1rem 0 0; }
+    a { color: var(--text); }
+    main a[href^="http"]::after { content: " (" attr(href) ")"; color: var(--muted); font-size: .85em; }
   }
 </style>
 </head>

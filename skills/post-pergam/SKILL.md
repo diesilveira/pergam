@@ -215,7 +215,7 @@ Shared between both flows.
 - Single `<section class="grid">` with cards, no CDN.
 
 **Long-form content** (specs, design docs, multi-section reports):
-- Start from `template.html` (sibling file): gradient header, sticky TOC, numbered sections, Mermaid for diagrams (dark theme), syntax tokens, callouts, badges, HTTP-method-colored tables, responsive collapse.
+- Start from `template.html` (sibling file): gradient header, sticky TOC, numbered sections, Mermaid for diagrams (dark theme), syntax tokens, callouts, badges, HTTP-method-colored tables, responsive collapse, and print styles so Save as PDF gives a light single-column document without the TOC. Keep the `@media print` block.
 - For details (when to use what, color tokens, Mermaid class defs, responsive rules), read `polish-guide.md`.
 
 If content has 5+ logical sections, diagrams, or schemas → long-form template. Otherwise → short pergam.

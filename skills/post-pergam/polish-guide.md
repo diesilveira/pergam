@@ -44,6 +44,15 @@ Cap the layout at ~1280px (`--content-max`). Anything wider hurts reading on big
 
 When the viewport drops below ~980px, collapse to a single column and **move the TOC above the content** (`order: -1` on the aside). Below ~600px, drop horizontal padding.
 
+### Print and PDF
+
+`template.html` ends with an `@media print` block, so the browser's Print → Save as PDF gives a light, single-column document: the palette variables switch to dark text on white, the TOC is hidden, sections and code blocks avoid page breaks, code wraps instead of overflowing, and external links print their URL. Mermaid diagrams keep their dark panel (`print-color-adjust: exact`) because their `classDef` colours are picked for a dark background.
+
+- Keep colours in the `:root` variables: the print block overrides those, so a hardcoded hex stays dark on paper.
+- A new component with its own background or a fixed height needs a line in the print block too.
+- Keep the print block when trimming the template, also on short pergams built from it.
+- From a pergam server, print from the version's raw document (`/{id}/v{n}/content`) rather than from the view page, which frames it.
+
 ## Diagrams — use Mermaid
 
 Replace ASCII-art `<pre>` diagrams with Mermaid `<pre class="mermaid">` blocks. Use:
@@ -218,7 +227,7 @@ Pairs nicely with all-caps `crumbs` (path/context) before the H1.
 - **No external font loading.** Stick to system stacks. The whole point of self-contained HTML is no FOUT.
 - **No animations that move on scroll.** Cute on first view, distracting after.
 - **No purple/blue gradient text.** Use solid colors for headings. Gradients on body text age fast.
-- **No light-mode fallback.** The host renders dark. Adding `@media (prefers-color-scheme: light)` is wasted CSS.
+- **No light-mode fallback.** The host renders dark. Adding `@media (prefers-color-scheme: light)` is wasted CSS. Print is the exception: keep the template's `@media print` block (see [Print and PDF](#print-and-pdf)).
 
 ## Checklist before posting
 
@@ -228,4 +237,5 @@ Pairs nicely with all-caps `crumbs` (path/context) before the H1.
 - [ ] All anchors work (`scroll-margin-top` on sections).
 - [ ] No CDN other than Mermaid (and only if used).
 - [ ] Responsive at <980px (TOC moves above content).
+- [ ] Print preview is light and single column (the `@media print` block is still there).
 - [ ] HTML payload < ~150KB (Mermaid CDN is the bulk).

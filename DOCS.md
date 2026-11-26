@@ -56,7 +56,7 @@ Pergams cannot be deleted. To "supersede" a pergam, post a new version with the 
 - **The document** in a full-height iframe loaded from `/{id}/v{n}/content`, always version-pinned, so the browser caches it for good. `/content` and `/raw` return the bytes that were posted, nothing added; `/raw` as `text/plain`.
 - **Anchors**: in-document links (`#section`) work inside the frame, and a fragment on the view URL (`/{id}/view#costs`) is forwarded into the frame, also when it changes later.
 
-The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
+The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). To print or save a version as PDF, open its `/{id}/v{n}/content` on its own: printing the view page prints the frame only as tall as the window. Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
 
 ## Diff
 
