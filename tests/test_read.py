@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from pergam.view_page import BRIDGE_TAG
+from pergam.view_page import PREAMBLE
 from support import Client
 
 
@@ -36,7 +36,7 @@ def test_pinned_version_serves_that_version(client: Client, kind: str, content_t
 
     assert resp.status == 200
     assert resp.headers["content-type"] == f"{content_type}; charset=utf-8"
-    assert resp.text.removeprefix(BRIDGE_TAG) == "<p>one</p>"
+    assert resp.text.removeprefix(PREAMBLE) == "<p>one</p>"
 
 
 def test_body_is_utf8_with_matching_length(client: Client) -> None:

@@ -38,7 +38,7 @@ fetch('/api/pergams').then(...note('read'));
 fetch('/pergam', {method: 'POST', headers: json, body: post}).then(...note('write'));
 fetch('/pergam', {method: 'POST', mode: 'no-cors', headers: {'Content-Type': 'text/plain'}, body: post}).then(...note('blind-write'));
 try { navigator.sendBeacon('/pergam', post); } catch (e) {}
-try { localStorage.length; attempts.storage = 'reached'; } catch (e) { attempts.storage = 'blocked'; }
+attempts.storage = localStorage instanceof Storage ? 'reached' : 'stand-in';
 try { document.cookie; attempts.cookie = 'reached'; } catch (e) { attempts.cookie = 'blocked'; }
 attempts.origin = origin;
 const form = document.createElement('form');
@@ -49,6 +49,22 @@ form.submit();
 </script></body>"""
 
 
+STORAGE_USER = """<!doctype html><title>Storage</title><script>
+const theme = localStorage.getItem('theme') || 'light';
+localStorage.setItem('theme', 'dark');
+localStorage.tab = 'costs';
+sessionStorage.setItem('visits', String(Number(sessionStorage.getItem('visits') || 0) + 1));
+window.seen = {
+  theme, stored: localStorage.getItem('theme'), named: localStorage.getItem('tab'), property: localStorage.theme,
+  length: localStorage.length, key: localStorage.key(0), keys: Object.keys(localStorage).sort(),
+  visits: sessionStorage.visits, has: 'tab' in localStorage,
+};
+localStorage.removeItem('tab');
+delete localStorage.theme;
+window.seen.after = localStorage.length;
+sessionStorage.clear();
+window.seen.cleared = sessionStorage.length;
+</script><body><p>ok</p></body>"""
 VENDORED_MERMAID = FILES[MERMAID_PATH].body
 DIAGRAM = """<!doctype html><title>Diagram</title><body>
 <nav><a id="to-flow" href="#flow">flow</a></nav>
@@ -280,7 +296,7 @@ def test_a_published_script_cannot_read_or_write_through_the_api(
         "read": "blocked",
         "write": "blocked",
         "blind-write": "blocked",
-        "storage": "blocked",
+        "storage": "stand-in",
         "cookie": "blocked",
         "origin": "null",
     }
@@ -324,3 +340,31 @@ def test_mermaid_diagrams_and_anchors_work_in_the_sandbox(view, src: str) -> Non
     assert frame.evaluate("document.querySelector('pre.mermaid svg').textContent").count("Input") == 1
     outside = [url for url in requested if not url.startswith(base)]
     assert outside == ([] if src == MERMAID_PATH else [MERMAID_CDN_URL])
+
+
+@pytest.mark.parametrize("opened", ["framed", "alone"])
+def test_unguarded_storage_keeps_working_in_memory_inside_the_sandbox(browser, client: Client, opened: str) -> None:
+    base = f"http://127.0.0.1:{client.port}"
+    pid = client.publish(title="Storage", html=STORAGE_USER)["id"]
+    page = browser.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    try:
+        page.goto(f"{base}/{pid}/view" if opened == "framed" else f"{base}/{pid}/v1/content")
+        frame = page.frame(url=lambda url: "/content" in url)
+        frame.wait_for_function("window.seen !== undefined")
+
+        seen = frame.evaluate("window.seen")
+        page.reload()
+        frame = page.frame(url=lambda url: "/content" in url)
+        frame.wait_for_function("window.seen !== undefined")
+        after_reload = frame.evaluate("window.seen.theme")
+    finally:
+        page.close()
+
+    assert errors == []
+    assert seen == {
+        "theme": "light", "stored": "dark", "named": "costs", "property": "dark", "length": 2, "key": "theme",
+        "keys": ["tab", "theme"], "visits": "1", "has": True, "after": 0, "cleared": 0,
+    }
+    assert after_reload == "light"

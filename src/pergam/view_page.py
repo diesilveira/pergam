@@ -22,7 +22,7 @@ from string import Template
 from urllib.parse import urlencode, urlparse
 
 from pergam.meta import Meta, Origin
-from pergam.static_files import BRIDGE_PATH
+from pergam.static_files import BRIDGE_PATH, STORAGE_SHIM
 from pergam.store import VersionInfo
 from pergam.taxonomy import type_rgb
 
@@ -34,19 +34,21 @@ esc = html_lib.escape
 
 
 BRIDGE_TAG = f'<script src="{BRIDGE_PATH}" defer></script>'
+PREAMBLE = f"<script>{STORAGE_SHIM}</script>{BRIDGE_TAG}"
 _LEADING_DOCTYPE = re.compile(r"\A\ufeff?(?:\s|<!--.*?-->)*<!doctype\b[^>]*>", re.IGNORECASE | re.DOTALL)
 
 
 def framed(html: str) -> str:
-    """The body of `/content`: the posted HTML with the bridge tag right after a leading doctype, else first.
+    """The body of `/content`: the posted HTML with `PREAMBLE` right after a leading doctype, else first.
 
     At the start, a document that ends inside `<title>`, `<textarea>` or `<plaintext>`
-    cannot swallow the tag as text, and the doctype still comes first so the
-    document keeps its rendering mode. `defer` runs the bridge once the document is parsed.
+    cannot swallow the tags as text, and the doctype still comes first so the
+    document keeps its rendering mode. The storage stand-in is inline and runs
+    before any script of the document; `defer` runs the bridge once it is parsed.
     """
     match = _LEADING_DOCTYPE.match(html)
     cut = match.end() if match else 0
-    return html[:cut] + BRIDGE_TAG + html[cut:]
+    return html[:cut] + PREAMBLE + html[cut:]
 
 
 SANDBOX = (

@@ -8,8 +8,8 @@ import pytest
 
 from pergam.meta import Meta
 from pergam.store import VersionInfo
-from pergam.static_files import MERMAID_PATH, MERMAID_VERSION
-from pergam.view_page import BRIDGE_TAG, SANDBOX, FramePolicy, frame_policy, framed, render_view
+from pergam.static_files import MERMAID_PATH, MERMAID_VERSION, STORAGE_SHIM
+from pergam.view_page import PREAMBLE, SANDBOX, FramePolicy, frame_policy, framed, render_view
 from support import Client
 
 MERMAID_SHA256 = "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8"
@@ -116,7 +116,8 @@ def test_content_is_the_posted_html_plus_the_bridge_tag_and_raw_is_untouched(cli
 
     assert raw.body == html.encode("utf-8")
     assert content.body == (
-        '<!doctype html><script src="/static/frame-bridge.js" defer></script><a href="#s">s</a><h2 id="s">ñ — 日本</h2>'
+        '<!doctype html><script>' + STORAGE_SHIM + '</script><script src="/static/frame-bridge.js" defer></script>'
+        '<a href="#s">s</a><h2 id="s">ñ — 日本</h2>'
     ).encode("utf-8")
     assert content.headers["content-length"] == str(len(content.body))
     assert content.headers["content-type"] == "text/html; charset=utf-8"
@@ -126,11 +127,11 @@ def test_content_is_the_posted_html_plus_the_bridge_tag_and_raw_is_untouched(cli
 @pytest.mark.parametrize(
     ("html", "expected"),
     [
-        ("<p>x</p>", f"{BRIDGE_TAG}<p>x</p>"),
-        ("<!DOCTYPE html>\n<title>t", f"<!DOCTYPE html>{BRIDGE_TAG}\n<title>t"),
-        ("\ufeff <!-- a -->\n<!doctype html><p>", f"\ufeff <!-- a -->\n<!doctype html>{BRIDGE_TAG}<p>"),
-        ("<p>x</p><!doctype html>", f"{BRIDGE_TAG}<p>x</p><!doctype html>"),
-        ("<!-- never closed <!doctype html>", f"{BRIDGE_TAG}<!-- never closed <!doctype html>"),
+        ("<p>x</p>", f"{PREAMBLE}<p>x</p>"),
+        ("<!DOCTYPE html>\n<title>t", f"<!DOCTYPE html>{PREAMBLE}\n<title>t"),
+        ("\ufeff <!-- a -->\n<!doctype html><p>", f"\ufeff <!-- a -->\n<!doctype html>{PREAMBLE}<p>"),
+        ("<p>x</p><!doctype html>", f"{PREAMBLE}<p>x</p><!doctype html>"),
+        ("<!-- never closed <!doctype html>", f"{PREAMBLE}<!-- never closed <!doctype html>"),
     ],
     ids=["no-doctype", "doctype", "bom-and-comment", "late-doctype", "open-comment"],
 )
@@ -237,3 +238,13 @@ def test_static_files_answer_head_without_a_body(client: Client) -> None:
 )
 def test_only_listed_files_are_served_from_static(client: Client, path: str) -> None:
     assert client.get(path).status == 404
+
+
+def test_storage_stand_in_is_inlined_without_its_comment_and_never_served() -> None:
+    assert STORAGE_SHIM.startswith("(() => {")
+    assert "</script" not in STORAGE_SHIM.lower()
+    assert len(STORAGE_SHIM) < 2048
+
+
+def test_storage_stand_in_has_no_route(client: Client) -> None:
+    assert client.get("/static/storage-shim.js").status == 404
