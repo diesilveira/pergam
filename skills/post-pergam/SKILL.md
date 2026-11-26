@@ -132,6 +132,7 @@ curl -sS "$PERGAM_URL/abc12345/v2/text"    # a specific version
 - It returns only what a reader sees: headings as `#`, lists as `-`/`1.`, tables as pipe tables, code as fenced blocks; scripts and styles are dropped. **404** means the id (or version) doesn't exist on this server.
 - To iterate, build the new version from that text plus the user's changes, then POST it with the same `id` (see [§ Versioning](#versioning-flow-b)). Fetch `/{id}/raw` only when the new version must keep the old markup or styling exactly.
 - To find a pergam whose id you don't have, search: `curl -sS "$PERGAM_URL/api/pergams?q=<words>"` and pick from `pergams[].id` (each row has `title`, `author`, `created_at` and a `snippet` of the match).
+- Search limits: words match exactly (no stemming, no accent folding: try `información` and `informacion` if unsure), only the first 100,000 characters of each pergam's text are searchable, and `q` is at most 200 characters. When a long pergam isn't found by a word from its end, look it up by title or author instead.
 
 ### Pergam types (Flow B)
 

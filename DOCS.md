@@ -101,10 +101,10 @@ Both are `Cache-Control: no-store`.
 
 `GET /{id}/text` (latest) and `GET /{id}/v{n}/text` return what a reader sees on the page, as Markdown, for agents and scripts that need the content without the markup. It is the same extraction the search index uses:
 
-- the contents of `script`, `style`, `template`, `noscript` and `head` are dropped;
-- `h1`–`h6` become `#`–`######` lines, `ul`/`ol` items `-` or `1.` lines (nested lists indented two spaces), `pre` a fenced code block with its whitespace kept;
+- what a browser does not render is dropped: `script`, `style`, `title`, `iframe` fallback, a closed `noscript` or `template`, and the `head`, which ends at `</head>`, `<body>` or the first content that cannot be in a head (its end tag is optional). An unclosed `noscript` or `template` is kept as content instead of hiding the rest of the page;
+- `h1`–`h6` become `#`–`######` lines, `ul`/`ol` items `-` or `1.` lines (nested lists indented two spaces), `pre` a fenced code block with its whitespace kept (a block element such as `<p>` ends an unclosed `pre`);
 - a `table` becomes a pipe table whose first row is the header (cells padded to the widest row, `|` escaped as `\|`, nested tables flattened into their cell), its `caption` a paragraph before it;
-- everything else is paragraphs, whitespace collapsed and entities decoded. Links, images and inline styling are reduced to their text.
+- everything else is paragraphs, whitespace collapsed and entities decoded. Links, images and inline styling are reduced to their text. A paragraph or list item that starts with a Markdown marker (`#`, `>`, `*`, `+`, `-`, `1.`, `1)`, a code fence) gets it backslash-escaped, so it stays text.
 
 The body is `text/markdown; charset=utf-8` and ends with a newline, or is empty when the page has no visible text. Unknown ids or versions are **404**.
 
@@ -126,7 +126,7 @@ curl -sS http://localhost:1111/abc12345/text
 `?q=` matches a pergam when its latest version's title contains `q` (case-insensitive substring, as before) **or** its title or text matches `q` as a full-text query.
 
 - **Text** is the visible text of the HTML, extracted at publish time by the same parse that serves `GET /{id}/text`, stored as plain lines (the same blocks without Markdown syntax, so snippets show no `#` or `|`). The contents of `script`, `style`, `template`, `noscript` and `head` are never indexed.
-- **Query syntax** is Postgres' web-search syntax: words are ANDed, `"quoted phrase"` matches the words in order, `or` and `-excluded` work. Matching is language-neutral (`simple` configuration): case-insensitive, no stemming, so `region` does not match `regions`. Title words weigh more than body words.
+- **Query syntax** is Postgres' web-search syntax: words are ANDed, `"quoted phrase"` matches the words in order, `or` and `-excluded` work. Matching is language-neutral (`simple` configuration): case-insensitive, no stemming, so `region` does not match `regions`, and no accent folding, so `informacion` does not match `información`. Title words weigh more than body words.
 - **Snippet**: when the text matched, the row shows the matching fragment with the hits highlighted. A title-only match shows no snippet.
 - `q` is at most 200 characters (after trimming); longer is **400**, on `/` and on `/api/pergams`.
 - **Order and paging** are the same as without `q` (pinned, newest, id), so the cursor works unchanged.
