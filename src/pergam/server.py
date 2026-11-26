@@ -12,6 +12,7 @@ Modules
   store.py       data access (all SQL)
   index_page.py  the HTML index, from templates/index.html + index.css
   public_url.py  host and URL used in `view_url` and on the index
+  taxonomy.py    accepted types and type badge colours
   migrate.py     numbered migrations applied at startup
 
 Env (12-factor)
@@ -23,6 +24,7 @@ Env (12-factor)
   PUBLIC_HOST    host when PUBLIC_URL is unset (default localhost)
   PUBLIC_PORT    port when PUBLIC_URL is unset (default PORT)
   MIGRATIONS_DIR directory of NNN_*.sql files  (default <repo>/db/migrations)
+  PERGAM_TYPES   accepted types, comma separated (default the five built-in ones)
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ if __package__ in (None, ""):
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from pergam import public_url
+from pergam import public_url, taxonomy
 from pergam.migrate import MigrationError, apply_migrations, migrations_dir
 from pergam.routes import PergamHandler
 from pergam.store import PergamStore
@@ -64,6 +66,7 @@ def main() -> int:
 
     host = os.environ.get("HOST", DEFAULT_HOST)
     port = int(os.environ.get("PORT", DEFAULT_PORT))
+    PergamHandler.types = taxonomy.allowed_types(os.environ)
     try:
         PergamHandler.public = public_url.resolve(os.environ, port)
     except ValueError as exc:

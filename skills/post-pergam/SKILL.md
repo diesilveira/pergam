@@ -74,7 +74,7 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
 
 2. **Decide: new pergam or new version?** See [§ Versioning (Flow B)](#versioning-flow-b).
 
-3. **Pick `type`** from `plan | investigacion | informe | reporte | otro`. See [§ Pergam types (Flow B)](#pergam-types-flow-b).
+3. **Pick `type`** from the server's accepted list (by default `plan | investigacion | informe | reporte | otro`). See [§ Pergam types (Flow B)](#pergam-types-flow-b).
 
 4. **Determine `author`** from the Claude session's user email. Required.
 
@@ -122,7 +122,7 @@ The server is permissive: posting with an `id` that doesn't exist yet is accepte
 
 ### Pergam types (Flow B)
 
-Required in Flow B. Free-form `text` on the server, but stick to this taxonomy so filters stay clean:
+Required in Flow B. The server only accepts the types in its `PERGAM_TYPES` setting; by default these five:
 
 | Type            | When to pick it                                                       |
 | --------------- | --------------------------------------------------------------------- |
@@ -133,6 +133,8 @@ Required in Flow B. Free-form `text` on the server, but stick to this taxonomy s
 | `otro`          | Anything that doesn't fit the above. Don't overuse.                   |
 
 When iterating (new version of an existing pergam), **keep the same type as the previous version** unless the content shifts categorically.
+
+If the user's server is configured with other types, a `400 type must be one of [...]` lists them: pick from that list and retry. Never invent a type the server didn't list.
 
 ### Tags (Flow B)
 
@@ -209,7 +211,7 @@ Replace ASCII art with Mermaid in long-form content. Only allowed external depen
 
 - **`Connection refused` on `/healthz`** → server not reachable. Ask the user to `docker compose up -d` in their pergam dir or confirm `PERGAM_URL`.
 - **Container restarts in a loop, logs show "could not connect to server"** → the pergam server can't reach its Postgres. If using bundled compose, `docker compose restart` after the db is ready.
-- **400 "type must be one of …"** → fix the payload to use `plan | investigacion | informe | reporte | otro`.
+- **400 "type must be one of […]"** → the message lists the types this server accepts (`PERGAM_TYPES`); pick one of those and retry.
 - **400 "Missing author"** → always pass `author`.
 - **405 on DELETE** → expected. Pergams are immutable. Post a new version to supersede, or `PATCH /{id}/meta` with `{"archived": true}` to hide it.
 - **404 on `PATCH /{id}/meta`** → the id has no versions on this server; check the id.

@@ -16,8 +16,8 @@ from pergam.meta import MetaError, parse_meta_change
 from pergam.public_url import PublicAddress
 from pergam.store import IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
+from pergam.taxonomy import DEFAULT_TYPES, normalise_type
 
-VALID_TYPES = {"plan", "investigacion", "informe", "reporte", "otro"}
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 VERSION_RE = re.compile(r"^v(\d+)$")
 NO_STORE = "no-store"
@@ -36,6 +36,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     server_version = "pergam/2.0"
     store: PergamStore
     public: PublicAddress
+    types: tuple[str, ...] = DEFAULT_TYPES
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {format % args}\n")
@@ -50,7 +51,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
 
         html = data.get("html", "")
         title = (data.get("title") or "Pergam").strip()
-        pergam_type = (data.get("type") or "").strip().lower()
+        pergam_type = normalise_type(data.get("type") or "")
         author = (data.get("author") or "").strip()
         existing_id = (data.get("id") or "").strip()
 
@@ -60,8 +61,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if not author:
             self.send_error(400, "Missing author")
             return
-        if pergam_type not in VALID_TYPES:
-            self.send_error(400, f"type must be one of {sorted(VALID_TYPES)}")
+        if pergam_type not in self.types:
+            self.send_error(400, f"type must be one of {sorted(self.types)}")
             return
         if existing_id and not ID_RE.match(existing_id):
             self.send_error(400, "Invalid id format")
@@ -204,7 +205,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(400, "Invalid cursor")
             return
         filters = IndexFilters(
-            type=(_first(query, "type") or "").lower() or None,
+            type=normalise_type(_first(query, "type") or "") or None,
             author=_first(query, "author"),
             tag=normalise_tag(_first(query, "tag") or "") or None,
             q=_first(query, "q"),

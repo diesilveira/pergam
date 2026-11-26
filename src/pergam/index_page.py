@@ -11,6 +11,7 @@ from string import Template
 from urllib.parse import urlencode
 
 from pergam.store import IndexData, IndexFilters, IndexRow
+from pergam.taxonomy import type_rgb
 
 _TEMPLATES = Path(__file__).resolve().parent / "templates"
 _PAGE = Template((_TEMPLATES / "index.html").read_text(encoding="utf-8").rstrip("\n"))
@@ -160,7 +161,7 @@ def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
         f'    {tags}'
         f'  </div>'
         f'  <code class="row__id">{esc(pid)}</code>'
-        f'  <a class="type t-{esc(row.type)}" '
+        f'  <a class="type" style="--type-rgb:{",".join(map(str, type_rgb(row.type)))}" '
         f'     href="{type_href}" title="filter by type">{esc(row.type)}</a>'
         f'  <a class="row__author" href="{author_href}" title="filter by author">'
         f'    {avatar(row.author)}<span class="row__author-name">{esc(short_author(row.author))}</span>'

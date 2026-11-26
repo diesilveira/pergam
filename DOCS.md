@@ -64,7 +64,7 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 
 ## Pergam types
 
-The `type` field is required and free-form `text`, but a recommended taxonomy keeps filters useful:
+`type` is required and must be one of the server's accepted types. They come from `PERGAM_TYPES` (comma separated, trimmed and lowercased); unset or blank means the five defaults:
 
 | Type            | When to pick it                                                       |
 | --------------- | --------------------------------------------------------------------- |
@@ -74,9 +74,11 @@ The `type` field is required and free-form `text`, but a recommended taxonomy ke
 | `reporte`       | Recurring dashboards, comparison boards, leaderboards.                |
 | `otro`          | Anything that doesn't fit the above.                                  |
 
+The posted `type` is trimmed and lowercased; anything else is **400** `type must be one of [...]`, listing what this server accepts. Removing a type from `PERGAM_TYPES` only stops new posts: pergams already stored with it still render, list and filter. Each badge colour is derived from the type name (the five defaults keep their fixed colours), so adding a type needs no CSS change.
+
 ## Configuration
 
-App env vars follow 12-factor conventions (no `PERGAM_*` prefix inside the container — the container *is* pergam):
+App env vars follow 12-factor conventions; only the pergam-specific knobs carry a `PERGAM_*` prefix:
 
 | Env var             | Default                | Description                                  |
 | ------------------- | ---------------------- | -------------------------------------------- |
@@ -86,6 +88,7 @@ App env vars follow 12-factor conventions (no `PERGAM_*` prefix inside the conta
 | `PUBLIC_URL`        | unset                  | Base of returned `view_url`s, e.g. `https://docs.example.com` → `https://docs.example.com/{id}/view`. Takes precedence over `PUBLIC_HOST`/`PUBLIC_PORT`. |
 | `PUBLIC_HOST`       | `localhost`            | Host used in returned `view_url`s when `PUBLIC_URL` is unset. |
 | `PUBLIC_PORT`       | `PORT`                 | Port used in returned `view_url`s when `PUBLIC_URL` is unset; `443` means `https`, `80`/`443` are omitted from the URL. |
+| `PERGAM_TYPES`      | `plan,investigacion,informe,reporte,otro` | Accepted `type` values, comma separated (see [Pergam types](#pergam-types)). |
 | `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
 | `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
@@ -124,6 +127,7 @@ pergam/
 │   ├── index_page.py        HTML index renderer
 │   ├── templates/           index.html + index.css
 │   ├── public_url.py        host/URL used in view_url and on the index
+│   ├── taxonomy.py          accepted types and badge colours
 │   ├── tags.py              tag normalisation and limits
 │   ├── meta.py              per-id metadata and PATCH validation
 │   ├── cursor.py            keyset cursor for index pagination
