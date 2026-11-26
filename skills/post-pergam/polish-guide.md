@@ -51,7 +51,7 @@ When the viewport drops below ~980px, collapse to a single column and **move the
 - Keep colours in the `:root` variables: the print block overrides those, so a hardcoded hex stays dark on paper.
 - A new component with its own background or a fixed height needs a line in the print block too.
 - Keep the print block when trimming the template, also on short pergams built from it.
-- From a pergam server, print from the version's raw document (`/{id}/v{n}/content`) rather than from the view page, which frames it.
+- On a pergam server, the view page's print button (or Ctrl/⌘+P) prints the whole framed document with these styles.
 
 ## Diagrams — use Mermaid
 

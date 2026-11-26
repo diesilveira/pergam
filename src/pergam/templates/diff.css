@@ -57,4 +57,9 @@
   .gap { padding:.15rem .75rem .15rem 1.7rem; color:var(--muted-2); font-size:.75rem; font-style:italic;
           border-top:1px dashed var(--border); border-bottom:1px dashed var(--border); }
   .empty { color:var(--muted); }
+  .too-large { padding:.8rem 1rem; background:var(--surface); border:1px solid var(--border);
+                border-left:3px solid var(--del); border-radius:6px; }
+  .too-large h2 { margin:0 0 .3rem; font-size:1rem; }
+  .too-large p { margin:0; color:var(--muted); }
+  .too-large a { color:var(--accent); text-decoration:underline; }
 

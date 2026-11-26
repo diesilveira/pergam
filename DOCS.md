@@ -14,7 +14,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags, `origin` and every version of one pergam. **404** for an unknown id. |
 | `GET`    | `/{id}/view`          | View page of the latest version: a bar with title, type, tags, author and versions, and the document in a frame. See [View](#view). |
 | `GET`    | `/{id}/v{n}/view`     | View page of a specific version; tells when a newer one exists.      |
-| `GET`    | `/{id}/v{n}/content`  | The HTML exactly as posted (`text/html`), what the view page frames. Version-pinned only. |
+| `GET`    | `/{id}/v{n}/content`  | The posted HTML followed by the frame bridge tag (`text/html`), what the view page frames. Version-pinned only. See [View](#view). |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
 | `GET`    | `/{id}/v{n}/raw`      | Raw HTML source (specific version).                                  |
 | `GET`    | `/{id}/text`          | Visible text of the latest version as Markdown (`text/markdown`). See [Text](#text). |
@@ -26,6 +26,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/export`        | JSON document with every version of one pergam, its HTML and its metadata. See [Export and import](#export-and-import). **404** for an unknown id. |
 | `POST`   | `/import`             | Body: an export document. Recreates the versions this server lacks, keeping id, version numbers and `created_at`. Returns `{id, imported, skipped, origin, view_url}`. **409** when a version already here differs. See [Export and import](#export-and-import). |
 | `GET`    | `/feed.atom`          | Atom 1.0 feed of the 50 most recent publications; `?tag=<tag>`, `?author=<email>`. See [Feed](#feed). |
+| `GET`    | `/static/frame-bridge.js` | The frame bridge script (`text/javascript`, cached five minutes). |
 | `GET`    | `/healthz`            | Liveness probe.                                                      |
 | `HEAD`   | any `GET` route       | Same status and headers as `GET`, without the body.                  |
 | `DELETE` | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |
@@ -51,14 +52,28 @@ Pergams cannot be deleted. To "supersede" a pergam, post a new version with the 
 
 ## View
 
-`/{id}/view` and `/{id}/v{n}/view` are pergam's own page around the document, which is never altered:
+`/{id}/view` and `/{id}/v{n}/view` are pergam's own page around the document:
 
-- **A slim bar** with the version's title, type, the id's tags, the author, the server it was [imported](#export-and-import) from when it was, `v3 of 5`, a version selector (every version, newest first, with its date and [note](#version-notes)) and links to the index, the version's `raw` HTML and its `text`.
+- **A slim bar** with the version's title, type, the id's tags, the author, the server it was [imported](#export-and-import) from when it was, `v3 of 5`, a version selector (every version, newest first, with its date and [note](#version-notes)), links to the index, the version's `raw` HTML, its `text` and the document alone (`open document`), and a **print** button.
 - **A notice** on any version that is not the latest, linking to the current one (`/{id}/view`).
-- **The document** in a full-height iframe loaded from `/{id}/v{n}/content`, always version-pinned, so the browser caches it for good. `/content` and `/raw` return the bytes that were posted, nothing added; `/raw` as `text/plain`.
-- **Anchors**: in-document links (`#section`) work inside the frame, and a fragment on the view URL (`/{id}/view#costs`) is forwarded into the frame, also when it changes later.
+- **The document** in a full-height iframe loaded from `/{id}/v{n}/content`, always version-pinned, so the browser caches it for good.
 
-The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). To print or save a version as PDF, open its `/{id}/v{n}/content` on its own: printing the view page prints the frame only as tall as the window. Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
+`/raw` returns the posted bytes untouched, as `text/plain`. `/content` returns them followed by one tag, `<script src="/static/frame-bridge.js"></script>`: the **frame bridge**, which talks to the view page with `postMessage` only, never reaching into the other side's DOM or location, so it keeps working once the frame is sandboxed. Through it:
+
+- **Anchors**: in-document links (`#section`) scroll the document, and the view URL follows them (`/{id}/view#section`, replaced, not a new history entry). A fragment on the view URL, at load or changed later, scrolls the document without adding history.
+- **Links** that leave the document and have no `target` of their own (and no `<base target>`) open in the whole window, not inside the frame. Links with a `target`, downloads, and clicks with a modifier key keep their usual behaviour.
+- **Title**: the tab shows the document's `<title>`, then the version.
+- **Print**: the print button, or Ctrl/⌘+P anywhere on the page, prints the whole document rather than the visible part of the frame. The button appears only once the bridge has answered.
+
+What changes for a document inside the frame, compared with opening `/content` on its own:
+
+- `window.location` is `/{id}/v{n}/content`, not the view URL, and `window.top !== window`. A fragment the reader follows still shows in the view URL through the bridge.
+- Relative URLs resolve against `/{id}/v{n}/` (`href="notes"` is `/{id}/v{n}/notes`, a 404): link other pergams and assets by absolute path or full URL.
+- The frame is the viewport: `100vh`, `position: fixed` and `sticky`, and `matchMedia` measure the frame, below the bar.
+- The tab title comes from the document's `<title>`; without one it stays the pergam's title.
+- The bridge needs script to run: a document whose own CSP forbids `/static/frame-bridge.js`, or whose markup leaves an element such as `<script>` or a comment unclosed at the end, keeps its links inside the frame and shows no print button.
+
+The view page treats every message as untrusted data: it accepts only those from its own frame, only strings, at most 2,048 characters, and a fragment only when it starts with `#`; nothing is ever inserted as HTML. The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
 
 ## Diff
 
@@ -70,6 +85,12 @@ The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notic
 - The header shows both versions with their [notes](#version-notes) and links to each one's view page.
 
 The range is `v{a}..v{b}`, the newer side on the right; `a` may be larger than `b` (read backwards) or equal (no differences). A range that is not `v{a}..v{b}` with positive numbers without leading zeros is **400**; an unknown id or version is **404**.
+
+The work is bounded, so a diff answers in well under a second whatever the input:
+
+- Text both versions share at the start and at the end is matched without cost; lines or words that repeat more than 8 times on the newer side never anchor a match (they still extend one).
+- Matching is metered. A replaced line whose word comparison would overrun its share, or any once the request has spent its total, is marked as a whole line instead of word by word.
+- A version over 2 MB of HTML or 20,000 lines of text, or line matching that overruns its budget, gets a **too large to diff** page (still `200`) with links to both versions' `/text`.
 
 ## Export and import
 
@@ -270,6 +291,7 @@ pergam/
 │   ├── api.py               JSON bodies of /api/pergams
 │   ├── feed.py              Atom feed of recent publications
 │   ├── templates/           index, view and diff pages (HTML + CSS)
+│   ├── static/              frame-bridge.js, appended to /content
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── limits.py            largest request body (PERGAM_MAX_BODY_MB)
 │   ├── taxonomy.py          accepted types and badge colours
@@ -329,6 +351,8 @@ make test
 ```
 
 That creates `.venv`, installs `requirements-dev.txt` and runs `pytest`. The suite boots the real server (`python3 src/pergam/server.py`) against a throwaway Postgres: by default it starts a `postgres:15-alpine` container named `pergam-test-*` on a random local port with no volume, and removes it at the end. Set `TEST_DATABASE_URL` to an admin connection string to use an existing server instead (CI does this with a `services: postgres` container). Either way every run works in its own `pergam_test_*` database, dropped afterwards; the bundled compose database is never touched.
+
+`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, each case plain and with the frame sandboxed. Without Playwright or a browser those tests are skipped.
 
 ## Make targets
 

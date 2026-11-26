@@ -20,6 +20,7 @@ def test_head_mirrors_get_on_every_route(client: Client) -> None:
         f"/{pid}/v1/view",
         f"/{pid}/v1/raw",
         f"/{pid}/v1/content",
+        "/static/frame-bridge.js",
         f"/{pid}/diff/v1..v2",
         f"/{pid}/diff/v1..v9",
         f"/{pid}/diff/bad",

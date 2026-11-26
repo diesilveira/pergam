@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
-from pergam.diff import diff_sections
+from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
@@ -28,7 +28,7 @@ from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
 from pergam.text import extract_text
 from pergam.transfer import TransferError, export_json, parse_import
-from pergam.view_page import FRAME_POLICY, render_view
+from pergam.view_page import BRIDGE_PATH, BRIDGE_SCRIPT, FRAME_POLICY, framed, render_view
 
 VERSION_RE = re.compile(r"^v(\d+)$")
 RANGE_RE = re.compile(r"^v([1-9]\d*)\.\.v([1-9]\d*)$")
@@ -167,6 +167,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if path == "api/pergams":
             self._render_index_json(parse_qs(parsed.query))
             return
+        if path == BRIDGE_PATH.strip("/"):
+            self._send(200, "text/javascript; charset=utf-8", BRIDGE_SCRIPT, cache_control=DERIVED)
+            return
         if path == "healthz":
             self._send(200, "application/json", b'{"ok":true}')
             return
@@ -232,12 +235,17 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self.send_error(405, "Pergams are immutable")
 
     def _serve_pergam(self, pergam_id: str, version: int | None, kind: str) -> None:
-        """`kind` is `content` (the HTML the view frames), `raw` (that HTML as plain text) or `text` (Markdown)."""
+        """`kind` is `content` (the HTML plus the frame bridge), `raw` (the HTML as posted) or `text` (Markdown)."""
         html_text = self.store.html(pergam_id, version)
         if html_text is None:
             self.send_error(404, "Pergam not found")
             return
-        body = extract_text(html_text).markdown if kind == "text" else html_text
+        if kind == "text":
+            body = extract_text(html_text).markdown
+        elif kind == "content":
+            body = framed(html_text)
+        else:
+            body = html_text
         cache_control = NO_STORE if version is None else DERIVED if kind == "text" else IMMUTABLE
         headers = FRAME_POLICY.content_headers if kind == "content" else ()
         self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control, headers=headers)
@@ -264,9 +272,16 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if old is None or new is None:
             self.send_error(404, "Pergam or version not found")
             return
-        old_html, new_html = (self.store.html(pergam_id, info.version) or "" for info in (old, new))
-        page = render_diff(pergam_id, old, new, diff_sections(old_html, new_html))
+        page = render_diff(pergam_id, old, new, self._diff(pergam_id, old.version, new.version, old.bytes, new.bytes))
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"), cache_control=DERIVED)
+
+    def _diff(self, pergam_id: str, old: int, new: int, *html_bytes: int) -> list[Section] | TooLargeToDiff:
+        """The sections, or why the versions are too large to compare; oversized HTML is never read."""
+        try:
+            check_size(*html_bytes)
+            return diff_sections(*(self.store.html(pergam_id, version) or "" for version in (old, new)))
+        except TooLargeToDiff as exc:
+            return exc
 
     def _render_versions_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)
