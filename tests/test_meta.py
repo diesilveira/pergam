@@ -136,3 +136,13 @@ def test_post_body_must_be_an_object(client: Client) -> None:
     resp = client.request("POST", "/pergam", b"[1, 2]", {"Content-Type": "application/json"})
 
     assert resp.status == 400
+
+
+def test_new_version_keeps_archived_and_pinned(client: Client) -> None:
+    pid = client.publish()["id"]
+    patch(client, pid, {"archived": True, "pinned": True})
+
+    client.publish(id=pid, html="<p>v2</p>", tags=["more"])
+
+    assert client.get(f"/{pid}/meta").json() == {"id": pid, "tags": ["more"], "archived": True, "pinned": True}
+    assert f'data-href="/{pid}/view"' not in client.get("/").text
