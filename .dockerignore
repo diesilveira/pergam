@@ -3,9 +3,9 @@ data/
 .gitignore
 *.md
 Makefile
-__pycache__/
-*.pyc
-.DS_Store
+**/__pycache__/
+**/*.pyc
+**/.DS_Store
 .venv/
 .pytest_cache/
 .github/
