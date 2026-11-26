@@ -426,3 +426,13 @@ def test_malformed_server_url_is_400(target: Client, target_db: psycopg.Connecti
 
 def test_server_url_with_ipv6_and_port_is_accepted() -> None:
     assert parse_server_url("http://[::1]:1111/") == "http://[::1]:1111"
+
+
+def test_import_stores_the_title_as_given_unlike_publish(target: Client) -> None:
+    doc = document(versions=1)
+    doc["versions"][0]["title"] = "  Spaced title "
+
+    target.post_json(doc, "/import")
+
+    assert target.get("/abcd1234/versions").json()[0]["title"] == "  Spaced title "
+    assert target.publish(title="  Spaced title ")["title"] == "Spaced title"
