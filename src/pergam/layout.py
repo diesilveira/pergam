@@ -29,18 +29,25 @@ _THEME_TOGGLE = (
 
 @dataclass(frozen=True)
 class SearchBox:
-    """What the top bar's search field shows: the current `query` and the index filters a new search keeps."""
+    """What the top bar's search field shows: the current `query` and the index filters a new search keeps.
+
+    A `compact` field (the default, for pages around a document) shrinks to its icon
+    below 640px and opens over the bar when focused, so the bar keeps its rows; the
+    icon is a label, so a tap focuses the field with or without script.
+    """
 
     query: str = ""
     keep: tuple[tuple[str, str], ...] = ()
+    compact: bool = True
 
     def html(self) -> str:
         esc = html_lib.escape
         kept = "".join(f'<input type="hidden" name="{esc(name)}" value="{esc(value)}">' for name, value in self.keep)
+        variant = " topbar__search--compact" if self.compact else ""
         return (
-            '<form class="topbar__search" action="/" method="get" role="search">'
-            '<span class="topbar__search-icon" aria-hidden="true">⌕</span>'
-            f'<input class="topbar__search-input" type="search" name="q" value="{esc(self.query)}"'
+            f'<form class="topbar__search{variant}" action="/" method="get" role="search">'
+            '<label class="topbar__search-icon" for="topbar-search" aria-hidden="true">⌕</label>'
+            f'<input class="topbar__search-input" id="topbar-search" type="search" name="q" value="{esc(self.query)}"'
             ' placeholder="Search title and text" aria-label="Search title and text"'
             f' maxlength="{MAX_QUERY_CHARS}" autocomplete="off" data-search>'
             '<kbd class="kbd topbar__search-key" aria-hidden="true">/</kbd>'

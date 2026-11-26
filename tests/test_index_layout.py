@@ -333,7 +333,7 @@ def test_page_scripts_are_static_files(client: Client, path: str) -> None:
 
 
 def search_form(page: str) -> str:
-    return re.search(r'<form class="topbar__search".*?</form>', page).group(0)
+    return re.search(r'<form class="topbar__search[^"]*".*?</form>', page).group(0)
 
 
 @pytest.mark.parametrize("path", ["/{id}/view", "/{id}/v1/view", "/{id}/diff/v1..v2", "/nope"])
@@ -345,7 +345,8 @@ def test_every_page_has_the_search_field_in_its_top_bar(client: Client, path: st
     form = search_form(page)
 
     assert 'action="/" method="get" role="search"' in form
-    assert '<input class="topbar__search-input" type="search" name="q" value=""' in form
+    assert '<input class="topbar__search-input" id="topbar-search" type="search" name="q" value=""' in form
+    assert 'class="topbar__search topbar__search--compact"' in form
     assert 'aria-label="Search title and text"' in form and "data-search" in form
     assert 'type="hidden"' not in form
     assert re.search(r'<script src="/static/shortcuts.js\?v=[0-9a-f]{12}" defer></script>', page)

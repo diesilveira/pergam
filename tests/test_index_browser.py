@@ -274,3 +274,37 @@ def test_without_script_load_more_is_a_link_to_the_next_page(browser, crowded: s
     page.wait_for_url(re.compile(r"\?cursor="))
     assert page.get_by_role("link", name="← first page").is_visible()
     context.close()
+
+
+BAR_HEIGHT = "document.querySelector('.topbar').getBoundingClientRect().height"
+
+
+@pytest.mark.parametrize("scheme", SCHEMES)
+@pytest.mark.parametrize("name", ["view", "diff"])
+def test_the_compact_search_adds_no_row_to_the_bar_on_a_phone(browser, site, name: str, scheme: str) -> None:
+    context, page = open_page(browser, scheme, viewport=PHONE)
+    page.goto(site[name])
+    with_search = page.evaluate(BAR_HEIGHT)
+    page.evaluate("document.querySelector('.topbar__search').style.display = 'none'")
+    without_search = page.evaluate(BAR_HEIGHT)
+    page.evaluate("document.querySelector('.topbar__search').style.display = ''")
+
+    page.locator(".topbar__search-icon").click()
+
+    assert with_search == without_search
+    assert active(page) == {"tag": "INPUT", "search": True}
+    assert page.evaluate("document.querySelector('[data-search]').getBoundingClientRect().width") > 200
+    assert page.evaluate(BAR_HEIGHT) == with_search
+    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
+    page.keyboard.type("cutover")
+    page.keyboard.press("Enter")
+    page.wait_for_url(f"{site['base']}/?q=cutover")
+    context.close()
+
+
+def test_the_index_keeps_the_full_search_field_on_a_phone(browser, site) -> None:
+    context, page = open_page(browser, viewport=PHONE)
+    page.goto(site["index"])
+
+    assert page.evaluate("document.querySelector('[data-search]').getBoundingClientRect().width") > 200
+    context.close()

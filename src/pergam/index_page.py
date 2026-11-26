@@ -413,7 +413,7 @@ def search_box(filters: IndexFilters) -> SearchBox:
         keep.append(("archived", "1"))
     if filters.sort != DEFAULT_SORT:
         keep.append(("sort", filters.sort))
-    return SearchBox(query=filters.q or "", keep=tuple(keep))
+    return SearchBox(query=filters.q or "", keep=tuple(keep), compact=False)
 
 
 def top_actions(filters: IndexFilters) -> str:
