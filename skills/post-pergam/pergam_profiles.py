@@ -77,10 +77,14 @@ def _ca(value: object, folder: Path, where: str) -> str | None:
     if not isinstance(value, str) or not value:
         raise ProfileError(f"{where}: ca must be a file path")
     path = Path(value).expanduser()
-    path = path if path.is_absolute() else folder / path
-    if not path.is_file():
-        raise ProfileError(f"{where}: ca file not found: {path}")
-    return str(path)
+    return str(path if path.is_absolute() else folder / path)
+
+
+def _usable(server: Server) -> Server:
+    """`server` once its CA bundle, if it names one, exists; checked only for the server in use."""
+    if server.ca and not Path(server.ca).is_file():
+        raise ProfileError(f"{server.name}: ca file not found: {server.ca}")
+    return server
 
 
 def load(path: Path) -> Profiles:
@@ -114,10 +118,10 @@ def resolve(name: str | None, env: Mapping[str, str]) -> Server:
     if name:
         if name not in profiles.servers:
             raise ProfileError(f"unknown server {name!r}; known: {', '.join(sorted(profiles.servers))}")
-        return profiles.servers[name]
+        return _usable(profiles.servers[name])
     if env.get("PERGAM_URL"):
-        return Server("PERGAM_URL", _url(env["PERGAM_URL"], "PERGAM_URL"), env.get("PERGAM_CA") or None)
-    return profiles.servers[profiles.default or "hosted"]
+        return _usable(Server("PERGAM_URL", _url(env["PERGAM_URL"], "PERGAM_URL"), env.get("PERGAM_CA") or None))
+    return _usable(profiles.servers[profiles.default or "hosted"])
 
 
 def main(argv: list[str]) -> int:
@@ -131,7 +135,8 @@ def main(argv: list[str]) -> int:
             profiles = load(config_path(os.environ))
             for name, server in sorted(profiles.servers.items()):
                 mark = "*" if name == (profiles.default or "hosted") else " "
-                print(f"{mark} {name}\t{server.url}" + (f"\tca={server.ca}" if server.ca else ""))
+                missing = " (missing)" if server.ca and not Path(server.ca).is_file() else ""
+                print(f"{mark} {name}\t{server.url}" + (f"\tca={server.ca}{missing}" if server.ca else ""))
             return 0
     except ProfileError as exc:
         print(f"pergam_profiles: {exc}", file=sys.stderr)

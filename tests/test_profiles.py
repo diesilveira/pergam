@@ -56,10 +56,10 @@ def test_named_server_wins_over_pergam_url(env: dict[str, str], team_ca: Path) -
     assert server == Server("team", "https://pergam.example.com", str(team_ca))
 
 
-def test_pergam_url_wins_over_the_default(env: dict[str, str]) -> None:
-    server = resolve(None, {**env, "PERGAM_URL": "http://other.example.com", "PERGAM_CA": "/etc/ca.pem"})
+def test_pergam_url_wins_over_the_default(env: dict[str, str], team_ca: Path) -> None:
+    server = resolve(None, {**env, "PERGAM_URL": "http://other.example.com", "PERGAM_CA": str(team_ca)})
 
-    assert server == Server("PERGAM_URL", "http://other.example.com", "/etc/ca.pem")
+    assert server == Server("PERGAM_URL", "http://other.example.com", str(team_ca))
 
 
 def test_default_then_hosted(env: dict[str, str], tmp_path: Path) -> None:
@@ -94,7 +94,6 @@ def test_ca_is_expanded_from_home(tmp_path: Path, team_ca: Path, monkeypatch: py
         {"servers": []},
         {"servers": {"team": "https://pergam.example.com"}},
         {"servers": {"team": {"url": "pergam.example.com"}}},
-        {"servers": {"team": {"url": "https://pergam.example.com", "ca": "missing.pem"}}},
         {"default": "nowhere", "servers": {}},
     ],
 )
@@ -137,3 +136,22 @@ def test_list_command_marks_the_default(env: dict[str, str]) -> None:
 
     assert lines[1] == "* local\thttp://localhost:1111"
     assert [line.split("\t")[0].strip("* ") for line in lines] == ["hosted", "local", "team"]
+
+
+def test_a_missing_ca_only_breaks_the_profile_that_uses_it(tmp_path: Path) -> None:
+    env = write_config(
+        tmp_path / "partly",
+        {
+            "default": "local",
+            "servers": {
+                "local": {"url": "http://localhost:1111"},
+                "team": {"url": "https://pergam.example.com", "ca": "missing.pem"},
+            },
+        },
+    )
+
+    assert resolve(None, env) == Server("local", "http://localhost:1111")
+    assert resolve("local", env).url == "http://localhost:1111"
+    with pytest.raises(ProfileError, match="team: ca file not found"):
+        resolve("team", env)
+    assert "(missing)" in run(env, "list").stdout
