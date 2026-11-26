@@ -1,0 +1,164 @@
+"""HTTP routing and request validation on top of `http.server`."""
+
+from __future__ import annotations
+
+import http.server
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
+
+from pergam import public_url
+from pergam.index_page import render_index
+from pergam.store import IndexFilters, NewPergam, PergamStore
+
+VALID_TYPES = {"plan", "investigacion", "informe", "reporte", "otro"}
+ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
+VERSION_RE = re.compile(r"^v(\d+)$")
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _first(query: dict[str, list[str]], key: str) -> str | None:
+    return query.get(key, [None])[0] or None
+
+
+class PergamHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "pergam/2.0"
+    store: PergamStore
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A002
+        sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {format % args}\n")
+
+    @property
+    def _server_port(self) -> int:
+        return self.server.server_address[1]
+
+    def do_POST(self) -> None:
+        if urlparse(self.path).path != "/pergam":
+            self.send_error(404, "Not Found")
+            return
+
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length <= 0:
+            self.send_error(400, "Empty body")
+            return
+
+        ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            self.send_error(415, "Use application/json")
+            return
+
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self.send_error(400, f"Invalid JSON: {exc}")
+            return
+
+        html = data.get("html", "")
+        title = (data.get("title") or "Pergam").strip()
+        pergam_type = (data.get("type") or "").strip().lower()
+        author = (data.get("author") or "").strip()
+        existing_id = (data.get("id") or "").strip()
+
+        if not html or not html.strip():
+            self.send_error(400, "Missing html")
+            return
+        if not author:
+            self.send_error(400, "Missing author")
+            return
+        if pergam_type not in VALID_TYPES:
+            self.send_error(400, f"type must be one of {sorted(VALID_TYPES)}")
+            return
+        if existing_id and not ID_RE.match(existing_id):
+            self.send_error(400, "Invalid id format")
+            return
+
+        pergam_id, version = self.store.publish(
+            NewPergam(title=title, html=html, type=pergam_type, author=author), existing_id or None
+        )
+        response = json.dumps({
+            "id": pergam_id,
+            "version": version,
+            "view_url": public_url.view_url(pergam_id, self._server_port),
+            "title": title,
+            "type": pergam_type,
+            "author": author,
+        })
+        self._send(201, "application/json", response.encode("utf-8"))
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.strip("/")
+
+        if path == "":
+            self._render_index(parse_qs(parsed.query))
+            return
+        if path == "healthz":
+            self._send(200, "application/json", b'{"ok":true}')
+            return
+
+        parts = path.split("/")
+        if len(parts) == 2 and ID_RE.match(parts[0]):
+            if parts[1] == "versions":
+                self._render_versions_json(parts[0])
+                return
+            if parts[1] in ("view", "raw"):
+                self._serve_pergam(parts[0], None, raw=parts[1] == "raw")
+                return
+        if len(parts) == 3 and parts[2] in ("view", "raw") and ID_RE.match(parts[0]):
+            match = VERSION_RE.match(parts[1])
+            if match:
+                self._serve_pergam(parts[0], int(match.group(1)), raw=parts[2] == "raw")
+                return
+
+        self.send_error(404, "Not Found")
+
+    def do_DELETE(self) -> None:
+        self.send_error(405, "Pergams are immutable")
+
+    def _serve_pergam(self, pergam_id: str, version: int | None, *, raw: bool) -> None:
+        html_text = self.store.html(pergam_id, version)
+        if html_text is None:
+            self.send_error(404, "Pergam not found")
+            return
+        ctype = "text/plain; charset=utf-8" if raw else "text/html; charset=utf-8"
+        self._send(200, ctype, html_text.encode("utf-8"))
+
+    def _render_versions_json(self, pergam_id: str) -> None:
+        versions = self.store.versions(pergam_id)
+        if not versions:
+            self.send_error(404, "Pergam not found")
+            return
+        out = [
+            {
+                "version": v.version,
+                "title": v.title,
+                "type": v.type,
+                "author": v.author,
+                "bytes": v.bytes,
+                "created_at": v.created_at.isoformat(),
+            }
+            for v in versions
+        ]
+        self._send(200, "application/json", json.dumps(out).encode("utf-8"))
+
+    def _render_index(self, query: dict[str, list[str]]) -> None:
+        filters = IndexFilters(
+            type=(_first(query, "type") or "").lower() or None,
+            author=_first(query, "author"),
+            q=_first(query, "q"),
+        )
+        page = render_index(self.store.index(filters), filters, public_url.host_display(self._server_port))
+        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+
+    def _send(self, status: int, content_type: str, payload: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(payload)

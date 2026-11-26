@@ -12,7 +12,7 @@ A tiny self-hostable service — or a hosted endpoint — that turns every HTML 
 [![Version](https://img.shields.io/github/v/tag/diesilveira/pergam?label=version&color=brightgreen)](https://github.com/diesilveira/pergam/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/diesilveira/pergam?style=flat&logo=github)](https://github.com/diesilveira/pergam/stargazers)
 
-[![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Postgres](https://img.shields.io/badge/Postgres-15-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-D97757?logo=anthropic&logoColor=white)](skills/post-pergam/SKILL.md)
@@ -41,7 +41,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
 - 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
 - 🏷️ **Typed taxonomy** — `plan`, `investigacion`, `informe`, `reporte`, `otro`. Filter the index by type, author, or substring.
-- 🐳 **Self-hostable** — one Python file (~500 LOC), one Postgres table, one `docker compose up`.
+- 🐳 **Self-hostable** — a few small Python modules, one Postgres table, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.
 - 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. A tiny edge worker for the hosted variant. No framework, no build step.
 
@@ -105,12 +105,12 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 ```
 ┌─────────────┐      ┌──────────────────┐      ┌──────────────┐
 │   Client    │ ───→ │      pergam      │ ───→ │   Postgres   │
-│ (AI / curl) │      │ (Python · 500 LOC)│      │  (1 table)   │
+│ (AI / curl) │      │ (Python, stdlib) │      │  (1 table)   │
 └─────────────┘      └──────────────────┘      └──────────────┘
 ```
 
 - **One Python process**, no framework — just `http.server` + `psycopg`.
-- **One Postgres table**: `pergams (id, version, …)` with a composite key. Latest version per `id` resolved via a window function on read.
+- **One Postgres table**: `pergams (id, version, …)` with a composite key. Latest version per `id` resolved on read through the `pergams_latest` view.
 - **Strict CSP per response**: sandboxed iframe, `frame-ancestors` allowlist, no inline scripts on the viewer chrome.
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 

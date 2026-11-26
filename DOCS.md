@@ -72,18 +72,27 @@ Migrations are additive and safe on a populated database: they never drop or rew
 
 ```
 pergam/
-├── src/pergam/
-│   └── server.py            ~500 LOC stdlib http.server + psycopg
+├── src/pergam/              stdlib http.server + psycopg, no framework
+│   ├── server.py            entry point: migrations, pool, HTTP server
+│   ├── routes.py            HTTP routing and request validation
+│   ├── store.py             data access (all SQL)
+│   ├── index_page.py        HTML index renderer
+│   ├── templates/           index.html + index.css
+│   ├── public_url.py        host/URL used in view_url and on the index
+│   └── migrate.py           numbered migrations runner
 ├── db/
 │   └── migrations/          NNN_*.sql, applied at server startup
+├── tests/                   pytest suite (real server + throwaway Postgres)
 ├── scripts/
 │   └── migrate_from_fs.py   import legacy ./data/*.html files
 ├── skills/post-pergam/      Claude Code skill (see below)
 ├── web/                     public landing + example hosted worker (Cloudflare)
-├── Dockerfile               python:3.13-slim, runs as uid 10001
+├── .github/workflows/       CI: test suite + image build on every pull request
+├── Dockerfile               python:3.14-slim, runs as uid 10001
 ├── docker-compose.yml       app + bundled postgres + healthchecks
-├── Makefile                 up / down / restart / logs / ps / health / clean
+├── Makefile                 up / down / restart / logs / ps / health / clean / test
 ├── requirements.txt         psycopg[binary], psycopg-pool
+├── requirements-dev.txt     + pytest (tests only)
 └── .env.example
 ```
 
