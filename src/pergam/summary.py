@@ -2,8 +2,9 @@
 
 The source is `pergam_text.body` (plain lines, no markup) of the latest version.
 Leading lines that only repeat the title are skipped; the rest are joined into
-one line and cut at the first sentence end, or at a word boundary before
-`SUMMARY_CHARS` with an ellipsis. No text, or text not extracted yet, is no summary.
+one line and cut at the first sentence end at least `MIN_SENTENCE_CHARS` in (so
+`Dr.` or `Version 2.` do not end it), or at a word boundary before `SUMMARY_CHARS`
+with an ellipsis. No text, or text not extracted yet, is no summary.
 """
 
 from __future__ import annotations
@@ -11,8 +12,9 @@ from __future__ import annotations
 import re
 
 SUMMARY_CHARS = 160
+MIN_SENTENCE_CHARS = 20
 SOURCE_CHARS = 1_000
-_SENTENCE = re.compile(r"^(.+?[.!?])(?=\s|$)")
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 
 
 def summarise(body: str | None, title: str) -> str | None:
@@ -26,9 +28,9 @@ def summarise(body: str | None, title: str) -> str | None:
     text = " ".join(lines)
     if not text:
         return None
-    sentence = _SENTENCE.match(text)
-    if sentence and len(sentence.group(1)) <= SUMMARY_CHARS:
-        return sentence.group(1)
+    end = _SENTENCE_END.search(text, MIN_SENTENCE_CHARS - 1)
+    if end and end.end() <= SUMMARY_CHARS:
+        return text[: end.end()]
     if len(text) <= SUMMARY_CHARS:
         return text
     cut = text[: SUMMARY_CHARS + 1].rsplit(" ", 1)[0] if " " in text[:SUMMARY_CHARS] else text[:SUMMARY_CHARS]
