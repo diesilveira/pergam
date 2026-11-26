@@ -165,7 +165,9 @@ def test_rejected_tags_leave_the_state_and_say_why(open_page, client: Client, db
     page.get_by_role("textbox", name="Tags, separated by commas").fill("x" * 41)
     page.get_by_role("button", name="Save").click()
 
-    assert status_text(page).startswith("The server did not accept that change.")
+    assert status_text(page) == (
+        "The server did not accept these tags: at most 20, each at most 40 characters. Nothing was changed."
+    )
     assert page.locator(".meta-status--error").is_visible()
     assert db.execute(META, (pid,)).fetchone() == (["q3"], False, False)
 
@@ -302,3 +304,14 @@ def test_status_region_is_there_before_any_message_and_repeats_are_announced(ope
 
     refusal = "Only the owner of this pergam or one of its collaborators can change it. Nothing was changed."
     assert page.evaluate("window.spoken") == [refusal, "", refusal]
+
+
+def test_a_refused_flag_does_not_blame_the_tags(open_page, client: Client) -> None:
+    pid = client.publish()["id"]
+    page = open_page(f"{base(client)}/{pid}/view")
+    page.route(f"**/{pid}/meta", lambda route: route.fulfill(status=400, body=""))
+
+    page.get_by_role("button", name="Pin", exact=True).click()
+
+    assert status_text(page) == "The server did not accept that change (400). Nothing was changed."
+    assert page.get_by_role("button", name="Pin", exact=True).get_attribute("aria-pressed") == "false"

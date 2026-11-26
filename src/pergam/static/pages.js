@@ -86,11 +86,13 @@
   };
 
   const REFUSED = {
-    400: 'The server did not accept that change. Tags are at most 40 characters, at most 20 of them.',
+    400: 'The server did not accept that change (400). Nothing was changed.',
     401: 'The server does not know who you are, so nothing was changed. Sign in and reload the page.',
     403: 'Only the owner of this pergam or one of its collaborators can change it. Nothing was changed.',
     404: 'This pergam no longer exists.',
   };
+
+  const REFUSED_TAGS = 'The server did not accept these tags: at most 20, each at most 40 characters. Nothing was changed.';
 
   const isMeta = (meta) => meta && typeof meta.pinned === 'boolean' && typeof meta.archived === 'boolean'
     && Array.isArray(meta.tags) && meta.tags.every((tag) => typeof tag === 'string');
@@ -143,7 +145,8 @@
           cache: 'no-store',
         });
         if (!response.ok) {
-          say(REFUSED[response.status] || `The server refused the change (${response.status}). Nothing was changed.`, true);
+          const refused = response.status === 400 && 'tags' in change ? REFUSED_TAGS : REFUSED[response.status];
+          say(refused || `The server refused the change (${response.status}). Nothing was changed.`, true);
           return false;
         }
         const meta = await response.json();
