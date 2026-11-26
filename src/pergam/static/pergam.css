@@ -18,12 +18,12 @@
   --border-strong: light-dark(#cfcfc7, #323845);
   --text: light-dark(#1a1b1e, #e8eaef);
   --soft: light-dark(#44474d, #c3c7d0);
-  --muted: light-dark(#6a6e76, #8a91a0);
+  --muted: light-dark(#62666e, #969dac);
   --accent: light-dark(#2a63d6, #78aaff);
   --accent-soft: light-dark(rgba(42, 99, 214, .09), rgba(120, 170, 255, .12));
   --on-accent: light-dark(#ffffff, #0d0f13);
   --ok: light-dark(#1f7a45, #4ec27f);
-  --danger: light-dark(#c8372f, #f47067);
+  --danger: light-dark(#b8302a, #f47067);
   --warn-bg: light-dark(#fff4d6, #3a2f0c);
   --warn-text: light-dark(#6b4e00, #f2d58a);
   --add-bg: light-dark(#e3f6e8, rgba(78, 194, 127, .16));

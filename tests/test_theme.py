@@ -107,28 +107,64 @@ def test_stylesheet_loads_nothing_from_elsewhere_and_names_only_system_fonts() -
         assert name not in STYLESHEET
 
 
-def luminance(hex_colour: str) -> float:
-    channels = [int(hex_colour[i : i + 2], 16) / 255 for i in (1, 3, 5)]
-    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+Rgba = tuple[float, float, float, float]
+COLOUR = r"(#[0-9a-f]{6}|rgba\([\d., ]+\))"
+
+
+def parse_colour(text: str) -> Rgba:
+    if text.startswith("#"):
+        return (*(int(text[i : i + 2], 16) for i in (1, 3, 5)), 1.0)
+    red, green, blue, alpha = (float(part) for part in text[5:-1].split(","))
+    return red, green, blue, alpha
+
+
+def over(top: Rgba, below: Rgba) -> Rgba:
+    alpha = top[3]
+    return (*(top[i] * alpha + below[i] * (1 - alpha) for i in range(3)), 1.0)
+
+
+def luminance(colour: Rgba) -> float:
+    linear = [c / 255 / 12.92 if c / 255 <= 0.03928 else ((c / 255 + 0.055) / 1.055) ** 2.4 for c in colour[:3]]
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
 
-def contrast(a: str, b: str) -> float:
+def contrast(a: Rgba, b: Rgba) -> float:
     high, low = sorted((luminance(a), luminance(b)), reverse=True)
     return (high + 0.05) / (low + 0.05)
 
 
-def tokens() -> dict[str, tuple[str, str]]:
-    pairs = re.findall(r"--([a-z-]+): light-dark\((#[0-9a-f]{6}), (#[0-9a-f]{6})\);", STYLESHEET)
-    return {name: (light, dark) for name, light, dark in pairs}
+def tokens(theme: int) -> dict[str, Rgba]:
+    pairs = re.findall(rf"--([a-z-]+): light-dark\({COLOUR}, {COLOUR}\);", STYLESHEET)
+    return {name: parse_colour(pair[theme]) for name, *pair in pairs}
 
 
 @pytest.mark.parametrize("theme", [0, 1], ids=["light", "dark"])
 def test_text_tokens_meet_aa_on_every_surface(theme: int) -> None:
-    colour = {name: pair[theme] for name, pair in tokens().items()}
+    colour = tokens(theme)
 
     for foreground in ("text", "soft", "muted", "accent", "ok", "danger"):
         for background in ("bg", "surface", "raised"):
             assert contrast(colour[foreground], colour[background]) >= 4.5, (foreground, background)
     assert contrast(colour["warn-text"], colour["warn-bg"]) >= 4.5
     assert contrast(colour["on-accent"], colour["accent"]) >= 4.5
+
+
+@pytest.mark.parametrize("theme", [0, 1], ids=["light", "dark"])
+def test_diff_and_highlight_tokens_keep_their_text_legible(theme: int) -> None:
+    colour = tokens(theme)
+    surface = colour["surface"]
+    added, removed = over(colour["add-bg"], surface), over(colour["del-bg"], surface)
+    pairs = {
+        "text on added": (colour["text"], added),
+        "text on removed": (colour["text"], removed),
+        "text on added mark": (colour["text"], over(colour["add-mark"], added)),
+        "text on removed mark": (colour["text"], over(colour["del-mark"], removed)),
+        "text on highlight": (colour["text"], over(colour["mark-bg"], surface)),
+        "ok on added": (colour["ok"], added),
+        "danger on removed": (colour["danger"], removed),
+        "muted on added": (colour["muted"], added),
+        "muted on removed": (colour["muted"], removed),
+    }
+
+    for name, (foreground, background) in pairs.items():
+        assert contrast(foreground, background) >= 4.5, name
