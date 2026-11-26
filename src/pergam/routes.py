@@ -16,6 +16,7 @@ from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
 from pergam.index_page import render_index
 from pergam.meta import MetaError, parse_meta_change
+from pergam.notes import NoteError, parse_note
 from pergam.public_url import PublicAddress
 from pergam.search import QueryError, parse_query
 from pergam.store import IndexFilters, NewPergam, PergamStore
@@ -95,11 +96,13 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
 
         try:
+            note = parse_note(data.get("note"))
             tags = None if data.get("tags") is None else parse_tags(data["tags"])
             published = self.store.publish(
-                NewPergam(title=title, html=html, type=pergam_type, author=author, tags=tags), existing_id or None
+                NewPergam(title=title, html=html, type=pergam_type, author=author, tags=tags, note=note),
+                existing_id or None,
             )
-        except TagError as exc:
+        except (NoteError, TagError) as exc:
             self.send_error(400, str(exc))
             return
         response: dict[str, object] = {
@@ -112,6 +115,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         }
         if published.tags is not None:
             response["tags"] = published.tags
+        if note:
+            response["note"] = note
         self._send(201, "application/json", json.dumps(response).encode("utf-8"))
 
     def do_GET(self) -> None:
@@ -220,6 +225,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
                 "author": v.author,
                 "bytes": v.bytes,
                 "created_at": v.created_at.isoformat(),
+                "note": v.note,
             }
             for v in versions
         ]

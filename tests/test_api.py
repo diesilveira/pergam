@@ -130,6 +130,7 @@ def test_api_pergam_has_metadata_tags_and_versions(client: Client, catalogue: di
         "type": "plan",
         "author": "bo@example.com",
         "bytes": len("<h1>doc</h1>"),
+        "note": None,
         "tags": ["ops", "q3"],
         "archived": False,
         "pinned": False,
@@ -140,7 +141,9 @@ def test_api_pergam_has_metadata_tags_and_versions(client: Client, catalogue: di
     assert [v["title"] for v in versions] == ["Release notes v2", "Release notes"]
     assert versions[1]["view_url"] == f"http://localhost:{port}/{pid}/v1/view"
     assert versions[1]["text_url"] == f"http://localhost:{port}/{pid}/v1/text"
-    assert set(versions[0]) == {"version", "title", "type", "author", "bytes", "created_at", "view_url", "text_url"}
+    assert set(versions[0]) == {
+        "version", "title", "type", "author", "bytes", "created_at", "note", "view_url", "text_url"
+    }
 
 
 def test_api_pergam_reports_archived_and_pinned(client: Client, catalogue: dict[str, str]) -> None:

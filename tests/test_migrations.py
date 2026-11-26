@@ -236,6 +236,7 @@ OWNER_PRECREATED = [
     MIGRATIONS_DIR / "002_pergam_meta.sql",
     MIGRATIONS_DIR / "003_pergam_text.sql",
     MIGRATIONS_DIR / "004_pergam_text_extractor.sql",
+    MIGRATIONS_DIR / "005_pergam_note.sql",
 ]
 
 
@@ -250,6 +251,7 @@ OWNER_PRECREATED = [
                 "GRANT SELECT, INSERT ON schema_migrations TO {role}",
                 "GRANT SELECT, INSERT, UPDATE ON pergam_meta TO {role}",
                 "GRANT SELECT, INSERT, UPDATE ON pergam_text TO {role}",
+                "GRANT SELECT, INSERT ON pergam_note TO {role}",
             ],
             True,
         ),
@@ -275,11 +277,27 @@ def test_legacy_database_upgrades_with_a_non_owner_role(
 
         assert client.get("/aaaa0001/raw").text == "<h1>plan v2</h1>"
         assert client.get("/").status == 200
-        assert client.publish(id="aaaa0001", tags=["legacy"])["version"] == 3
+        assert client.publish(id="aaaa0001", tags=["legacy"], note="third")["version"] == 3
         assert client.get("/aaaa0001/meta").json()["tags"] == ["legacy"]
+        assert [v["note"] for v in client.get("/aaaa0001/versions").json()] == ["third", None, None]
 
     with connect(url) as owner:
         assert owner.execute("SELECT count(*) FROM pergams").fetchone() == (len(LEGACY_ROWS) + 1,)
         owner.execute("DELETE FROM pergams WHERE version = 3")
         assert owner.execute(FINGERPRINT).fetchone() == fingerprint
         assert schema_of(owner) == schema
+
+
+def test_note_migration_adds_no_rows_and_legacy_versions_have_no_note(databases: DatabaseFactory, start_server) -> None:
+    url = databases.create()
+    apply_legacy_schema(url)
+    with connect(url) as conn:
+        seed_legacy_rows(conn)
+        fingerprint = conn.execute(FINGERPRINT).fetchone()
+
+    client = start_server(url)
+
+    with connect(url) as conn:
+        assert conn.execute("SELECT count(*) FROM pergam_note").fetchone() == (0,)
+        assert conn.execute(FINGERPRINT).fetchone() == fingerprint
+    assert [v["note"] for v in client.get("/aaaa0001/versions").json()] == [None, None]

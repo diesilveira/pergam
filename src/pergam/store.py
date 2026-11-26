@@ -25,6 +25,7 @@ class NewPergam:
     type: str
     author: str
     tags: list[str] | None = None
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class VersionInfo:
     author: str
     bytes: int
     created_at: datetime
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -193,7 +195,8 @@ class PergamStore:
         Posts to an explicit id take a transaction-scoped advisory lock on that id
         before reading `MAX(version)`, so concurrent posts get consecutive versions
         instead of colliding on the primary key. New random ids retry on collision.
-        A tag merge that fails (`TagError`) rolls the version back with it.
+        A tag merge that fails (`TagError`) rolls the version back with it. The note,
+        when given, is written in the same transaction as its version.
         """
         values = (pergam.title, pergam.html, pergam.type, pergam.author, len(pergam.html.encode("utf-8")))
         with self.pool.connection() as conn, conn.transaction():
@@ -209,6 +212,10 @@ class PergamStore:
             else:
                 pergam_id, version = insert_with_new_id(conn, values), 1
             save_text(conn, [(pergam_id, version, pergam.html)])
+            if pergam.note:
+                conn.execute(
+                    "INSERT INTO pergam_note (id, version, note) VALUES (%s, %s, %s)", (pergam_id, version, pergam.note)
+                )
             tags = None if pergam.tags is None else add_tags(conn, pergam_id, pergam.tags)
         return Published(pergam_id, version, tags)
 
@@ -266,8 +273,9 @@ class PergamStore:
         with self.pool.connection() as conn:
             rows = conn.execute(
                 """
-                SELECT version, title, type, author, bytes, created_at
-                FROM pergams WHERE id = %s ORDER BY version DESC
+                SELECT p.version, p.title, p.type, p.author, p.bytes, p.created_at, n.note
+                FROM pergams p LEFT JOIN pergam_note n ON n.id = p.id AND n.version = p.version
+                WHERE p.id = %s ORDER BY p.version DESC
                 """,
                 (pergam_id,),
             ).fetchall()

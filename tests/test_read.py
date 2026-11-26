@@ -93,10 +93,9 @@ def test_missing_version_is_not_found(client: Client) -> None:
 
 
 def test_latest_index_and_json_routes_are_no_store(client: Client) -> None:
-    body = client.publish()
+    pid = client.publish()["id"]
 
-    paths = ["/", "/healthz", f"/{body['id']}/view", f"/{body['id']}/v1/view", f"/{body['id']}/raw", f"/{body['id']}/versions"]
-    for path in paths:
+    for path in ["/", "/healthz", f"/{pid}/view", f"/{pid}/v1/view", f"/{pid}/raw", f"/{pid}/versions"]:
         assert client.get(path).headers["cache-control"] == "no-store", path
 
 

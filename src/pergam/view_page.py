@@ -1,8 +1,9 @@
 """The page behind `/{id}/view` and `/{id}/v{n}/view`, from `templates/view.html` and `view.css`.
 
 The page is pergam's own: a slim bar with the version's title, type, tags,
-author and a version selector, and the published document in a full-height
-iframe loaded from the version-pinned `/{id}/v{n}/content`. The document itself
+author and a version selector with each version's note, and the published
+document in a full-height iframe loaded from the version-pinned
+`/{id}/v{n}/content`. The document itself
 is never altered, so `/raw` and `/content` stay byte-identical to what was posted.
 How the framed document is isolated (iframe attributes and the headers of its
 content response) lives in `FRAME_POLICY` and nowhere else.
@@ -49,11 +50,12 @@ def _attributes(pairs: tuple[tuple[str, str], ...]) -> str:
 def _version_item(pergam_id: str, info: VersionInfo, current: int, latest: int) -> str:
     current_attr = ' aria-current="page"' if info.version == current else ""
     badge = ' <span class="versions__latest">latest</span>' if info.version == latest else ""
+    note = f'<span class="versions__note">{esc(info.note)}</span>' if info.note else ""
     return (
         f'<li><a href="/{pergam_id}/v{info.version}/view"{current_attr}>'
         f'<span class="versions__n">v{info.version}</span>'
         f'<time datetime="{info.created_at.isoformat()}">{info.created_at.strftime("%Y-%m-%d %H:%M")}</time>'
-        f"{badge}</a></li>"
+        f"{badge}{note}</a></li>"
     )
 
 

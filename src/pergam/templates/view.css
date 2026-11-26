@@ -45,6 +45,7 @@
   .versions__list a[aria-current] { background:rgba(94,231,255,.08); }
   .versions__n { color:var(--accent); font-family:'JetBrains Mono',monospace; font-weight:700; }
   .versions__list time { color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:.72rem; }
+  .versions__note { grid-column:1 / -1; color:var(--text); font-size:.76rem; }
   .versions__latest { justify-self:end; color:var(--muted-2); font-size:.66rem; text-transform:uppercase;
                        letter-spacing:.06em; }
 

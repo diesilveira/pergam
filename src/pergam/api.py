@@ -63,6 +63,7 @@ def _version(pergam_id: str, version: VersionInfo, public: PublicAddress) -> dic
         "author": version.author,
         "bytes": version.bytes,
         "created_at": version.created_at.isoformat(),
+        "note": version.note,
         "view_url": public.url(f"{pergam_id}/v{version.version}/view"),
         "text_url": public.url(f"{pergam_id}/v{version.version}/text"),
     }
@@ -79,6 +80,7 @@ def pergam_json(pergam_id: str, versions: list[VersionInfo], meta: Meta, public:
         "author": latest.author,
         "created_at": latest.created_at.isoformat(),
         "bytes": latest.bytes,
+        "note": latest.note,
         "tags": meta.tags,
         "archived": meta.archived,
         "pinned": meta.pinned,

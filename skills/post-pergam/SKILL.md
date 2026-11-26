@@ -90,6 +90,7 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
        "author": "you@example.com",     # required
        # "id":   "abc12345",            # OPTIONAL: present → new version of this id
        # "tags": ["q3", "billing"],     # OPTIONAL: merged into the id's existing tags
+       # "note": "adds the costs section",  # OPTIONAL: what this version changes (≤ 280 chars)
    }))
    PY
    ```
@@ -119,6 +120,8 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
 **How to find the "current" id**: search this conversation for the most recent `view_url` you (or another assistant message) emitted. The id is the 8-hex segment between the host and `/view`. If you can't find one and the user asked to "iterate", ask the user for the id rather than guess.
 
 The server is permissive: posting with an `id` that doesn't exist yet is accepted as that id's `v1`.
+
+**Notes**: when posting a new version (v2+), send a short `note` saying what changed, in the user's words when they gave them ("adds the costs section", "fixes the totals"). It shows in the view page's version selector and in `/{id}/versions`, and can't be edited later. Skip it for a v1 unless the user asked for one.
 
 ### Reading an existing pergam (Flow B)
 
@@ -175,7 +178,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 
 | Method | Path                  | Description                                                          |
 | ------ | --------------------- | -------------------------------------------------------------------- |
-| POST   | `/pergam`             | Body `{title, html, type, author, id?, tags?}`. Returns `{id, version, view_url, title, type, author}` (+ `tags` when sent). |
+| POST   | `/pergam`             | Body `{title, html, type, author, id?, tags?, note?}`. Returns `{id, version, view_url, title, type, author}` (+ `tags`, `note` when sent). |
 | GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=words`; `q` searches titles and visible text (`"quoted phrase"` for exact order); `?archived=1` includes archived ones. |
 | GET    | `/api/pergams`        | JSON index with the same filters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`): `{pergams, matching, next_cursor, counts, stats}`. Use it to find or count pergams instead of scraping `/`. |
 | GET    | `/api/pergams/{id}`   | JSON: latest title/type/author, `tags`, `archived`, `pinned` and `versions` (newest first). |
@@ -186,7 +189,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | GET    | `/{id}/v{n}/raw`      | Raw HTML (specific).                                                 |
 | GET    | `/{id}/text`          | Visible text of the latest version as Markdown (headings, lists, tables). Cheapest way to read a pergam. |
 | GET    | `/{id}/v{n}/text`     | Same, for a specific version.                                        |
-| GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
+| GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at, note}, …]`. |
 | GET    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`.                                |
 | PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |
 | GET    | `/feed.atom`          | Atom feed of recent publications, `?tag=`/`?author=` to filter. Point the user here when they want to follow new pergams. |
