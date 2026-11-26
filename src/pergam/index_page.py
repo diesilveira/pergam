@@ -154,6 +154,7 @@ def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
         for tag in row.tags
     )
     tags = f'<span class="row__tags">{tag_links}</span>' if tag_links else ""
+    snippet = f'<p class="row__snippet">{row.snippet.html()}</p>' if row.snippet else ""
     return (
         f'<div class="row{" row--archived" if row.archived else ""}" data-href="/{pid}/view" tabindex="0" role="link">'
         f'  <div class="row__main">{flags}'
@@ -169,6 +170,7 @@ def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
         f'  <span class="row__version">{versions_block}</span>'
         f'  <time class="row__date" datetime="{row.created_at.isoformat()}" '
         f'        title="{row.created_at.strftime("%Y-%m-%d %H:%M UTC")}">{human_age(row.created_at, now)}</time>'
+        f'  {snippet}'
         f'</div>'
     )
 

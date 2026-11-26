@@ -78,10 +78,33 @@ def throwaway_postgres() -> Iterator[str]:
         subprocess.run(["docker", "rm", "-fv", name], capture_output=True)
 
 
+def listed_ids(html: str, *ids: str) -> set[str]:
+    """The ids among `ids` that the index page lists."""
+    return {pid for pid in ids if f'data-href="/{pid}/view"' in html}
+
+
 def apply_legacy_schema(database_url: str) -> None:
     """Initialise a database the pre-migrations way (the old `docker-entrypoint-initdb.d` script)."""
     with psycopg.connect(database_url, autocommit=True) as conn:
         conn.execute(LEGACY_SCHEMA.read_text())
+
+
+LEGACY_ROWS = [
+    ("aaaa0001", 1, "Plan", "<h1>plan v1</h1>", "plan", "ana@example.com", 16, "2025-01-02T03:04:05+00:00"),
+    ("aaaa0001", 2, "Plan", "<h1>plan v2</h1>", "plan", "ana@example.com", 16, "2025-02-02T03:04:05+00:00"),
+    ("bbbb0002", 1, "Ñandú — 日本", "<p>ñ</p>", "informe", "bo@example.com", 9, "2025-03-04T05:06:07+00:00"),
+]
+
+FINGERPRINT = "SELECT count(*), md5(string_agg(p::text, '|' ORDER BY id, version)) FROM pergams p"
+
+
+def seed_legacy_rows(conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            LEGACY_ROWS,
+        )
 
 
 class DatabaseFactory:

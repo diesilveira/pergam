@@ -9,7 +9,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | Method   | Path                  | Description                                                          |
 | -------- | --------------------- | -------------------------------------------------------------------- |
 | `POST`   | `/pergam`             | Body `{title, html, type, author, id?, tags?}`. Returns `{id, version, view_url, title, type, author}`, plus `tags` when the request sent them. Omit `id` for a new pergam; include it to bump the version of an existing one. `tags` are merged into the id's tags (see [Tags and metadata](#tags-and-metadata)). |
-| `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<title-substring>`, `?archived=1`. See [Index](#index). |
+| `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<search>` (title or text), `?archived=1`. See [Index](#index) and [Search](#search). |
 | `GET`    | `/{id}/view`          | Render the latest version.                                           |
 | `GET`    | `/{id}/v{n}/view`     | Render a specific version.                                           |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
@@ -57,11 +57,23 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 
 `GET /` lists the latest version of every pergam.
 
-- **Filters** combine with AND: `type`, `author`, `tag` (normalised like stored tags, so `?tag=Q3` matches `q3`) and `q` (case-insensitive title substring). Clicking a type, author or tag pill sets that filter and keeps the others; clicking the active one clears it.
+- **Filters** combine with AND: `type`, `author`, `tag` (normalised like stored tags, so `?tag=Q3` matches `q3`) and `q` (title or text, see [Search](#search)). Clicking a type, author or tag pill sets that filter and keeps the others; clicking the active one clears it.
 - **Archived** pergams are left out unless `?archived=1`, which lists them alongside the rest, marked `archived`. They stay reachable by URL either way. Archiving belongs to the id, so a new version of an archived pergam stays archived and hidden, and the `201` does not say so; un-archive it with `PATCH /{id}/meta` `{"archived": false}`.
 - **Order**: pinned first, then by the latest version's `created_at` (newest first), then by id. The order is total, so paging is stable.
 - **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters. While the data does not change, following the links visits every matching pergam exactly once. A pergam that gets a new version or is pinned, unpinned, archived or retagged mid-crawl changes its sort key or match, so it can move to a page already seen (skipped) or one still ahead (seen twice). A malformed `cursor` is **400**.
 - Pill counts (type, author, tag) and the count under the title cover every visible pergam, not only the current page: hidden archived pergams are left out of them and the title line says how many are hidden. The stats cards cover the whole instance, archived included. "clear all" drops every filter, `archived=1` included.
+
+## Search
+
+`?q=` matches a pergam when its latest version's title contains `q` (case-insensitive substring, as before) **or** its title or text matches `q` as a full-text query.
+
+- **Text** is the visible text of the HTML, extracted at publish time with the same extractor as `GET /{id}/text`: the contents of `script`, `style`, `template`, `noscript` and `head` are never indexed.
+- **Query syntax** is Postgres' web-search syntax: words are ANDed, `"quoted phrase"` matches the words in order, `or` and `-excluded` work. Matching is language-neutral (`simple` configuration): case-insensitive, no stemming, so `region` does not match `regions`. Title words weigh more than body words.
+- **Snippet**: when the text matched, the row shows the matching fragment with the hits highlighted. A title-only match shows no snippet.
+- **Order and paging** are the same as without `q` (pinned, newest, id), so the cursor works unchanged.
+- Only the first 100,000 characters of a version's text are indexed; the rest is still served by `/{id}/text`.
+
+Versions published before search existed are indexed by the server itself: after applying migrations it backfills them in the background, in batches of 50, each committed on its own. The server answers requests meanwhile, and until a version is indexed `q` still finds it by title. Stopping the server mid-way is safe: the next start resumes with what is missing. The backfill only reads `pergams`; the log says `text backfill: filled N versions` when it did any work.
 
 ## Pergam types
 
@@ -104,7 +116,7 @@ The schema lives in numbered files, `db/migrations/NNN_description.sql`, shipped
 - Each migration runs in its own transaction: a failure rolls it back completely, the server logs `migrations failed` and exits non-zero.
 - A Postgres advisory lock serializes servers that start at the same time against one database.
 
-Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. To add a change, create the next number and restart the server.
+Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. To add a change, create the next number and restart the server.
 
 ### Database privileges
 
@@ -115,7 +127,7 @@ The `DATABASE_URL` role needs:
 | Fresh (no `pergams` yet) | `CREATE` on the schema: the role creates and owns the tables. The bundled compose user owns its database, so nothing to do there. |
 | Initialised by the old `schema.sql`, role not the owner | `SELECT, INSERT` on `pergams`, `SELECT` on `pergams_latest`, plus either `CREATE` on the schema (to create `schema_migrations` once) or a `schema_migrations` table created by the owner with `SELECT, INSERT` granted to the role. |
 
-A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL.
+A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT`.
 
 ## Project layout
 
@@ -131,6 +143,9 @@ pergam/
 │   ├── taxonomy.py          accepted types and badge colours
 │   ├── tags.py              tag normalisation and limits
 │   ├── meta.py              per-id metadata and PATCH validation
+│   ├── text.py              visible text of a pergam as Markdown
+│   ├── search.py            full-text search SQL and snippets
+│   ├── backfill.py          text of versions published before search existed
 │   ├── cursor.py            keyset cursor for index pagination
 │   └── migrate.py           numbered migrations runner
 ├── db/

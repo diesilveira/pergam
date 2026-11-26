@@ -12,7 +12,9 @@ from psycopg_pool import ConnectionPool
 
 from pergam.cursor import IndexCursor
 from pergam.meta import Meta, MetaChange
+from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
 from pergam.tags import merge_tags
+from pergam.text import extract_markdown
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,7 @@ class IndexRow:
     tags: list[str] = field(default_factory=list)
     archived: bool = False
     pinned: bool = False
+    snippet: Snippet | None = None
 
     @property
     def cursor(self) -> IndexCursor:
@@ -132,6 +135,15 @@ def add_tags(conn: psycopg.Connection, pergam_id: str, tags: list[str]) -> list[
     return merged
 
 
+def save_text(conn: psycopg.Connection, versions: list[tuple[str, int, str]]) -> None:
+    """Store the extracted text and search document of each `(id, version, html)`; existing rows win."""
+    with conn.cursor() as cur:
+        cur.executemany(
+            INSERT_TEXT,
+            [{"id": pergam_id, "version": version, "body": extract_markdown(html)} for pergam_id, version, html in versions],
+        )
+
+
 class PergamStore:
     def __init__(self, pool: ConnectionPool) -> None:
         self.pool = pool
@@ -157,6 +169,7 @@ class PergamStore:
                 pergam_id, version = existing_id, row[0]
             else:
                 pergam_id, version = insert_with_new_id(conn, values), 1
+            save_text(conn, [(pergam_id, version, pergam.html)])
             tags = None if pergam.tags is None else add_tags(conn, pergam_id, pergam.tags)
         return Published(pergam_id, version, tags)
 
@@ -241,28 +254,31 @@ class PergamStore:
             where += " AND m.tags @> ARRAY[%(tag)s]::text[]"
             params["tag"] = filters.tag
         if filters.q:
-            where += " AND l.title ILIKE %(q)s"
-            params["q"] = f"%{filters.q}%"
+            where += f" AND {MATCHES_SQL}"
+            params.update(search_params(filters.q))
         page_where = where
         if filters.cursor:
             page_where += " AND (COALESCE(m.pinned, false), l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
             params.update(c_pinned=filters.cursor.pinned, c_at=filters.cursor.created_at, c_id=filters.cursor.id)
         params["limit"] = page_size + 1
         joined = "FROM pergams_latest l LEFT JOIN pergam_meta m ON m.id = l.id"
+        searched = joined + " LEFT JOIN pergam_text t ON t.id = l.id AND t.version = l.version" if filters.q else joined
+        headline = HEADLINE_SQL if filters.q else "NULL"
 
         with self.pool.connection() as conn:
             rows = conn.execute(
                 f"""
                 SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
                        (SELECT count(*) FROM pergams p WHERE p.id = l.id),
-                       COALESCE(m.tags, '{{}}'), COALESCE(m.archived, false), COALESCE(m.pinned, false)
-                {joined} {page_where}
+                       COALESCE(m.tags, '{{}}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
+                       {headline}
+                {searched} {page_where}
                 ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC
                 LIMIT %(limit)s
                 """,
                 params,
             ).fetchall()
-            matching = conn.execute(f"SELECT count(*) {joined} {where}", params).fetchone()[0]
+            matching = conn.execute(f"SELECT count(*) {searched} {where}", params).fetchone()[0]
             type_counts = conn.execute(
                 f"SELECT l.type, count(*) {joined} WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
             ).fetchall()
@@ -285,7 +301,7 @@ class PergamStore:
                 """
             ).fetchone()
 
-        page = [IndexRow(*row) for row in rows[:page_size]]
+        page = [IndexRow(*row[:-1], snippet=Snippet.of(row[-1])) for row in rows[:page_size]]
         return IndexData(
             rows=page,
             type_counts=[(t, c) for t, c in type_counts],

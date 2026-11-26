@@ -7,11 +7,7 @@ import re
 import psycopg
 import pytest
 
-from support import Client
-
-
-def listed_ids(html: str, *ids: str) -> set[str]:
-    return {pid for pid in ids if f'data-href="/{pid}/view"' in html}
+from support import Client, listed_ids
 
 
 def listed_order(html: str) -> list[str]:

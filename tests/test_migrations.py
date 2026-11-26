@@ -12,13 +12,15 @@ import pytest
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from pergam.migrate import MigrationError, apply_migrations, discover
-from support import MIGRATIONS_DIR, DatabaseFactory, ServerProcess, apply_legacy_schema
-
-LEGACY_ROWS = [
-    ("aaaa0001", 1, "Plan", "<h1>plan v1</h1>", "plan", "ana@example.com", 16, "2025-01-02T03:04:05+00:00"),
-    ("aaaa0001", 2, "Plan", "<h1>plan v2</h1>", "plan", "ana@example.com", 16, "2025-02-02T03:04:05+00:00"),
-    ("bbbb0002", 1, "Ñandú — 日本", "<p>ñ</p>", "informe", "bo@example.com", 9, "2025-03-04T05:06:07+00:00"),
-]
+from support import (
+    FINGERPRINT,
+    LEGACY_ROWS,
+    MIGRATIONS_DIR,
+    DatabaseFactory,
+    ServerProcess,
+    apply_legacy_schema,
+    seed_legacy_rows,
+)
 
 SCHEMA_QUERIES = {
     "columns": """
@@ -40,24 +42,12 @@ OIDS = """
     WHERE n.nspname = 'public' AND c.relname LIKE 'pergams%' ORDER BY 1
 """
 
-FINGERPRINT = "SELECT count(*), md5(string_agg(p::text, '|' ORDER BY id, version)) FROM pergams p"
-
-
 def connect(url: str) -> psycopg.Connection:
     return psycopg.connect(url, autocommit=True)
 
 
 def schema_of(conn: psycopg.Connection) -> dict[str, list[tuple[Any, ...]]]:
     return {name: conn.execute(query).fetchall() for name, query in SCHEMA_QUERIES.items()}
-
-
-def seed_legacy_rows(conn: psycopg.Connection) -> None:
-    with conn.cursor() as cur:
-        cur.executemany(
-            "INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            LEGACY_ROWS,
-        )
 
 
 def write_migrations(directory: Path, files: dict[str, str]) -> Path:
@@ -242,11 +232,11 @@ APP_GRANTS = [
 ]
 
 
-META_MIGRATION = MIGRATIONS_DIR / "002_pergam_meta.sql"
+OWNER_PRECREATED = [MIGRATIONS_DIR / "002_pergam_meta.sql", MIGRATIONS_DIR / "003_pergam_text.sql"]
 
 
 @pytest.mark.parametrize(
-    ("ledger_grants", "owner_creates_meta"),
+    ("ledger_grants", "owner_creates_tables"),
     [
         (["GRANT CREATE ON SCHEMA public TO {role}"], False),
         (
@@ -255,6 +245,7 @@ META_MIGRATION = MIGRATIONS_DIR / "002_pergam_meta.sql"
                 " applied_at timestamptz NOT NULL DEFAULT now())",
                 "GRANT SELECT, INSERT ON schema_migrations TO {role}",
                 "GRANT SELECT, INSERT, UPDATE ON pergam_meta TO {role}",
+                "GRANT SELECT, INSERT ON pergam_text TO {role}",
             ],
             True,
         ),
@@ -262,15 +253,16 @@ META_MIGRATION = MIGRATIONS_DIR / "002_pergam_meta.sql"
     ids=["role-creates-ledger", "owner-precreates-tables"],
 )
 def test_legacy_database_upgrades_with_a_non_owner_role(
-    admin_url: str, databases: DatabaseFactory, start_server, ledger_grants: list[str], owner_creates_meta: bool
+    admin_url: str, databases: DatabaseFactory, start_server, ledger_grants: list[str], owner_creates_tables: bool
 ) -> None:
     url = databases.create()
     apply_legacy_schema(url)
     with connect(url) as owner:
         seed_legacy_rows(owner)
         fingerprint, schema = owner.execute(FINGERPRINT).fetchone(), schema_of(owner)
-        if owner_creates_meta:
-            owner.execute(META_MIGRATION.read_text())
+        if owner_creates_tables:
+            for migration in OWNER_PRECREATED:
+                owner.execute(migration.read_text())
 
     with app_role(admin_url, url, APP_GRANTS + ledger_grants) as role_url:
         with connect(role_url) as conn:

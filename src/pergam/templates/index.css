@@ -94,6 +94,10 @@
   .row:hover { background:var(--surface-hi); }
   .row--archived { opacity:.6; }
   .row__main { display:flex; align-items:center; gap:.5rem; min-width:0; }
+  .row__snippet { grid-column:1 / -1; margin:-.35rem 0 0; color:var(--muted); font-size:.78rem;
+                  line-height:1.45; overflow-wrap:anywhere; }
+  .row__snippet mark { background:rgba(240,210,138,.22); color:var(--text); border-radius:2px;
+                       padding:0 .1rem; }
   .row__title { font-weight:600; color:var(--text); min-width:0; flex:0 1 auto;
                  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .row__tags { display:flex; gap:.25rem; min-width:0; flex:0 1 auto; overflow:hidden; }

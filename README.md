@@ -40,7 +40,8 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🔒 **Immutable** — pergams can't be edited or deleted, only superseded with a new version.
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
 - 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
-- 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author, tag or substring; pin what matters, archive what doesn't.
+- 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag; pin what matters, archive what doesn't.
+- 🔎 **Searchable** — `?q=` searches titles and the visible text of every pergam, with highlighted snippets.
 - 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.
 - 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. A tiny edge worker for the hosted variant. No framework, no build step.
@@ -105,12 +106,12 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 ```
 ┌─────────────┐      ┌──────────────────┐      ┌──────────────┐
 │   Client    │ ───→ │      pergam      │ ───→ │   Postgres   │
-│ (AI / curl) │      │ (Python, stdlib) │      │  (1 table)   │
+│ (AI / curl) │      │ (Python, stdlib) │      │  (3 tables)  │
 └─────────────┘      └──────────────────┘      └──────────────┘
 ```
 
 - **One Python process**, no framework — just `http.server` + `psycopg`.
-- **Two Postgres tables**: immutable `pergams (id, version, …)` with a composite key, and `pergam_meta (id, tags, archived, pinned)` for what can change without a new version. Latest version per `id` resolved on read through the `pergams_latest` view.
+- **Three Postgres tables**: immutable `pergams (id, version, …)` with a composite key, `pergam_meta (id, tags, archived, pinned)` for what can change without a new version, and `pergam_text` with each version's extracted text and full-text search document. Latest version per `id` resolved on read through the `pergams_latest` view.
 - **Strict CSP per response**: sandboxed iframe, `frame-ancestors` allowlist, no inline scripts on the viewer chrome.
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 

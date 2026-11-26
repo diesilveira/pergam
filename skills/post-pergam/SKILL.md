@@ -162,7 +162,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | Method | Path                  | Description                                                          |
 | ------ | --------------------- | -------------------------------------------------------------------- |
 | POST   | `/pergam`             | Body `{title, html, type, author, id?, tags?}`. Returns `{id, version, view_url, title, type, author}` (+ `tags` when sent). |
-| GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=substr`; `?archived=1` includes archived ones. |
+| GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=words`; `q` searches titles and visible text (`"quoted phrase"` for exact order); `?archived=1` includes archived ones. |
 | GET    | `/{id}/view`          | Render latest version.                                               |
 | GET    | `/{id}/v{n}/view`     | Render specific version.                                             |
 | GET    | `/{id}/raw`           | Raw HTML (latest).                                                   |

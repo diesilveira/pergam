@@ -64,7 +64,7 @@ def session_server(session_database: str, start_server: StartServer) -> Client:
 @pytest.fixture
 def db(session_database: str, session_server: Client) -> Iterator[psycopg.Connection]:
     with psycopg.connect(session_database, autocommit=True) as conn:
-        conn.execute("TRUNCATE pergams, pergam_meta")
+        conn.execute("TRUNCATE pergams, pergam_meta, pergam_text")
         yield conn
 
 

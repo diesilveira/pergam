@@ -208,7 +208,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             type=normalise_type(_first(query, "type") or "") or None,
             author=_first(query, "author"),
             tag=normalise_tag(_first(query, "tag") or "") or None,
-            q=_first(query, "q"),
+            q=(_first(query, "q") or "").strip() or None,
             archived=_first(query, "archived") in ("1", "true"),
             cursor=cursor,
         )

@@ -14,6 +14,9 @@ Modules
   public_url.py  host and URL used in `view_url` and on the index
   taxonomy.py    accepted types and type badge colours
   migrate.py     numbered migrations applied at startup
+  text.py        visible text of a pergam as Markdown
+  search.py      full-text search SQL and snippets
+  backfill.py    text of versions published before search existed
 
 Env (12-factor)
 ---------------
@@ -33,6 +36,7 @@ import http.server
 import os
 import socketserver
 import sys
+import threading
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -42,6 +46,7 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from pergam import public_url, taxonomy
+from pergam.backfill import run_backfill
 from pergam.migrate import MigrationError, apply_migrations, migrations_dir
 from pergam.routes import PergamHandler
 from pergam.store import PergamStore
@@ -85,6 +90,7 @@ def main() -> int:
     for migration in applied:
         print(f"applied migration {migration.name}", flush=True)
     PergamHandler.store = PergamStore(pool)
+    threading.Thread(target=run_backfill, args=(pool,), name="text-backfill", daemon=True).start()
 
     with ThreadingHTTPServer((host, port), PergamHandler) as httpd:
         print(f"pergam listening on http://{host}:{port}  (db connected)", flush=True)
