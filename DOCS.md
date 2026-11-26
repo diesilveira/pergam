@@ -121,7 +121,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
   - `title`, `html` and `author` must not contain NUL;
   - `format_version` must be 1 and the id 6 to 16 lowercase hex characters;
   - `version`s must be distinct integers from 1 to 2147483647, at most 10,000 of them per import (a longer history goes in several imports, each carrying the next versions);
-  - `created_at` must be ISO 8601 with a UTC offset, between 1970-01-01 and five minutes past the server's clock; it is stored in UTC and must not decrease from one version to the next (a document whose versions go back in time is **400**; one whose versions would be dated before a version already here is **409**);
+  - `created_at` must be ISO 8601 with a UTC offset, between 1970-01-01 and five minutes past the server's clock (the allowed clock skew between servers); it is stored in UTC. Dates need not grow with the version number: older histories, or ones across a clock step, can date a version before the previous one, and they import as they are;
   - `server` (optional) must be an absolute `http(s)` URL with a valid host and port, without credentials, query or fragment.
   Anything else is **400** and writes nothing. `bytes` is recomputed from the HTML and unknown fields are ignored.
 - The body may be as large as `PERGAM_MAX_BODY_MB` (see [Configuration](#configuration)).
