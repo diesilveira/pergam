@@ -11,7 +11,7 @@ from collections.abc import Iterator
 import psycopg
 import pytest
 
-from support import Client, in_ci, listed_order, unavailable
+from support import Client, in_ci, listed_order, patch_meta, unavailable
 
 try:
     from playwright import sync_api
@@ -315,3 +315,19 @@ def test_a_refused_flag_does_not_blame_the_tags(open_page, client: Client) -> No
 
     assert status_text(page) == "The server did not accept that change (400). Nothing was changed."
     assert page.get_by_role("button", name="Pin", exact=True).get_attribute("aria-pressed") == "false"
+
+
+def test_opening_the_tag_editor_rereads_the_current_tags(open_page, client: Client, db: psycopg.Connection) -> None:
+    pid = client.publish(tags=["q3"])["id"]
+    page = open_page(f"{base(client)}/{pid}/view")
+    patch_meta(client, pid, {"tags": ["ops", "q3"], "pinned": True})
+
+    page.get_by_role("button", name="Edit tags").click()
+
+    field = page.get_by_role("textbox", name="Tags, separated by commas")
+    page.wait_for_function("document.querySelector('#tag-input').value === 'ops, q3'")
+    assert page.get_by_role("button", name="Pin", exact=True).get_attribute("aria-pressed") == "true"
+    field.fill("ops, q3, budget")
+    page.keyboard.press("Enter")
+    assert status_text(page) == "Tags saved."
+    assert db.execute(META, (pid,)).fetchone() == (["budget", "ops", "q3"], False, True)

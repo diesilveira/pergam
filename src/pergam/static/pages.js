@@ -10,7 +10,8 @@
  *
  * The pin, archive and tag controls, rendered hidden only when the server offers
  * them, call PATCH /{id}/meta with a JSON body (which a cross-site form cannot send)
- * and show what it answers. Nothing here listens to messages: the framed
+ * and show what it answers. Opening the tag editor re-reads GET /{id}/meta first, so
+ * the set it replaces is the current one, not the one the page was loaded with. Nothing here listens to messages: the framed
  * document cannot reach these controls.
  */
 (() => {
@@ -182,7 +183,23 @@
         else tagEdit.focus();
       };
       tagEdit.hidden = false;
-      tagEdit.addEventListener('click', () => editing(true));
+      const reread = async () => {
+        try {
+          const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
+          const meta = response.ok ? await response.json() : null;
+          if (!isMeta(meta)) return;
+          const typed = tagInput.value;
+          const untouched = typed === tagInput.defaultValue;
+          show(meta);
+          if (!untouched) tagInput.value = typed;
+        } catch (error) {
+          /* keep editing what the page already shows */
+        }
+      };
+      tagEdit.addEventListener('click', () => {
+        editing(true);
+        reread();
+      });
       const cancel = () => {
         tagForm.reset();
         editing(false);
