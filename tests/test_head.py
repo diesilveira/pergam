@@ -22,6 +22,8 @@ def test_head_mirrors_get_on_every_route(client: Client) -> None:
         f"/{pid}/text",
         f"/{pid}/v1/text",
         f"/{pid}/v9/text",
+        "/feed.atom",
+        "/feed.atom?tag=x&author=you@example.com",
         "/api/pergams",
         "/api/pergams?q=doc",
         f"/api/pergams/{pid}",

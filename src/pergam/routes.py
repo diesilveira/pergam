@@ -12,6 +12,8 @@ from urllib.parse import parse_qs, urlparse
 
 from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
+from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
+from pergam.feed import render_feed
 from pergam.index_page import render_index
 from pergam.meta import MetaError, parse_meta_change
 from pergam.public_url import PublicAddress
@@ -114,6 +116,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "":
             self._render_index(parse_qs(parsed.query))
+            return
+        if path == "feed.atom":
+            self._render_feed(parse_qs(parsed.query))
             return
         if path == "api/pergams":
             self._render_index_json(parse_qs(parsed.query))
@@ -253,6 +258,12 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "Pergam not found")
             return
         self._send_json(pergam_json(pergam_id, versions, meta, self.public))
+
+    def _render_feed(self, query: dict[str, list[str]]) -> None:
+        tag = normalise_tag(_first(query, "tag") or "") or None
+        author = (_first(query, "author") or "").strip() or None
+        body = render_feed(self.store.feed(tag, author), self.public, tag, author)
+        self._send(200, ATOM_CONTENT_TYPE, body)
 
     def _send_json(self, body: object, status: int = 200) -> None:
         self._send(status, "application/json", json.dumps(body).encode("utf-8"))

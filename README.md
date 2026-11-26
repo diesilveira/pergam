@@ -42,6 +42,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
 - 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag; pin what matters, archive what doesn't.
 - 🔎 **Searchable** — `?q=` searches titles and the visible text of every pergam, with highlighted snippets.
+- 📡 **Atom feed** — `/feed.atom` follows new publications, filtered by tag or author.
 - 🧩 **JSON API** — `/api/pergams` lists, filters, pages and counts like the index; `/api/pergams/{id}` returns one pergam with its versions.
 - 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.

@@ -187,6 +187,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
 | GET    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`.                                |
 | PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |
+| GET    | `/feed.atom`          | Atom feed of recent publications, `?tag=`/`?author=` to filter. Point the user here when they want to follow new pergams. |
 | GET    | `/healthz`            | `{"ok":true}`.                                                       |
 | HEAD   | any GET route         | Same status and headers as GET, no body (cheap existence check).     |
 | DELETE | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |

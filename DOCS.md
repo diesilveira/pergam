@@ -21,6 +21,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
 | `GET`    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`. **404** for an unknown id.     |
 | `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
+| `GET`    | `/feed.atom`          | Atom 1.0 feed of the 50 most recent publications; `?tag=<tag>`, `?author=<email>`. See [Feed](#feed). |
 | `GET`    | `/healthz`            | Liveness probe.                                                      |
 | `HEAD`   | any `GET` route       | Same status and headers as `GET`, without the body.                  |
 | `DELETE` | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |
@@ -111,6 +112,15 @@ The body is `text/markdown; charset=utf-8` and ends with a newline, or is empty 
 curl -sS http://localhost:1111/abc12345/text
 ```
 
+## Feed
+
+`GET /feed.atom` is an Atom 1.0 (RFC 4287) feed, `application/atom+xml`, of the 50 most recent publications. The index page advertises it, so feed readers find it from `/`.
+
+- **Every published version is an entry**, newest first: a new version of an id appears as a new entry titled `Title (v2)`. Its `id` and `alternate` link are the version's immutable `/{id}/v{n}/view` URL, with a second `alternate` link (`text/markdown`) to `/{id}/v{n}/text`.
+- Each entry has the version's `author` (as `<name>`), `published`/`updated` (its `created_at`), a `category` for its type and one per tag, and a `summary`: the start of its text, or `<type> by <author>` when it has none.
+- **Filters**: `?tag=` (normalised like stored tags) keeps entries whose id carries that tag; `?author=` keeps versions posted by that author; both combine with AND. Archived pergams are left out.
+- The feed's `id` and `rel="self"` link are its own URL including the filters, so each filtered feed is a separate subscription. URLs are built from `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`), like `view_url`.
+
 ## Search
 
 `?q=` matches a pergam when its latest version's title contains `q` (case-insensitive substring, as before) **or** its title or text matches `q` as a full-text query.
@@ -187,6 +197,7 @@ pergam/
 │   ├── store.py             data access (all SQL)
 │   ├── index_page.py        HTML index renderer
 │   ├── api.py               JSON bodies of /api/pergams
+│   ├── feed.py              Atom feed of recent publications
 │   ├── templates/           index.html + index.css
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── taxonomy.py          accepted types and badge colours

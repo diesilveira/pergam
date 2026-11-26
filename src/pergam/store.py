@@ -99,7 +99,21 @@ class IndexData:
     next_cursor: IndexCursor | None
 
 
+@dataclass(frozen=True)
+class FeedEntry:
+    id: str
+    version: int
+    title: str
+    type: str
+    author: str
+    created_at: datetime
+    tags: list[str]
+    summary: str | None
+
+
 PAGE_SIZE = 100
+FEED_SIZE = 50
+SUMMARY_CHARS = 280
 
 VERSION_LOCK_NAMESPACE = 0x7067
 
@@ -312,3 +326,29 @@ class PergamStore:
             archived_count=archived_count,
             next_cursor=page[-1].cursor if len(rows) > page_size else None,
         )
+
+    def feed(self, tag: str | None, author: str | None, limit: int = FEED_SIZE) -> list[FeedEntry]:
+        """The newest versions of pergams that are not archived, each publication its own entry."""
+        where = "WHERE NOT COALESCE(m.archived, false)"
+        params: dict[str, Any] = {"limit": limit, "summary_chars": SUMMARY_CHARS}
+        if tag:
+            where += " AND m.tags @> ARRAY[%(tag)s]::text[]"
+            params["tag"] = tag
+        if author:
+            where += " AND p.author = %(author)s"
+            params["author"] = author
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT p.id, p.version, p.title, p.type, p.author, p.created_at, COALESCE(m.tags, '{{}}'),
+                       left(t.body, %(summary_chars)s)
+                FROM pergams p
+                LEFT JOIN pergam_meta m ON m.id = p.id
+                LEFT JOIN pergam_text t ON t.id = p.id AND t.version = p.version
+                {where}
+                ORDER BY p.created_at DESC, p.id DESC, p.version DESC
+                LIMIT %(limit)s
+                """,
+                params,
+            ).fetchall()
+        return [FeedEntry(*row) for row in rows]
