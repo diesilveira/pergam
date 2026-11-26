@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${page_title}</title>
+${head_assets}
+<style>
+${css}</style></head><body>
+
+${top_bar}
+
+<main class="error">
+  <p class="error__code">${code_line}</p>
+  <h1>${heading}</h1>
+  <p class="error__explain">${explanation}</p>
+  ${detail}
+  <div class="error__actions">
+    <a class="btn btn--primary" href="/">Go to the index</a>
+    <form class="error__search" action="/" method="get" role="search">
+      <input class="input" type="search" name="q" aria-label="Search pergams" placeholder="Search pergams" autocomplete="off">
+      <button class="btn" type="submit">Search</button>
+    </form>
+  </div>
+</main>
+</body></html>

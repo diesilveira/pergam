@@ -231,3 +231,51 @@ def test_type_badges_are_legible_for_every_default_and_derived_colour(browser, s
     worst = min(results, key=lambda result: result["ratio"])
     assert worst["ratio"] >= 4.5, worst
     context.close()
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_missing_pergam_shows_the_styled_page_with_status_404(browser, site, scheme: str) -> None:
+    context, page = page_in(browser, scheme)
+
+    response = page.goto(f"{site['base']}/abcdef12/view")
+
+    assert response.status == 404
+    assert page.locator("h1").inner_text() == "Not found"
+    assert page.locator(".error__code").inner_text() == "404 · NOT FOUND"
+    assert page_background(page) == BACKGROUND[scheme]
+    page.locator("[data-theme-toggle]").click()
+    assert page_background(page) == BACKGROUND[OTHER[scheme]]
+    context.close()
+
+
+def test_error_page_offers_the_index_and_a_search(browser, site) -> None:
+    context, page = page_in(browser, "light")
+    page.goto(f"{site['base']}/abcdef12/view")
+
+    page.get_by_role("searchbox", name="Search pergams").fill("plan")
+    page.keyboard.press("Enter")
+    page.wait_for_url(f"{site['base']}/?q=plan")
+    page.goto(f"{site['base']}/abcdef12/view")
+    page.get_by_role("link", name="Go to the index").click()
+
+    page.wait_for_url(f"{site['base']}/")
+    context.close()
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_error_page_fits_a_phone(browser, site, scheme: str) -> None:
+    context, page = page_in(browser, scheme, viewport={"width": 360, "height": 740})
+
+    page.goto(f"{site['base']}/abcdef12/view")
+
+    assert page.evaluate("document.documentElement.scrollWidth") <= 360
+    context.close()
+
+
+def test_error_page_has_no_scripted_content_beyond_the_theme_script(browser, site) -> None:
+    context, page = page_in(browser, "light")
+
+    page.goto(f"{site['base']}/nope")
+
+    assert page.evaluate("Array.from(document.scripts).map((s) => s.getAttribute('src'))") == ["/static/theme.js"]
+    context.close()

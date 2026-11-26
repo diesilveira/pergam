@@ -16,6 +16,7 @@ from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
 from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
+from pergam.error_page import render_error, wants_error_page
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
 from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, single_proxy_user
@@ -100,6 +101,25 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         response, and a character outside Latin-1 would drop the connection.
         """
         super().send_response(code)
+
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
+        """The standard error response, with the standard library's body swapped for a page when a browser asks.
+
+        Only the body differs: status line, headers and logging stay the library's, so
+        API clients, `HEAD` and cache rules see no change (see `error_page.wants_error_page`).
+        """
+        headers = getattr(self, "headers", None)
+        path = urlparse(getattr(self, "path", "")).path
+        if headers is None or not wants_error_page(self.command, path, headers.get("Accept")):
+            super().send_error(code, message, explain)
+            return
+        shown = message if message is not None else self.responses.get(code, ("Error",))[0]
+        host = self.public.display if hasattr(self, "public") else None
+        self.error_message_format = render_error(code, shown, host).replace("%", "%%")
+        try:
+            super().send_error(code, message, explain)
+        finally:
+            del self.error_message_format
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path

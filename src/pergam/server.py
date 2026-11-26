@@ -11,6 +11,7 @@ Modules
   routes.py      HTTP routing and request validation
   store.py       data access (all SQL)
   layout.py      head assets and the top bar shared by every page
+  error_page.py  errors as a page for browsers (Accept: text/html), templates/error.html
   index_page.py  the HTML index, from templates/index.html + index.css
   view_page.py   the view page: version bar and the document in a frame
   diff.py        text diff of two versions, grouped by section

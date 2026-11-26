@@ -273,6 +273,10 @@ The index, view and diff pages share one stylesheet, `/static/pergam.css`, and o
 
 **Page stylesheets** (`templates/*.css`, inlined in their page) hold layout and may only refer to tokens with `var(--name)`: no colour literal, no font name. A test fails on either, and on any inline `style` that is not `--h` or `--type-rgb`.
 
+## Errors in a browser
+
+A request that prefers `text/html` (a browser: `Accept: text/html,…`) and is a `GET` or `HEAD` on a page route gets the error as a page in the product's look: the status, a plain explanation, the server's message (escaped) and a way out (the index, and a search box). Everything else keeps the standard library's error response unchanged: `curl` and other clients (`Accept: */*` or none), `fetch`, every non-`GET`, and the JSON and feed routes (`/api/…`, `/{id}/versions`, `/meta`, `/collaborators`, `/export`, `/feed.atom`, `/healthz`) whatever they accept. Status line, headers and cache rules are the same either way (no `Cache-Control`, `Connection: close`), and the status line never carries user-controlled text.
+
 ## JSON API
 
 `GET /api/pergams` is the index as JSON. It takes the same query parameters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`) and comes from the same query, so for the same parameters it lists exactly the pergams the HTML index lists, in the same order, 100 per page.
@@ -404,6 +408,7 @@ pergam/
 │   ├── routes.py            HTTP routing and request validation
 │   ├── store.py             data access (all SQL)
 │   ├── layout.py            head assets and the top bar shared by every page
+│   ├── error_page.py        error responses as a page, for browsers only
 │   ├── index_page.py        HTML index renderer
 │   ├── view_page.py         view page: version bar around the framed document
 │   ├── diff.py              text diff of two versions, grouped by section
