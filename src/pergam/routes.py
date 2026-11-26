@@ -12,6 +12,8 @@ from urllib.parse import parse_qs, urlparse
 
 from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
+from pergam.diff import diff_sections
+from pergam.diff_page import render_diff
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
 from pergam.index_page import render_index
@@ -27,6 +29,7 @@ from pergam.view_page import FRAME_POLICY, render_view
 
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 VERSION_RE = re.compile(r"^v(\d+)$")
+RANGE_RE = re.compile(r"^v([1-9]\d*)\.\.v([1-9]\d*)$")
 CONTENT_TYPES = {
     "content": "text/html; charset=utf-8",
     "raw": "text/plain; charset=utf-8",
@@ -153,6 +156,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             if parts[1] in LATEST_KINDS:
                 self._serve_pergam(parts[0], None, parts[1])
                 return
+        if len(parts) == 3 and parts[1] == "diff" and ID_RE.match(parts[0]):
+            self._render_diff(parts[0], parts[2])
+            return
         if len(parts) == 3 and ID_RE.match(parts[0]):
             match = VERSION_RE.match(parts[1])
             if match and parts[2] == "view":
@@ -211,6 +217,21 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         page = render_view(pergam_id, versions, meta, shown)
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+
+    def _render_diff(self, pergam_id: str, version_range: str) -> None:
+        """`v{a}..v{b}` in either order, `b` read as the newer side; 400 when malformed, 404 when unknown."""
+        match = RANGE_RE.match(version_range)
+        if not match:
+            self.send_error(400, "Range must look like v2..v5")
+            return
+        by_number = {info.version: info for info in self.store.versions(pergam_id)}
+        old, new = (by_number.get(int(number)) for number in match.groups())
+        if old is None or new is None:
+            self.send_error(404, "Pergam or version not found")
+            return
+        old_html, new_html = (self.store.html(pergam_id, info.version) or "" for info in (old, new))
+        page = render_diff(pergam_id, old, new, diff_sections(old_html, new_html))
+        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"), cache_control=DERIVED)
 
     def _render_versions_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)
@@ -308,7 +329,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     ) -> None:
         """Version-pinned content never changes, so those routes pass `IMMUTABLE`.
 
-        Content derived from a pinned version (its `/text`) changes when the
+        Content derived from pinned versions (`/text`, `/diff`) changes when the
         extractor improves, so it gets the short `DERIVED` lifetime instead.
         """
         self.send_response(status)

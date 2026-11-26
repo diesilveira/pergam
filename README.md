@@ -38,7 +38,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 📦 **Publish HTML** via one `POST`, get a stable URL back.
 - 🕰️ **Versioned** — every logical `id` keeps full history. `v1`, `v2`, … all reachable forever.
 - 🔒 **Immutable** — pergams can't be edited or deleted, only superseded with a new version.
-- 🧭 **Visible versions** — every pergam opens under a slim bar with its title, type, tags, author and `v3 of 5`, a version selector with each version's note, and a notice on older versions linking to the current one.
+- 🧭 **Visible versions** — every pergam opens under a slim bar with its title, type, tags, author and `v3 of 5`, a version selector with each version's note, and a notice on older versions linking to the current one. `/{id}/diff/v2..v5` shows what changed between two versions, section by section.
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
 - 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
 - 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag; pin what matters, archive what doesn't.

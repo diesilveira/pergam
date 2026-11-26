@@ -19,6 +19,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/v{n}/raw`      | Raw HTML source (specific version).                                  |
 | `GET`    | `/{id}/text`          | Visible text of the latest version as Markdown (`text/markdown`). See [Text](#text). |
 | `GET`    | `/{id}/v{n}/text`     | Visible text of a specific version as Markdown.                      |
+| `GET`    | `/{id}/diff/v{a}..v{b}` | HTML page comparing the text of two versions, section by section. See [Diff](#diff). |
 | `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at, note}, …]`, newest first; `note` is `null` when the version has none. |
 | `GET`    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`. **404** for an unknown id.     |
 | `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
@@ -38,7 +39,7 @@ Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `v
 
 Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails.
 
-Caching: a version-pinned content route (`/{id}/v{n}/content`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. `/{id}/v{n}/text` is derived from that version by the text extractor, which can improve with an upgrade, so it is cached for five minutes only (`public, max-age=300`). Everything else (both view pages, which count the versions, latest `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
+Caching: a version-pinned content route (`/{id}/v{n}/content`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. `/{id}/v{n}/text` is derived from that version by the text extractor, which can improve with an upgrade, so it is cached for five minutes only (`public, max-age=300`), and so is `/{id}/diff/v{a}..v{b}`, built from the same extraction. Everything else (both view pages, which count the versions, latest `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
 
 Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id; to hide it, archive it with `PATCH /{id}/meta`.
 
@@ -55,7 +56,18 @@ Pergams cannot be deleted. To "supersede" a pergam, post a new version with the 
 - **The document** in a full-height iframe loaded from `/{id}/v{n}/content`, always version-pinned, so the browser caches it for good. `/content` and `/raw` return the bytes that were posted, nothing added; `/raw` as `text/plain`.
 - **Anchors**: in-document links (`#section`) work inside the frame, and a fragment on the view URL (`/{id}/view#costs`) is forwarded into the frame, also when it changes later.
 
-Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
+The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
+
+## Diff
+
+`GET /{id}/diff/v2..v5` compares what a reader sees in two versions, without opening two tabs:
+
+- Both versions go through the same extraction as [`/text`](#text), so markup-only changes (classes, wrappers, styles) do not show. Blank lines are ignored outside code blocks.
+- The Markdown lines are compared with Python's `difflib` and grouped by section: every heading opens one, text before the first heading forms its own. A heading changed on its own counts as the same section renamed.
+- Changed sections are open, with additions (`+`, green) and removals (`−`, red); a replaced line is shown next to its replacement with the changed words marked. Runs of unchanged lines are cut to two lines around each change. Unchanged sections are collapsed.
+- The header shows both versions with their [notes](#version-notes) and links to each one's view page.
+
+The range is `v{a}..v{b}`, the newer side on the right; `a` may be larger than `b` (read backwards) or equal (no differences). A range that is not `v{a}..v{b}` with positive numbers without leading zeros is **400**; an unknown id or version is **404**.
 
 ## Tags and metadata
 
@@ -214,9 +226,11 @@ pergam/
 │   ├── store.py             data access (all SQL)
 │   ├── index_page.py        HTML index renderer
 │   ├── view_page.py         view page: version bar around the framed document
+│   ├── diff.py              text diff of two versions, grouped by section
+│   ├── diff_page.py         diff page renderer
 │   ├── api.py               JSON bodies of /api/pergams
 │   ├── feed.py              Atom feed of recent publications
-│   ├── templates/           index and view pages (HTML + CSS)
+│   ├── templates/           index, view and diff pages (HTML + CSS)
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── taxonomy.py          accepted types and badge colours
 │   ├── tags.py              tag normalisation and limits

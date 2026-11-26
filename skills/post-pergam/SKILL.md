@@ -189,6 +189,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | GET    | `/{id}/v{n}/raw`      | Raw HTML (specific).                                                 |
 | GET    | `/{id}/text`          | Visible text of the latest version as Markdown (headings, lists, tables). Cheapest way to read a pergam. |
 | GET    | `/{id}/v{n}/text`     | Same, for a specific version.                                        |
+| GET    | `/{id}/diff/v{a}..v{b}` | HTML page with the text changes between two versions, per section. Link it when the user asks what changed. |
 | GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at, note}, …]`. |
 | GET    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`.                                |
 | PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |

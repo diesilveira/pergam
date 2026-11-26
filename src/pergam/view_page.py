@@ -43,6 +43,16 @@ def content_path(pergam_id: str, version: int) -> str:
     return f"/{pergam_id}/v{version}/content"
 
 
+def diff_path(pergam_id: str, old: int, new: int) -> str:
+    return f"/{pergam_id}/diff/v{old}..v{new}"
+
+
+def _changes_link(pergam_id: str, version: int) -> str:
+    if version == 1:
+        return ""
+    return f'<a href="{diff_path(pergam_id, version - 1, version)}" title="diff with v{version - 1}">changes</a>'
+
+
 def _attributes(pairs: tuple[tuple[str, str], ...]) -> str:
     return " ".join(f'{name}="{esc(value)}"' for name, value in pairs)
 
@@ -69,7 +79,8 @@ def _outdated(pergam_id: str, current: int, latest: int) -> str:
         return ""
     return (
         f'<p class="outdated" role="status">You are viewing v{current}, an earlier version. '
-        f'<a href="/{pergam_id}/view">Go to the current version (v{latest})</a></p>'
+        f'<a href="/{pergam_id}/view">Go to the current version (v{latest})</a> · '
+        f'<a href="{diff_path(pergam_id, current, latest)}">what changed since</a></p>'
     )
 
 
@@ -93,6 +104,7 @@ def render_view(
         version_items="".join(_version_item(pergam_id, info, version, latest) for info in versions),
         raw_href=f"/{pergam_id}/v{version}/raw",
         text_href=f"/{pergam_id}/v{version}/text",
+        changes_link=_changes_link(pergam_id, version),
         outdated=_outdated(pergam_id, version, latest),
         frame_attributes=_attributes(frame + policy.iframe_attributes),
     )
