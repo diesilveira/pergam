@@ -15,12 +15,13 @@ of the tag it is about:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import unquote, urlparse
 
 MAX_FINDINGS = 500
+LINT_MAX_BODY_BYTES = 2 * 1024 * 1024
 ALLOWED_CDN_HOST = "cdn.jsdelivr.net"
 MERMAID_DIAGRAMS = frozenset(
     {
@@ -51,10 +52,11 @@ _LOADING_RELS = frozenset(
      "preconnect", "dns-prefetch"}
 )
 _CDN_KINDS = frozenset({"script", "link"})
-_CSS_URL = re.compile(r"""url\(\s*(['"]?)([^'")]*)\1\s*\)|@import\s+(['"])([^'"]*)\3""", re.IGNORECASE)
-_MERMAID_DIRECTIVE = re.compile(r"%%\{.*?\}%%", re.DOTALL)
-_MERMAID_COMMENT = re.compile(r"^\s*%%.*$", re.MULTILINE)
-_FRONTMATTER = re.compile(r"\A\s*---\n.*?\n\s*---\s*$", re.DOTALL | re.MULTILINE)
+MAX_MERMAID_TEXT = 16_384
+_CSS_URL = re.compile(
+    r"""url\(\s*+(?:"([^"\n]{0,2048}+)"|'([^'\n]{0,2048}+)'|([^'"()\s]{1,2048}+))|@import\s++(?:"([^"\n]{0,2048}+)"|'([^'\n]{0,2048}+)')""",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -63,7 +65,14 @@ class _MermaidBlock:
     line: int
     offset: int
     open_tags: int = 1
-    text: str = ""
+    parts: list[str] = field(default_factory=list)
+    size: int = 0
+
+    def add(self, data: str) -> None:
+        """Keep the first `MAX_MERMAID_TEXT` characters: the diagram type is in its first statement."""
+        if self.size < MAX_MERMAID_TEXT:
+            self.parts.append(data[: MAX_MERMAID_TEXT - self.size])
+            self.size += len(self.parts[-1])
 
 
 @dataclass(frozen=True)
@@ -101,6 +110,8 @@ class LintResult:
 def _external_host(url: str) -> str | None:
     """The host of an absolute http(s) or scheme-relative URL, None for anything that stays local."""
     url = url.strip()
+    if "//" not in url:
+        return None
     absolute = "http:" + url if url.startswith("//") else url
     try:
         parsed = urlparse(absolute)
@@ -120,10 +131,23 @@ def _shown(url: str) -> str:
 
 
 def _first_statement(text: str) -> str | None:
-    uncommented = _MERMAID_COMMENT.sub("", _MERMAID_DIRECTIVE.sub("", text))
-    body = _FRONTMATTER.sub("", uncommented, count=1)
-    words = body.split()
-    return words[0] if words else None
+    """The first line Mermaid reads as its diagram, stripped, in one forward pass over the lines.
+
+    Blank lines, `%%` comments, `%%{…}%%` directives (over several lines too) and a
+    `---` front matter block before it are skipped, as Mermaid skips them.
+    """
+    lines = iter(text.splitlines())
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "---":
+            closing = next((rest for rest in lines if rest.strip() == "---"), None)
+            if closing is None:
+                return None
+        elif stripped.startswith("%%{") and "}%%" not in stripped:
+            next((rest for rest in lines if "}%%" in rest), None)
+        elif stripped and not stripped.startswith("%%"):
+            return stripped
+    return None
 
 
 class _Linter(HTMLParser):
@@ -152,7 +176,7 @@ class _Linter(HTMLParser):
 
     def css(self, tag: str, text: str) -> None:
         for match in _CSS_URL.finditer(text):
-            self.external(tag, match.group(2) if match.group(2) is not None else match.group(4))
+            self.external(tag, next(group for group in match.groups() if group is not None))
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = {name: value or "" for name, value in attrs}
@@ -197,16 +221,16 @@ class _Linter(HTMLParser):
         if self.in_style:
             self.css("style", data)
         if self.mermaid is not None:
-            self.mermaid.text += data
+            self.mermaid.add(data)
 
     def finish_mermaid(self) -> None:
         assert self.mermaid is not None
         block, self.mermaid = self.mermaid, None
-        statement = _first_statement(block.text)
+        statement = _first_statement("".join(block.parts))
         if statement is None:
             self.add("mermaid-empty", "error", "Mermaid block has no diagram", (block.line, block.offset))
-        elif statement.rstrip(":;") not in MERMAID_DIAGRAMS:
-            message = f"Mermaid block starts with {_shown(statement)!r}, not a diagram type such as flowchart"
+        elif statement.split()[0].rstrip(":;") not in MERMAID_DIAGRAMS:
+            message = f"Mermaid block starts with {_shown(statement.split()[0])!r}, not a diagram type such as flowchart"
             self.add("mermaid-unknown-diagram", "error", message, (block.line, block.offset))
 
     def close(self) -> None:

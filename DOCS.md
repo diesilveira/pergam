@@ -136,7 +136,7 @@ The server ships Mermaid 11.17.2 (`dist/mermaid.min.js` of the npm package, unch
 
 ## Lint
 
-`POST /lint` checks a document before it is published and writes nothing: no version, no metadata, no text. The body is `{"html": "…"}`; other fields are ignored, so the payload of a `POST /pergam` can be linted as is. A missing or blank `html` is **400**; the body follows the same size and `Content-Type` rules as a publish. It needs no `X-Forwarded-User`, even with `TRUST_PROXY_USER` on.
+`POST /lint` checks a document before it is published and writes nothing: no version, no metadata, no text. The body is `{"html": "…"}`; other fields are ignored, so the payload of a `POST /pergam` can be linted as is. A missing or blank `html` is **400**; the body must be `application/json` and at most 2 MB (**413** above that, whatever `PERGAM_MAX_BODY_MB` says), which keeps an anonymous lint cheap. Only the first 16,384 characters of each Mermaid block are read, enough for its diagram type. It needs no `X-Forwarded-User`, even with `TRUST_PROXY_USER` on.
 
 ```bash
 curl -sS -X POST http://localhost:1111/lint -H 'Content-Type: application/json' \

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+import time
+
 import psycopg
 import pytest
 
-from pergam.lint import MAX_FINDINGS, lint_html
+from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, lint_html
 from support import Client
 
 TABLES = ("pergams", "pergam_meta", "pergam_text", "pergam_note")
@@ -144,3 +147,42 @@ def test_lint_needs_no_trusted_user(trusting: Client) -> None:
 
     assert resp.status == 200
     assert resp.json()["findings"] == []
+
+
+PATHOLOGICAL = LINT_MAX_BODY_BYTES - 1024
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<pre class="mermaid">' + "%%{" * (PATHOLOGICAL // 3),
+        '<pre class="mermaid">' + "%%{\n" * (PATHOLOGICAL // 4),
+        '<pre class="mermaid">---\n' + "x\n" * (PATHOLOGICAL // 2),
+        "<style>" + "url(" * (PATHOLOGICAL // 4),
+        "<style>" + "url(" + " " * PATHOLOGICAL,
+        "<style>" + "@import " * (PATHOLOGICAL // 8),
+        '<div style="' + "url(" * (PATHOLOGICAL // 4) + '">',
+        '<img srcset="' + "a," * (PATHOLOGICAL // 2) + '">',
+    ],
+    ids=["directives", "directive-lines", "front-matter", "css-urls", "css-spaces", "imports", "style-attribute", "srcset"],
+)
+def test_lint_work_stays_linear_up_to_its_body_limit(html: str) -> None:
+    started = time.monotonic()
+
+    lint_html(html)
+
+    assert time.monotonic() - started < 1.5
+
+
+def test_mermaid_text_past_its_cap_is_not_kept() -> None:
+    block = '<pre class="mermaid">flowchart TB\n' + "A-->B\n" * 100_000 + "</pre>"
+
+    assert found(block) == []
+
+
+def test_lint_has_its_own_small_body_limit(client: Client) -> None:
+    headers = {"Content-Type": "application/json", "Content-Length": str(LINT_MAX_BODY_BYTES + 1)}
+
+    resp = client.request("POST", "/lint", json.dumps({"html": "<p>x</p>"}).encode(), headers)
+
+    assert resp.status == 413

@@ -20,7 +20,7 @@ from pergam.feed import render_feed
 from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, proxy_user
 from pergam.ids import ID_RE
 from pergam.index_page import render_index
-from pergam.lint import lint_html
+from pergam.lint import LINT_MAX_BODY_BYTES, lint_html
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
 from pergam.meta import MetaError, parse_meta_change
 from pergam.notes import NoteError, parse_note
@@ -159,7 +159,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
 
     def _lint(self) -> None:
         """Findings for the body's `html`; other fields are ignored, so a publish payload can be linted as is."""
-        data = self._read_json_object()
+        data = self._read_json_object(LINT_MAX_BODY_BYTES)
         if data is None:
             return
         html = data.get("html")
@@ -406,8 +406,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json(export_json(pergam_id, versions, meta, self.public))
 
-    def _read_json_object(self) -> dict[str, Any] | None:
-        """The request's JSON object body, or None after answering 400/413/415."""
+    def _read_json_object(self, limit: int | None = None) -> dict[str, Any] | None:
+        """The request's JSON object body, at most `limit` bytes (default `max_body_bytes`), or None after answering 400/413/415."""
+        limit = min(limit or self.max_body_bytes, self.max_body_bytes)
         try:
             length = int(self.headers.get("Content-Length", "0") or 0)
         except ValueError:
@@ -416,8 +417,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if length <= 0:
             self.send_error(400, "Empty body")
             return None
-        if length > self.max_body_bytes:
-            self.send_error(413, f"Body larger than {self.max_body_bytes // MIB} MB")
+        if length > limit:
+            self.send_error(413, f"Body larger than {limit // MIB} MB")
             return None
         ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
         if ctype != "application/json":
