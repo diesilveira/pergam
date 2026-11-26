@@ -60,7 +60,7 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 - **Archived** pergams are left out unless `?archived=1`, which lists them alongside the rest, marked `archived`. They stay reachable by URL either way.
 - **Order**: pinned first, then by the latest version's `created_at` (newest first), then by id. The order is total, so paging is stable.
 - **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters, and every pergam that matches is visited exactly once. A malformed `cursor` is **400**.
-- Pill counts (type, author, tag) cover every visible pergam, not only the current page; the stats cards cover the whole instance, archived included.
+- Pill counts (type, author, tag) and the count under the title cover every visible pergam, not only the current page: hidden archived pergams are left out of them and the title line says how many are hidden. The stats cards cover the whole instance, archived included. "clear all" drops every filter, `archived=1` included.
 
 ## Pergam types
 

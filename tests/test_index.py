@@ -138,7 +138,29 @@ def test_active_tag_pill_links_back_to_unfiltered(client: Client, tagged: dict[s
     resp = client.get("/?tag=ops&type=plan")
 
     assert re.search(r'<a href="/\?type=plan" class="active"[^>]*>ops ', resp.text)
-    assert "showing 1 of 5" in resp.text
+    assert "showing 1 of 4" in resp.text
+
+
+@pytest.mark.parametrize(
+    ("query", "note"),
+    [
+        ("/", "showing 4 of 5 · 1 archived hidden"),
+        ("/?archived=1", "5 pergams · 2 authors · 5 versions"),
+        ("/?tag=ops", "showing 2 of 4"),
+        ("/?tag=ops&archived=1", "showing 3 of 5"),
+    ],
+)
+def test_header_counts_follow_the_archived_filter(
+    client: Client, tagged: dict[str, str], query: str, note: str
+) -> None:
+    assert f'<div class="sub">{note}</div>' in client.get(query).text
+
+
+@pytest.mark.parametrize(("query", "clear"), [("/", False), ("/?archived=1", True), ("/?tag=ops", True)])
+def test_clear_all_resets_the_archived_filter_too(
+    client: Client, tagged: dict[str, str], query: str, clear: bool
+) -> None:
+    assert ('href="/">clear all</a>' in client.get(query).text) is clear
 
 
 def test_rows_show_tags_and_flags(client: Client, tagged: dict[str, str]) -> None:

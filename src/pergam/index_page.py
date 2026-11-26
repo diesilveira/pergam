@@ -177,19 +177,26 @@ def delta(n: int) -> str:
     return f'<span class="stat__delta">▲{n}</span>' if n > 0 else ""
 
 
+def showing_note(data: IndexData, filters: IndexFilters) -> str:
+    """Counts relative to what the list can show: archived pergams count only when they are listed."""
+    stats = data.stats
+    hidden = 0 if filters.archived else data.archived_count
+    visible = stats.total_pergams - hidden
+    if filters.active and data.matching != visible:
+        return f"showing {data.matching} of {visible}"
+    if hidden:
+        return f"showing {visible} of {stats.total_pergams} · {hidden} archived hidden"
+    return f"{stats.total_pergams} pergams · {stats.total_authors} authors · {stats.total_versions} versions"
+
+
 def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> str:
     now = datetime.now(timezone.utc)
     stats = data.stats
-    showing_note = (
-        f"showing {data.matching} of {stats.total_pergams}"
-        if filters.active and data.matching != stats.total_pergams
-        else f"{stats.total_pergams} pergams · {stats.total_authors} authors · {stats.total_versions} versions"
-    )
     bytes_value, bytes_unit = human_bytes(stats.total_bytes)
     return _PAGE.substitute(
         css=_CSS,
         host_display=esc(host_display),
-        showing_note=showing_note,
+        showing_note=showing_note(data, filters),
         total_pergams=stats.total_pergams,
         new_pergams_delta=delta(stats.new_pergams_7d),
         total_authors=stats.total_authors,
@@ -208,7 +215,7 @@ def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> s
         tag_value=esc(filters.tag or ""),
         archived_value="1" if filters.archived else "",
         archived_toggle=archived_toggle(filters, data.archived_count),
-        clear_link='<a class="clear" href="/">clear all</a>' if filters.active else "",
+        clear_link='<a class="clear" href="/">clear all</a>' if filters.active or filters.archived else "",
         rows="\n".join(render_row(row, filters, now) for row in data.rows) or _EMPTY,
         pager=pager(filters, data),
     )
