@@ -24,6 +24,7 @@ FORMAT_VERSION = 1
 MAX_SERVER_URL_LENGTH = 2048
 EARLIEST_CREATED_AT = datetime(1970, 1, 1, tzinfo=timezone.utc)
 CLOCK_SKEW = timedelta(minutes=5)
+MAX_VERSION = 2**31 - 1
 
 
 class TransferError(ValueError):
@@ -136,8 +137,8 @@ def _version(entry: object, index: int, types: tuple[str, ...], now: datetime) -
     if not isinstance(entry, dict):
         raise TransferError(f"versions[{index}] must be an object")
     number = entry.get("version")
-    if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
-        raise TransferError(f"versions[{index}]: version must be a positive integer")
+    if not isinstance(number, int) or isinstance(number, bool) or not 0 < number <= MAX_VERSION:
+        raise TransferError(f"versions[{index}]: version must be an integer from 1 to {MAX_VERSION}")
     label = f"v{number}"
     html = _text(entry, "html", label)
     pergam_type = normalise_type(_text(entry, "type", label))

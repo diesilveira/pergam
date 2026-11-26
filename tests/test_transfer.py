@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -329,3 +330,22 @@ def test_parse_import_window_is_relative_to_now() -> None:
     with pytest.raises(TransferError, match="between 1970-01-01 and now"):
         parse_import(doc, TYPES, now=now)
     assert parse_import(doc, TYPES, now=now + timedelta(minutes=1)).versions[0].created_at.tzinfo == timezone.utc
+
+
+def test_version_above_int4_is_400(target: Client) -> None:
+    doc = document(versions=1)
+    doc["versions"][0]["version"] = 2**31
+
+    assert target.post_json(doc, "/import").status == 400
+
+
+def test_gap_check_does_not_enumerate_up_to_the_largest_version(target: Client, target_db: psycopg.Connection) -> None:
+    doc = document(versions=1)
+    doc["versions"][0]["version"] = 2**31 - 1
+    started = time.monotonic()
+
+    resp = target.post_json(doc, "/import")
+
+    assert (resp.status, time.monotonic() - started < 2) == (409, True)
+    assert b"v1 of abcd1234 missing" in resp.body
+    assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)

@@ -176,15 +176,19 @@ def exported_versions(conn: psycopg.Connection, pergam_id: str) -> list[Exported
 
 
 def import_conflict(doc: ImportDocument, present: dict[int, ExportedVersion]) -> str | None:
-    """Why `doc` cannot be imported over `present`, or None when it can."""
+    """Why `doc` cannot be imported over `present`, or None when it can.
+
+    The merged versions must number 1..n. Gaps are found by walking the sorted
+    numbers, never by enumerating up to the largest one.
+    """
     differing = [v.version for v in doc.versions if v.version in present and not present[v.version].same_content(v)]
     if differing:
         listed = ", ".join(f"v{n}" for n in differing)
         return f"{listed} of {doc.id} already exist here with different content"
-    numbers = set(present) | {v.version for v in doc.versions}
-    gaps = sorted(set(range(1, max(numbers) + 1)) - numbers)
-    if gaps:
-        return f"importing would leave v{gaps[0]} of {doc.id} missing"
+    numbers = sorted(set(present) | {v.version for v in doc.versions})
+    gap = next((expected for expected, number in enumerate(numbers, 1) if number != expected), None)
+    if gap is not None:
+        return f"importing would leave v{gap} of {doc.id} missing"
     return None
 
 
