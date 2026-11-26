@@ -47,8 +47,11 @@ DEFAULT_PORT = 1111
 
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    """Threaded server with a listen backlog sized for bursts of concurrent clients."""
+
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 128
 
 
 def main() -> int:

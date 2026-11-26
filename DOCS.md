@@ -28,6 +28,8 @@ Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `v
 - `GET /{id}/view` → latest version
 - `GET /{id}/v3/view` → version 3 specifically
 
+Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails.
+
 Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id.
 
 ## Pergam types

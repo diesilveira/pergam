@@ -69,6 +69,9 @@ class IndexData:
     stats: IndexStats
 
 
+VERSION_LOCK_NAMESPACE = 0x7067
+
+
 def new_id() -> str:
     return uuid.uuid4().hex[:8]
 
@@ -78,32 +81,32 @@ class PergamStore:
         self.pool = pool
 
     def publish(self, pergam: NewPergam, existing_id: str | None) -> tuple[str, int]:
-        """Insert a new version and return `(id, version)`."""
-        bytes_count = len(pergam.html.encode("utf-8"))
-        with self.pool.connection() as conn:
-            if existing_id:
-                row = conn.execute(
-                    "SELECT COALESCE(MAX(version), 0) FROM pergams WHERE id = %s",
-                    (existing_id,),
-                ).fetchone()
-                next_version = (row[0] or 0) + 1
-                pergam_id = existing_id
-            else:
-                next_version = 1
-                pergam_id = new_id()
-                while conn.execute(
-                    "SELECT 1 FROM pergams WHERE id = %s LIMIT 1", (pergam_id,)
-                ).fetchone():
-                    pergam_id = new_id()
+        """Insert a new version and return `(id, version)`.
 
-            conn.execute(
-                """
-                INSERT INTO pergams (id, version, title, html, type, author, bytes)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                (pergam_id, next_version, pergam.title, pergam.html, pergam.type, pergam.author, bytes_count),
-            )
-        return pergam_id, next_version
+        Posts to an explicit id take a transaction-scoped advisory lock on that id
+        before reading `MAX(version)`, so concurrent posts get consecutive versions
+        instead of colliding on the primary key. New random ids retry on collision.
+        """
+        values = (pergam.title, pergam.html, pergam.type, pergam.author, len(pergam.html.encode("utf-8")))
+        with self.pool.connection() as conn, conn.transaction():
+            if existing_id:
+                conn.execute("SELECT pg_advisory_xact_lock(%s, hashtext(%s))", (VERSION_LOCK_NAMESPACE, existing_id))
+                row = conn.execute(
+                    "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
+                    " SELECT %s, COALESCE(MAX(version), 0) + 1, %s, %s, %s, %s, %s FROM pergams WHERE id = %s"
+                    " RETURNING version",
+                    (existing_id, *values, existing_id),
+                ).fetchone()
+                return existing_id, row[0]
+            while True:
+                pergam_id = new_id()
+                inserted = conn.execute(
+                    "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
+                    " VALUES (%s, 1, %s, %s, %s, %s, %s) ON CONFLICT (id, version) DO NOTHING RETURNING id",
+                    (pergam_id, *values),
+                ).fetchone()
+                if inserted:
+                    return pergam_id, 1
 
     def html(self, pergam_id: str, version: int | None) -> str | None:
         """HTML of one version, or of the latest one when `version` is None."""
