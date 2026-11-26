@@ -23,7 +23,8 @@ _PAGE = Template((_TEMPLATES / "error.html").read_text(encoding="utf-8").rstrip(
 _CSS = (_TEMPLATES / "error.css").read_text(encoding="utf-8")
 
 PAGE_METHODS = frozenset({"GET", "HEAD"})
-_MACHINE_SUFFIXES = frozenset({"versions", "meta", "collaborators", "export"})
+_MACHINE_SUFFIXES = frozenset({"versions", "meta", "collaborators", "export", "raw", "text"})
+_VERSION_RE = re.compile(r"^v\d+$")
 
 _COPY: dict[int, tuple[str, str]] = {
     400: ("Bad request", "The address or one of its parameters is not valid."),
@@ -64,15 +65,24 @@ def prefers_html(accept: str | None) -> bool:
 
 
 def is_machine_route(path: str) -> bool:
-    """Routes that answer with JSON, a feed or a health check, never with a page."""
+    """Routes that answer with JSON, a feed, plain text, Markdown or a health check, never with a page."""
     parts = path.strip("/").split("/")
     if parts[0] in {"api", "healthz", "feed.atom"}:
         return True
-    return len(parts) == 2 and ID_RE.match(parts[0]) is not None and parts[1] in _MACHINE_SUFFIXES
+    if not parts[0] or ID_RE.match(parts[0]) is None:
+        return False
+    if len(parts) == 2:
+        return parts[1] in _MACHINE_SUFFIXES
+    return len(parts) == 3 and _VERSION_RE.match(parts[1]) is not None and parts[2] in {"raw", "text"}
+
+
+def varies_by_accept(method: str | None, path: str) -> bool:
+    """True when the error for this request may be a page or not depending on `Accept`."""
+    return method in PAGE_METHODS and not is_machine_route(path)
 
 
 def wants_error_page(method: str | None, path: str, accept: str | None) -> bool:
-    return method in PAGE_METHODS and not is_machine_route(path) and prefers_html(accept)
+    return varies_by_accept(method, path) and prefers_html(accept)
 
 
 def _phrase(status: int) -> str:

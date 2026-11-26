@@ -16,7 +16,7 @@ from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
 from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
-from pergam.error_page import render_error, wants_error_page
+from pergam.error_page import render_error, varies_by_accept, wants_error_page
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
 from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, single_proxy_user
@@ -88,6 +88,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     trust_proxy_user: bool = False
     frame: FramePolicy = FRAME_POLICY
     lint_slots = threading.BoundedSemaphore(LINT_CONCURRENCY)
+    vary_accept = False
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         line = escape_log(format % args)
@@ -107,19 +108,28 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
 
         Only the body differs: status line, headers and logging stay the library's, so
         API clients, `HEAD` and cache rules see no change (see `error_page.wants_error_page`).
+        Where the body depends on `Accept`, the response says so with `Vary: Accept`.
         """
         headers = getattr(self, "headers", None)
         path = urlparse(getattr(self, "path", "")).path
-        if headers is None or not wants_error_page(self.command, path, headers.get("Accept")):
+        if headers is None or not varies_by_accept(self.command, path):
             super().send_error(code, message, explain)
             return
-        shown = message if message is not None else self.responses.get(code, ("Error",))[0]
-        host = self.public.display if hasattr(self, "public") else None
-        self.error_message_format = render_error(code, shown, host).replace("%", "%%")
+        self.vary_accept = True
         try:
+            if wants_error_page(self.command, path, headers.get("Accept")):
+                shown = message if message is not None else self.responses.get(code, ("Error",))[0]
+                host = self.public.display if hasattr(self, "public") else None
+                self.error_message_format = render_error(code, shown, host).replace("%", "%%")
             super().send_error(code, message, explain)
         finally:
-            del self.error_message_format
+            self.vary_accept = False
+            self.__dict__.pop("error_message_format", None)
+
+    def end_headers(self) -> None:
+        if self.vary_accept:
+            self.send_header("Vary", "Accept")
+        super().end_headers()
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path

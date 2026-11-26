@@ -37,14 +37,15 @@ def test_only_a_client_that_asks_for_html_prefers_it(accept: str | None, expecte
 @pytest.mark.parametrize(
     "path",
     ["/api/pergams", "/api/pergams/abcdef12", "/healthz", "/feed.atom", "/abcdef12/versions", "/abcdef12/meta",
-     "/abcdef12/collaborators", "/abcdef12/export"],
+     "/abcdef12/collaborators", "/abcdef12/export", "/abcdef12/raw", "/abcdef12/text", "/abcdef12/v1/raw",
+     "/abcdef12/v12/text"],
 )
 def test_machine_routes_are_never_pages(path: str) -> None:
     assert is_machine_route(path)
     assert not wants_error_page("GET", path, BROWSER["Accept"])
 
 
-@pytest.mark.parametrize("path", ["/", "/abcdef12/view", "/abcdef12/v1/view", "/abcdef12/diff/v1..v2", "/abcdef12/raw", "/nope"])
+@pytest.mark.parametrize("path", ["/", "/abcdef12/view", "/abcdef12/v1/view", "/abcdef12/diff/v1..v2", "/abcdef12/v1/content", "/nope"])
 def test_page_routes_may_be_pages(path: str) -> None:
     assert wants_error_page("GET", path, BROWSER["Accept"])
     assert wants_error_page("HEAD", path, BROWSER["Accept"])
@@ -88,7 +89,11 @@ def test_other_clients_keep_the_standard_error(client: Client, path: str, accept
     assert "topbar" not in resp.text
 
 
-@pytest.mark.parametrize("path", ["/api/pergams/abcdef12", "/abcdef12/versions", "/abcdef12/meta", "/abcdef12/collaborators", "/abcdef12/export"])
+@pytest.mark.parametrize(
+    "path",
+    ["/api/pergams/abcdef12", "/abcdef12/versions", "/abcdef12/meta", "/abcdef12/collaborators", "/abcdef12/export",
+     "/abcdef12/raw", "/abcdef12/text", "/abcdef12/v1/raw", "/abcdef12/v1/text"],
+)
 def test_json_routes_keep_the_standard_error_even_for_a_browser(client: Client, path: str) -> None:
     resp = client.request("GET", path, headers=BROWSER)
 
@@ -170,3 +175,24 @@ def test_a_message_that_is_the_standard_phrase_is_not_repeated(client: Client) -
     page = client.request("GET", "/nope", headers=BROWSER).text
 
     assert '<p class="error__detail">' not in page
+
+
+@pytest.mark.parametrize("accept", [None, "*/*", BROWSER["Accept"]])
+@pytest.mark.parametrize("path", ["/abcdef12/view", "/nope", "/?cursor=%21"])
+def test_errors_that_depend_on_accept_say_so(client: Client, path: str, accept: str | None) -> None:
+    headers = {"Accept": accept} if accept is not None else {}
+
+    assert client.request("GET", path, headers=headers).headers["vary"] == "Accept"
+    assert client.request("HEAD", path, headers=headers).headers["vary"] == "Accept"
+
+
+@pytest.mark.parametrize("path", ["/api/pergams/abcdef12", "/abcdef12/raw", "/abcdef12/v1/text"])
+def test_machine_route_errors_do_not_vary(client: Client, path: str) -> None:
+    assert "vary" not in client.request("GET", path, headers=BROWSER).headers
+
+
+def test_vary_does_not_leak_to_the_next_response(client: Client) -> None:
+    client.request("GET", "/nope", headers=BROWSER)
+
+    assert "vary" not in client.get("/healthz").headers
+    assert "vary" not in client.request("POST", "/pergam", b"", {"Content-Type": "application/json"}).headers
