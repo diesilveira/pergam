@@ -138,3 +138,27 @@ def test_trusted_publish_with_two_user_headers_is_400_and_writes_nothing(
 
     assert status == 400
     assert db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+
+
+def test_import_compares_but_does_not_refuse_a_stored_author_that_predates_the_rule(
+    client: Client, db: psycopg.Connection
+) -> None:
+    legacy = "ana\r\nexample"
+    db.execute(
+        "INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)"
+        " VALUES ('0123abcd', 1, 't', '<p>t</p>', 'otro', %s, 8, '2025-01-01T00:00:00+00:00')",
+        (legacy,),
+    )
+    exported = client.get("/0123abcd/export").json()
+    added = {**exported["versions"][0], "version": 2, "html": "<p>u</p>", "author": "bo@example.com",
+             "created_at": "2025-01-02T00:00:00+00:00"}
+    bad = {**added, "version": 3, "author": "eve\nexample", "created_at": "2025-01-03T00:00:00+00:00"}
+
+    accepted = client.post_json({**exported, "versions": [*exported["versions"], added]}, "/import")
+    refused = client.post_json({**exported, "versions": [*exported["versions"], added, bad]}, "/import")
+
+    assert accepted.status == 201
+    assert accepted.json()["imported"] == [2] and accepted.json()["skipped"] == [1]
+    assert refused.status == 400
+    assert "v3: author must not contain control characters" in refused.text
+    assert db.execute("SELECT count(*) FROM pergams WHERE id = '0123abcd'").fetchone() == (2,)

@@ -17,7 +17,7 @@ from pergam.meta import Meta, MetaChange, Origin
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
 from pergam.tags import merge_tags
 from pergam.text import EXTRACTOR_VERSION, PageText, extract_text
-from pergam.transfer import ExportedVersion, ImportDocument
+from pergam.transfer import ExportedVersion, ImportDocument, check_written_authors
 
 
 @dataclass(frozen=True)
@@ -395,6 +395,7 @@ class PergamStore:
             if conflict:
                 raise ImportConflict(conflict)
             missing = [v for v in doc.versions if v.version not in present]
+            check_written_authors(missing)
             with conn.cursor() as cur:
                 cur.executemany(
                     "INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)"

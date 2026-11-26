@@ -204,7 +204,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
 - The response is **201** when anything was written, **200** when every version was skipped: `{"id": "abc12345", "imported": [4, 5], "skipped": [1, 2, 3], "origin": {"url": "http://localhost:1111", "id": "abc12345"}, "view_url": "…"}`.
 - Validation follows `POST /pergam` for `type` (trimmed, lowercased, one of this server's [types](#pergam-types)), `author` (trimmed, non-empty) and `note` (see [Version notes](#version-notes)), and is stricter elsewhere, since an export always carries every field:
   - `title` and `html` must be non-empty strings and are stored exactly as sent: `title` is not trimmed and has no `"Pergam"` default;
-  - `title`, `html` and `author` must not contain NUL, and `author` no other control character either (as on `POST /pergam`);
+  - `title`, `html` and `author` must not contain NUL, and the `author` of a version the import writes no other control character either (as on `POST /pergam`); versions already here are only compared, so an export whose older authors predate that rule still imports;
   - `format_version` must be 1 and the id 6 to 16 lowercase hex characters;
   - `version`s must be distinct integers from 1 to 2147483647, at most 10,000 of them per import (a longer history goes in several imports, each carrying the next versions);
   - `created_at` must be ISO 8601 with a UTC offset, between 1970-01-01 and five minutes past the server's clock (the allowed clock skew between servers); it is stored in UTC. Dates need not grow with the version number: older histories, or ones across a clock step, can date a version before the previous one, and they import as they are;

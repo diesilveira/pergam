@@ -117,11 +117,17 @@ def _text(entry: dict[str, Any], field: str, label: str) -> str:
     return value
 
 
-def _author(entry: dict[str, Any], label: str) -> str:
-    try:
-        return parse_author(_text(entry, "author", label))
-    except ValueError as exc:
-        raise TransferError(f"{label}: {exc}") from None
+def check_written_authors(versions: list[ExportedVersion]) -> None:
+    """Refuse an author with control characters among the versions an import writes, as `POST /pergam` does.
+
+    Versions the server already has are only compared, so an export whose stored
+    authors predate the rule still imports over them.
+    """
+    for version in versions:
+        try:
+            parse_author(version.author)
+        except ValueError as exc:
+            raise TransferError(f"v{version.version}: {exc}") from None
 
 
 def _created_at(entry: dict[str, Any], label: str, now: datetime) -> datetime:
@@ -173,7 +179,7 @@ def _version(entry: object, index: int, types: tuple[str, ...], now: datetime) -
         title=_text(entry, "title", label),
         html=html,
         type=pergam_type,
-        author=_author(entry, label),
+        author=_text(entry, "author", label).strip(),
         note=note,
         bytes=len(html.encode("utf-8")),
         created_at=_created_at(entry, label, now),
