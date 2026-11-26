@@ -131,6 +131,8 @@ A published document never runs with the server's privileges, framed or opened o
 
 `/content` is cached for five minutes (`public, max-age=300`), not for good like `/raw`, because the bridge tag and these headers are the server's and may change with an upgrade.
 
+**Upgrading from a build without the sandbox:** earlier builds served `/{id}/v{n}/content` unsandboxed with a one-year `immutable` cache, so a browser that opened one may keep that copy and run it on the server's origin when it opens that URL directly again. Inside the view page the iframe's own `sandbox` attribute still applies to such a copy. The URLs stay the same; on an instance that served those builds to readers who may be targeted, ask them to clear the site's cached data, or put the instance on a new host name.
+
 ### Mermaid
 
 The server ships Mermaid 11.17.2 (`dist/mermaid.min.js` of the npm package, unchanged, MIT, with its licence at `/static/mermaid/11.17.2/LICENSE`) and serves it at `/static/mermaid/11.17.2/mermaid.min.js`, cached for good since the path names the version. A pergam that loads it from there renders its diagrams with no external request, and the skill's template does so on a self-hosted server. Pergams published earlier load Mermaid from `https://cdn.jsdelivr.net`, which the sandbox's CSP still allows, as the hosted viewer does, so they keep rendering. Published documents name that versioned path, so an upgrade adds the new version next to it and keeps shipping the old one.
