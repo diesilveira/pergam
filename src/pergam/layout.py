@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import html as html_lib
 
-from pergam.static_files import STYLESHEET_PATH, THEME_SCRIPT_PATH
+from pergam.static_files import STYLESHEET_PATH, THEME_SCRIPT_PATH, hashed_url
 
 HEAD_ASSETS = (
     '<meta name="color-scheme" content="light dark">'
-    f'<script src="{THEME_SCRIPT_PATH}"></script>'
-    f'<link rel="stylesheet" href="{STYLESHEET_PATH}">'
+    f'<script src="{hashed_url(THEME_SCRIPT_PATH)}"></script>'
+    f'<link rel="stylesheet" href="{hashed_url(STYLESHEET_PATH)}">'
 )
 
 _THEME_TOGGLE = (

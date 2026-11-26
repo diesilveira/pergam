@@ -63,7 +63,7 @@ def test_missing_pergam_in_a_browser_is_a_styled_404(client: Client) -> None:
     assert "<code>Pergam not found</code>" in page
     assert '<a class="btn btn--primary" href="/">Go to the index</a>' in page
     assert 'action="/" method="get" role="search"' in page
-    assert '<link rel="stylesheet" href="/static/pergam.css">' in page
+    assert '<link rel="stylesheet" href="/static/pergam.css?v=' in page
 
 
 @pytest.mark.parametrize(

@@ -34,12 +34,42 @@ def test_stylesheet_and_theme_script_are_static_files(client: Client) -> None:
     assert css.body == (STATIC / "pergam.css").read_bytes()
 
 
+def asset_urls(page: str) -> dict[str, str]:
+    return dict(re.findall(r'(?:href|src)="(/static/(?:pergam\.css|theme\.js))(\?v=[0-9a-f]{12})"', page))
+
+
+def test_asset_urls_carry_a_content_hash_that_is_cached_for_good(client: Client) -> None:
+    urls = asset_urls(client.get("/").text)
+
+    assert set(urls) == {"/static/pergam.css", "/static/theme.js"}
+    for path, version in urls.items():
+        pinned, plain = client.get(path + version), client.get(path)
+        assert pinned.status == 200 and pinned.body == plain.body
+        assert pinned.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert plain.headers["cache-control"] == "public, max-age=300"
+
+
+def test_a_hash_that_is_not_the_current_content_is_not_cached_for_good(client: Client) -> None:
+    resp = client.get("/static/pergam.css?v=000000000000")
+
+    assert resp.status == 200
+    assert resp.headers["cache-control"] == "public, max-age=300"
+
+
+def test_the_hash_follows_the_content(client: Client) -> None:
+    import hashlib
+
+    version = asset_urls(client.get("/").text)["/static/pergam.css"]
+
+    assert version == "?v=" + hashlib.sha256((STATIC / "pergam.css").read_bytes()).hexdigest()[:12]
+
+
 @pytest.mark.parametrize("path", ["/", "/{id}/view", "/{id}/v1/view", "/{id}/diff/v1..v2"])
 def test_every_page_carries_the_shared_assets_and_one_top_bar(client: Client, path: str) -> None:
     page = client.get(path.format(id=publish_two(client))).text
 
-    assert '<link rel="stylesheet" href="/static/pergam.css">' in page
-    assert '<script src="/static/theme.js"></script>' in page
+    assert re.search(r'<link rel="stylesheet" href="/static/pergam\.css\?v=[0-9a-f]{12}">', page)
+    assert re.search(r'<script src="/static/theme\.js\?v=[0-9a-f]{12}"></script>', page)
     assert page.index("/static/theme.js") < page.index("<body")
     assert page.count('<header class="topbar">') == 1
     assert page.count("data-theme-toggle") == 1

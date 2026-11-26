@@ -12,6 +12,7 @@ are served, read once at import.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,14 @@ class StaticFile:
     content_type: str
     versioned: bool
 
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(self.body).hexdigest()[:12]
+
+    def immutable_for(self, requested_digest: str | None) -> bool:
+        """Cached for good: the path names a version, or the URL names this exact content."""
+        return self.versioned or requested_digest == self.digest
+
 
 def _load(relative: str, content_type: str, versioned: bool) -> StaticFile:
     return StaticFile((STATIC_ROOT / relative).read_bytes(), content_type, versioned)
@@ -49,3 +58,12 @@ FILES: dict[str, StaticFile] = {
         f"mermaid/{MERMAID_VERSION}/LICENSE", "text/plain; charset=utf-8", versioned=True
     ),
 }
+
+
+def hashed_url(path: str) -> str:
+    """`path` with `?v=<content digest>`: that URL never changes content, so it is cached for good.
+
+    Pages are never cached and carry this URL, so an upgrade changes it and readers
+    never pair new markup with an old stylesheet. The plain path stays served, briefly cached.
+    """
+    return f"{path}?v={FILES[path].digest}"

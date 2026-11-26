@@ -277,5 +277,7 @@ def test_error_page_has_no_scripted_content_beyond_the_theme_script(browser, sit
 
     page.goto(f"{site['base']}/nope")
 
-    assert page.evaluate("Array.from(document.scripts).map((s) => s.getAttribute('src'))") == ["/static/theme.js"]
+    sources = page.evaluate("Array.from(document.scripts).map((s) => s.getAttribute('src'))")
+
+    assert len(sources) == 1 and sources[0].startswith("/static/theme.js?v=")
     context.close()

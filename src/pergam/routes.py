@@ -271,7 +271,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         static = STATIC_FILES.get(parsed.path)
         if static is not None:
-            cache_control = IMMUTABLE if static.versioned else DERIVED
+            cache_control = IMMUTABLE if static.immutable_for(_first(parse_qs(parsed.query), "v")) else DERIVED
             self._send(200, static.content_type, static.body, cache_control=cache_control, headers=NOSNIFF)
             return
         if path == "healthz":
