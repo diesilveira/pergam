@@ -353,6 +353,8 @@ pergam/
 │   ├── templates/           index, view and diff pages (HTML + CSS)
 │   ├── static/              frame-bridge.js (added to /content) and vendored Mermaid
 │   ├── static_files.py      the files served under /static/
+│   ├── identity.py          the writer, from X-Forwarded-User when trusted
+│   ├── access.py            owners, collaborators and the 403 rules
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── limits.py            largest request body (PERGAM_MAX_BODY_MB)
 │   ├── taxonomy.py          accepted types and badge colours

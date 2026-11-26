@@ -17,6 +17,7 @@ Modules
   public_url.py  host and URL used in `view_url` and on the index
   limits.py      largest request body
   identity.py    the writer, from X-Forwarded-User when trusted
+  access.py      owners, collaborators and who may change a pergam
   static_files.py files served under /static/ (bridge, vendored Mermaid)
   taxonomy.py    accepted types and type badge colours
   migrate.py     numbered migrations applied at startup
