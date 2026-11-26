@@ -9,8 +9,8 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | Method   | Path                  | Description                                                          |
 | -------- | --------------------- | -------------------------------------------------------------------- |
 | `POST`   | `/pergam`             | Body `{title, html, type, author, id?, tags?, note?}`; `author` must not contain control characters (**400**). Returns `{id, version, view_url, title, type, author}`, plus `tags` and `note` when the request sent them. Omit `id` for a new pergam; include it to bump the version of an existing one. `tags` are merged into the id's tags (see [Tags and metadata](#tags-and-metadata)); `note` describes this version (see [Version notes](#version-notes)). |
-| `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<search>` (title or text), `?archived=1`. See [Index](#index) and [Search](#search). |
-| `GET`    | `/api/pergams`        | JSON index: the same filters, order, pages and counts as `/`. See [JSON API](#json-api). |
+| `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<search>` (title or text), `?archived=1`; order: `?sort=recent` (default) or `?sort=title`. See [Index](#index) and [Search](#search). |
+| `GET`    | `/api/pergams`        | JSON index: the same filters, sort, pages and counts as `/`. See [JSON API](#json-api). |
 | `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags, `origin` and every version of one pergam. **404** for an unknown id. |
 | `GET`    | `/{id}/view`          | View page of the latest version: a bar with title, type, tags, author and versions, and the document in a frame. See [View](#view). |
 | `GET`    | `/{id}/v{n}/view`     | View page of a specific version; tells when a newer one exists.      |
@@ -236,15 +236,21 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 
 `GET /` lists the latest version of every pergam.
 
-- **Filters** combine with AND: `type`, `author`, `tag` (normalised like stored tags, so `?tag=Q3` matches `q3`) and `q` (title or text, see [Search](#search)). Clicking a type, author or tag pill sets that filter and keeps the others; clicking the active one clears it.
+- **Layout**: a left column of filters with counts (type, tags, author, archived state; past eight tags the rest fold under "Show all"), the heading with one line of instance stats under it (pergams, authors, versions, new pergams in the last seven days, payload), then the pinned pergams as cards, then the list. Each row shows the title, the id's tags, a one-line summary (or, on a search, the highlighted snippet), the type, the author, the version and how long ago the latest version was published. The title link covers the whole row; its tags, type and author stay links of their own. Below 860 px the filter column collapses behind a "Filters" button (open without script).
+- **Filters** combine with AND: `type`, `author`, `tag` (normalised like stored tags, so `?tag=Q3` matches `q3`) and `q` (title or text, see [Search](#search)). Clicking a type, author or tag in the column, a row or a card sets that filter and keeps the others; clicking the active one clears it. An active value that nothing matches stays listed, at zero, so it can be cleared.
 - **Archived** pergams are left out unless `?archived=1`, which lists them alongside the rest, marked `archived`. They stay reachable by URL either way. Archiving belongs to the id, so a new version of an archived pergam stays archived and hidden, and the `201` does not say so; un-archive it with `PATCH /{id}/meta` `{"archived": false}`.
-- **Order**: pinned first, then by the latest version's `created_at` (newest first), then by id. The order is total, so paging is stable.
-- **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters. While the data does not change, following the links visits every matching pergam exactly once. A pergam that gets a new version or is pinned, unpinned, archived or retagged mid-crawl changes its sort key or match, so it can move to a page already seen (skipped) or one still ahead (seen twice). A malformed `cursor` is **400**.
-- Pill counts (type, author, tag) and the count under the title cover every visible pergam, not only the current page: hidden archived pergams are left out of them and the title line says how many are hidden. The stats cards cover the whole instance, archived included. "clear all" drops every filter, `archived=1` included.
+- **Order**: `?sort=recent` (the default): pinned first, then by the latest version's `created_at` (newest first), then by id. `?sort=title`: by title, case-insensitive (Postgres `lower(title)` in the database's collation), then by id. Both orders are total, so paging is stable. Any other `sort` is **400**. Filter, sort and clear links keep the sort and start again from the first page.
+- **Pinned cards**: on the first page, up to 100 pinned pergams that match the filters (search included) show as cards above the list, in the page's order, with their summary; the list leaves them out on every page, so each pergam shows once. Pinned pergams past those 100 stay in the list, marked `pinned`.
+- **Date groups**: sorted by recent, the list is grouped under Today, This week, This month and Earlier, from the latest version's `created_at` in UTC: the same day, the same ISO week (Monday first), the same calendar month, anything before. Sorted by title, it is one list.
+- **Summary**: the start of the latest version's extracted text (see [Search](#search)): lines that only repeat the title are skipped, the rest joined into one line and cut at the first sentence end, or at a word before 160 characters with `…`. It is plain text, escaped like everything else on the page. A version whose text is not extracted yet, or is empty, has no summary rather than a wrong one.
+- **Pages** hold 100 pergams. "Load more" carries an opaque `cursor` (the sort key of the last row) plus the active filters and sort; with script it appends the next page in place (and moves the focus to its first row), without it it is a link to that page, which then offers "← first page". While the data does not change, following the links visits every matching pergam exactly once, in either order. A pergam that gets a new version or is pinned, unpinned, archived or retagged mid-crawl changes its sort key or match, so it can move to a page already seen (skipped) or one still ahead (seen twice). A cursor is tied to its order: a malformed one, or one issued by the other order, is **400**.
+- **Counts** (type, author, tag) and the "showing N of M" line cover every visible pergam, not only the current page: hidden archived pergams are left out of them and the line says how many are hidden; the Archived entry counts every archived pergam. On a search they cover the results instead: the type and author counts add up to the number of results, and Archived counts the archived pergams that match the same search and filters. The stats line covers the whole instance, archived included. "clear all" drops every filter, `archived=1` included, and keeps the sort.
+- **Density**: the "Compact" button hides the summary line and tightens the rows; the choice is remembered in `localStorage` under `pergam-density` and applied before first paint. Without script the button is hidden.
+- **Empty results** say what was searched or filtered and offer a way out: search every pergam (dropping the other filters, archived included), clear the search, or clear the filters.
 
 ## Pages and theme
 
-The index, view and diff pages share one stylesheet, `/static/pergam.css`, and one script, `/static/theme.js`. Pages link them as `…?v=<content digest>` (`layout.HEAD_ASSETS`, `static_files.hashed_url`) and that exact URL is served `public, max-age=31536000, immutable`; pages themselves are never cached, so an upgrade changes the URLs and readers never pair new markup with an old stylesheet. The plain paths stay served, with `max-age=300`. They use system fonts only and load nothing from elsewhere. The colour tokens use `light-dark()` and `color-mix()`, so the floor is a browser from 2024: Chrome 123, Firefox 120, Safari 17.5; older ones show the pages without colours. The published document inside the view page keeps its own look.
+The index, view and diff pages share one stylesheet, `/static/pergam.css`, and two scripts, `/static/theme.js` and `/static/shortcuts.js`; the index adds `/static/index.js` (density, the collapsing filter column, "Load more"). Every script is a same-origin static file, none inline. Pages link them as `…?v=<content digest>` (`layout.HEAD_ASSETS`, `static_files.hashed_url`) and that exact URL is served `public, max-age=31536000, immutable`; pages themselves are never cached, so an upgrade changes the URLs and readers never pair new markup with an old stylesheet. The plain paths stay served, with `max-age=300`. They use system fonts only and load nothing from elsewhere. The colour tokens use `light-dark()` and `color-mix()`, so the floor is a browser from 2024: Chrome 123, Firefox 120, Safari 17.5; older ones show the pages without colours. The published document inside the view page keeps its own look.
 
 **Themes.** Every colour is a token holding a `light-dark(light, dark)` pair, resolved by the element's colour scheme: the system's (`prefers-color-scheme`) unless the reader has chosen. The top bar's toggle cycles **system, light, dark** and back: system is no stored value and no `data-theme`; light and dark are stored in `localStorage` under `pergam-theme` and set `<html data-theme>`. `theme.js` runs synchronously in `<head>`, before the body is parsed, so a remembered choice is on `<html>` before first paint, and other open tabs follow a change. The toggle's glyph and `aria-label` name the current mode and the next. Without script the system scheme applies and the toggle stays hidden. Text tokens meet WCAG AA (4.5:1) on `--bg`, `--surface` and `--raised` in both themes, and on the diff and highlight backgrounds, which tests check.
 
@@ -267,9 +273,14 @@ The index, view and diff pages share one stylesheet, `/static/pergam.css`, and o
 | `.tag` | a tag pill, `<a>` or `<span>` |
 | `.avatar` | author initials on a hue: `style="--h:0-359"`, see `index_page.avatar` |
 | `.ver` | a version chip (`v3`), monospace accent |
+| `.type-dot` | a small swatch of a type's colour (`style="--type-rgb:R,G,B"`, as on `.badge`), used by the index's filter column |
 | `.input`, `.kbd`, `.card`, `.plus`, `.minus`, `.muted`, `.sr-only` | search field, key cap, bordered surface, diff counts, secondary text, text for screen readers only; `.plus` and `.minus` are the diff's added and removed counts and live in the shared sheet only so the diff colours stay in one place |
 
-**The top bar** is rendered in one place, `pergam.layout.top_bar(host=None, middle="", actions="")`: the logo linking to `/`, the optional server `host` (plain text, escaped there), then `middle` (grows with the bar), then `actions` and the theme toggle at the right edge. `middle` and `actions` are HTML the caller has escaped. A page puts `layout.HEAD_ASSETS` (colour-scheme meta, `theme.js`, the stylesheet link) in `<head>` and the bar first in `<body>`; its template fills `${head_assets}` and `${top_bar}`.
+**The top bar** is rendered in one place, `pergam.layout.top_bar(host=None, middle="", actions="", search=None)`: the logo linking to `/`, the optional server `host` (plain text, escaped there), then `middle` (grows with the bar), then the search field, then `actions` and the theme toggle at the right edge. `middle` and `actions` are HTML the caller has escaped. A page puts `layout.HEAD_ASSETS` (colour-scheme meta, `theme.js`, the stylesheet link, `shortcuts.js`) in `<head>` and the bar first in `<body>`; its template fills `${head_assets}` and `${top_bar}`.
+
+**Search field.** Every page's top bar carries the same search form (`.topbar__search`, `role="search"`, labelled "Search title and text"), which submits `q` to the index, so a search from a view or diff page lands on the index with the query applied. `search` is a `layout.SearchBox(query, keep)`: the index passes the current `q` and the filters a new search keeps (`type`, `author`, `tag`, `archived`, `sort`, as hidden fields); other pages pass nothing and get an empty field. Below 640 px it takes its own row of the bar.
+
+**Shortcuts** (`shortcuts.js`, one listener on the document): `/` focuses the search field and selects its text; `Esc` in the field clears it, and a second `Esc` leaves it. They never fire while the focus is in an input, a text area, a select or editable content, nor with Ctrl, ⌘ or Alt held, and the published document's frame keeps its own keys.
 
 **Page-local helpers.** The view and diff pages still define a few classes in their own CSS, around the shared top bar's `middle` and `actions`: `.bar__title` (the page's `<h1>`, both pages), `.bar__links` (the text links in `actions`, both), `.bar__range` (the version range, diff), and `.bar__tags`, `.bar__author`, `.bar__origin`, `.bar__print` (view). They are layout around shared components, not shared components, and a page that needs them copies them for now; the next step is to promote the ones a third page uses.
 
@@ -283,7 +294,7 @@ A request that prefers `text/html` (a browser: `Accept: text/html,…`) and is a
 
 ## JSON API
 
-`GET /api/pergams` is the index as JSON. It takes the same query parameters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`) and comes from the same query, so for the same parameters it lists exactly the pergams the HTML index lists, in the same order, 100 per page.
+`GET /api/pergams` is the index as JSON. It takes the same query parameters as `/` (`type`, `author`, `tag`, `q`, `archived`, `sort`, `cursor`) and comes from the same query, so for the same parameters it lists the pergams the HTML index lists, 100 per page. In the `recent` order the page shows them in the same order (pinned cards first); in the `title` order the JSON keeps pinned pergams in their title position, where the page lifts them into cards.
 
 ```json
 {
@@ -291,8 +302,10 @@ A request that prefers `text/html` (a browser: `Accept: text/html,…`) and is a
     {"id": "abc12345", "version": 2, "title": "Release notes", "type": "plan", "author": "you@example.com",
      "created_at": "2025-03-04T05:06:07+00:00", "bytes": 5120, "versions": 2, "tags": ["q3"],
      "archived": false, "pinned": false, "view_url": "http://localhost:1111/abc12345/view",
-     "text_url": "http://localhost:1111/abc12345/text", "snippet": null}
+     "text_url": "http://localhost:1111/abc12345/text", "snippet": null,
+     "summary": "What ships in this release and what moves to the next one."}
   ],
+  "sort": "recent",
   "matching": 1,
   "next_cursor": null,
   "archived_count": 0,
@@ -302,9 +315,10 @@ A request that prefers `text/html` (a browser: `Accept: text/html,…`) and is a
 }
 ```
 
-- Each row describes the latest version; `versions` is how many the id has. `snippet` is the matching text fragment (plain text) when `q` matched the body, else `null`.
-- `matching` counts every pergam that matches the filters, across pages. `next_cursor` is `null` on the last page; otherwise pass it back as `?cursor=` with the same filters. A malformed cursor is **400**.
-- `counts` and `stats` are the index's pills and cards: counts cover every visible pergam, stats the whole instance.
+- Each row describes the latest version; `versions` is how many the id has. `snippet` is the matching text fragment (plain text) when `q` matched the body, else `null`. `summary` is the row's one-line summary (plain text, see [Index](#index)); it is left out, not `null`, while the version's text is not extracted yet or when it is empty.
+- `sort` is the order used, `recent` or `title` (any other `?sort=` is **400**).
+- `matching` counts every pergam that matches the filters, across pages. `next_cursor` is `null` on the last page; otherwise pass it back as `?cursor=` with the same filters and sort. A malformed cursor, or one from the other sort, is **400**.
+- `counts`, `archived_count` and `stats` are the index's filter counts and stats line: counts cover every visible pergam, or on a search the results (see [Index](#index)); stats cover the whole instance.
 
 `GET /api/pergams/{id}` returns one pergam: the latest version's `version`, `title`, `type`, `author`, `created_at`, `bytes`, `note`, `view_url` and `text_url`, the id's `tags`, `archived`, `pinned` and `origin` (`{url, id}` of the server it was [imported](#export-and-import) from, else `null`), and `versions`, newest first, each with `version`, `title`, `type`, `author`, `bytes`, `created_at`, `note` and its pinned `view_url` and `text_url` (`/{id}/v{n}/view`, `/{id}/v{n}/text`). An unknown id is **404**.
 
@@ -340,9 +354,10 @@ curl -sS http://localhost:1111/abc12345/text
 
 - **Text** is the visible text of the HTML, extracted at publish time by the same parse that serves `GET /{id}/text`, stored as plain lines (the same blocks without Markdown syntax, so snippets show no `#` or `|`). The contents of `script`, `style`, `template`, `noscript` and `head` are never indexed.
 - **Query syntax** is Postgres' web-search syntax: words are ANDed, `"quoted phrase"` matches the words in order, `or` and `-excluded` work. Matching is language-neutral (`simple` configuration): case-insensitive, no stemming, so `region` does not match `regions`, and no accent folding, so `informacion` does not match `información`. Title words weigh more than body words.
-- **Snippet**: when the text matched, the row shows the matching fragment with the hits highlighted. A title-only match shows no snippet.
+- **Snippet**: when the text matched, the row shows the matching fragment with the hits highlighted, in place of its summary. A title-only match shows the summary.
+- **Filters on a search**: the filter column counts only what is in the results (see [Index](#index)). The search field sits in every page's top bar (`/` focuses it, see [Pages and theme](#pages-and-theme)).
 - `q` is at most 200 characters (after trimming); longer is **400**, on `/` and on `/api/pergams`.
-- **Order and paging** are the same as without `q` (pinned, newest, id), so the cursor works unchanged.
+- **Order and paging** are the same as without `q`, in either sort, so the cursor works unchanged.
 - Only the first 100,000 characters of a version's text are indexed; the rest is still served by `/{id}/text`.
 
 Versions published before search existed are indexed by the server itself: after applying migrations it backfills them in the background, in batches of 50, each committed on its own. Every text row records the extractor version that wrote it, and the same backfill re-extracts rows written by an older extractor, so an upgrade that improves extraction also refreshes text that is already stored. The server answers requests meanwhile, and until a version is indexed `q` still finds it by title. Stopping the server mid-way is safe: the next start resumes with what is missing or stale. A document the extractor fails on is logged (`text extraction failed for <id> v<n>`) and stored with empty text, so it is still found by title and never stops the run or its publish. The backfill only reads `pergams`; the log says `text backfill: filled N versions` when it did any work.
@@ -420,7 +435,7 @@ pergam/
 │   ├── api.py               JSON bodies of /api/pergams
 │   ├── feed.py              Atom feed of recent publications
 │   ├── templates/           index, view, diff and error pages (HTML + layout CSS)
-│   ├── static/              pergam.css and theme.js (every page), frame-bridge.js (added to /content), vendored Mermaid
+│   ├── static/              pergam.css, theme.js and shortcuts.js (every page), index.js (index), frame-bridge.js (added to /content), vendored Mermaid
 │   ├── static_files.py      the files served under /static/
 │   ├── identity.py          the writer, from X-Forwarded-User when trusted
 │   ├── access.py            owners, collaborators and the 403 rules
@@ -434,8 +449,9 @@ pergam/
 │   ├── ids.py               shape of a pergam id
 │   ├── text.py              visible text of a pergam as Markdown (search and /text)
 │   ├── search.py            full-text search SQL and snippets
+│   ├── summary.py           one-line summary of a pergam from its extracted text
 │   ├── backfill.py          text of versions without text or with stale text
-│   ├── cursor.py            keyset cursor for index pagination
+│   ├── cursor.py            sort orders and their keyset cursors for index pagination
 │   └── migrate.py           numbered migrations runner
 ├── db/
 │   └── migrations/          NNN_*.sql, applied at server startup
@@ -485,7 +501,7 @@ make test
 
 That creates `.venv`, installs `requirements-dev.txt` and runs `pytest`. The suite boots the real server (`python3 src/pergam/server.py`) against a throwaway Postgres: by default it starts a `postgres:15-alpine` container named `pergam-test-*` on a random local port with no volume, and removes it at the end. Set `TEST_DATABASE_URL` to an admin connection string to use an existing server instead (CI does this with a `services: postgres` container). Either way every run works in its own `pergam_test_*` database, dropped afterwards; the bundled compose database is never touched.
 
-`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. `tests/test_ui_browser.py` does the same for the themes: both colour schemes, the toggle and its remembered choice (applied before first paint), keyboard use, phone width and the legibility of every type badge colour. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
+`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. `tests/test_ui_browser.py` does the same for the themes: both colour schemes, the toggle and its remembered choice (applied before first paint), keyboard use, phone width and the legibility of every type badge colour; `tests/test_index_browser.py` for the index and search: the shortcuts, searching from a view or diff page, filter counts on a search, density, the collapsing filter column, "Load more" in both orders, keyboard focus and phone width in both themes. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
 
 ## Make targets
 
