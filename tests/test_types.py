@@ -6,7 +6,7 @@ import psycopg
 import pytest
 
 from pergam.taxonomy import DEFAULT_TYPES, parse_types, type_rgb
-from support import Client, DatabaseFactory
+from support import Client, DatabaseFactory, listed_order
 
 DEFAULT_ERROR = "type must be one of ['informe', 'investigacion', 'otro', 'plan', 'reporte']"
 
@@ -64,8 +64,8 @@ def test_custom_type_is_accepted_filterable_and_coloured(custom: tuple[Client, s
 
     page = client.get("/?type=runbook").text
 
-    assert f'data-href="/{pid}/view"' in page
-    assert f'data-href="/{other}/view"' not in page
+    assert pid in listed_order(page)
+    assert other not in listed_order(page)
     rgb = ",".join(map(str, type_rgb("runbook")))
     assert re.search(rf'class="badge" style="--type-rgb:{rgb}"[^>]*>runbook</a>', page)
 
@@ -90,6 +90,6 @@ def test_stored_types_no_longer_listed_still_render_and_filter(custom: tuple[Cli
     page = client.get("/?type=informe").text
 
     assert client.get("/0dd00001/v1/raw").text == "<p>old</p>"
-    assert 'data-href="/0dd00001/view"' in page
+    assert "0dd00001" in listed_order(page)
     assert re.search(r'class="badge" style="--type-rgb:86,211,100"[^>]*>informe</a>', page)
-    assert re.search(r'>informe <span class="cnt">1</span>', page)
+    assert re.search(r'>informe<span class="facet__count">1</span>', page)

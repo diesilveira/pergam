@@ -93,14 +93,17 @@ def throwaway_postgres() -> Iterator[str]:
         subprocess.run(["docker", "rm", "-fv", name], capture_output=True)
 
 
-def listed_ids(html: str, *ids: str) -> set[str]:
-    """The ids among `ids` that the index page lists."""
-    return {pid for pid in ids if f'data-href="/{pid}/view"' in html}
+LISTED = re.compile(r'<a class="(?:pin|row)__title" href="/([a-f0-9]+)/view"')
 
 
 def listed_order(html: str) -> list[str]:
-    """Ids the index page lists, in page order."""
-    return re.findall(r'data-href="/([a-f0-9]+)/view"', html)
+    """Ids the index page lists, pinned cards then rows, in page order."""
+    return LISTED.findall(html)
+
+
+def listed_ids(html: str, *ids: str) -> set[str]:
+    """The ids among `ids` that the index page lists."""
+    return set(listed_order(html)) & set(ids)
 
 
 SEEDED = 230

@@ -12,9 +12,10 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from pergam.access import Access, require_editor, require_import_authors, require_owner
-from pergam.cursor import IndexCursor
+from pergam.cursor import DEFAULT_SORT, Cursor, IndexCursor, TitleCursor
 from pergam.meta import Meta, MetaChange, Origin
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
+from pergam.summary import SOURCE_CHARS, summarise
 from pergam.tags import merge_tags
 from pergam.text import EXTRACTOR_VERSION, PageText, extract_text
 from pergam.transfer import ExportedVersion, ImportDocument, check_written_authors
@@ -66,7 +67,8 @@ class IndexFilters:
     tag: str | None = None
     q: str | None = None
     archived: bool = False
-    cursor: IndexCursor | None = None
+    cursor: Cursor | None = None
+    sort: str = DEFAULT_SORT
 
     @property
     def active(self) -> bool:
@@ -87,9 +89,12 @@ class IndexRow:
     archived: bool = False
     pinned: bool = False
     snippet: Snippet | None = None
+    summary: str | None = None
+    title_key: str = ""
 
-    @property
-    def cursor(self) -> IndexCursor:
+    def cursor(self, sort: str) -> Cursor:
+        if sort == "title":
+            return TitleCursor(self.title_key, self.id)
         return IndexCursor(self.pinned, self.created_at, self.id)
 
 
@@ -112,7 +117,8 @@ class IndexData:
     stats: IndexStats
     matching: int
     archived_count: int
-    next_cursor: IndexCursor | None
+    next_cursor: Cursor | None
+    pinned: list[IndexRow] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -243,6 +249,12 @@ def save_text(conn: psycopg.Connection, versions: list[tuple[str, int, str]]) ->
                 for pergam_id, version, html in versions
             ],
         )
+
+
+def index_row(row: tuple[Any, ...]) -> IndexRow:
+    """An `IndexRow` from the index query's columns: the row, its headline, text prefix and title key."""
+    *fields, headline, body, title_key = row
+    return IndexRow(*fields, snippet=Snippet.of(headline), summary=summarise(body, fields[2]), title_key=title_key)
 
 
 class PergamStore:
@@ -442,58 +454,76 @@ class PergamStore:
     def index(self, filters: IndexFilters, page_size: int = PAGE_SIZE) -> IndexData:
         """One page of the index plus the counts around it.
 
-        Rows sort pinned first, then newest first, then by id, so the order is total
-        and a page resumes strictly after `filters.cursor`. Pill counts cover every
-        visible pergam (archived ones only with `filters.archived`), not just the page.
+        `recent` sorts pinned first, then newest first, then by id; `title` sorts by
+        `lower(title)`, then id. Both orders are total, so a page resumes strictly
+        after `filters.cursor`. Pill counts cover every visible pergam (archived ones
+        only with `filters.archived`), not just the page. `pinned` holds the first
+        `page_size` pinned pergams that match, in the same order, whatever the page.
         """
         scope = "" if filters.archived else " AND NOT COALESCE(m.archived, false)"
-        where = "WHERE true" + scope
-        params: dict[str, Any] = {}
+        narrowed = ""
+        params: dict[str, Any] = {"source_chars": SOURCE_CHARS}
         if filters.type:
-            where += " AND l.type = %(type)s"
+            narrowed += " AND l.type = %(type)s"
             params["type"] = filters.type
         if filters.author:
-            where += " AND l.author = %(author)s"
+            narrowed += " AND l.author = %(author)s"
             params["author"] = filters.author
         if filters.tag:
-            where += " AND m.tags @> ARRAY[%(tag)s]::text[]"
+            narrowed += " AND m.tags @> ARRAY[%(tag)s]::text[]"
             params["tag"] = filters.tag
         if filters.q:
-            where += f" AND {MATCHES_SQL}"
+            narrowed += f" AND {MATCHES_SQL}"
             params.update(search_params(filters.q))
+        where = f"WHERE true{scope}{narrowed}"
+        by_title = filters.sort == "title"
+        order = "lower(l.title), l.id" if by_title else "COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC"
         page_where = where
-        if filters.cursor:
+        if isinstance(filters.cursor, TitleCursor):
+            page_where += " AND (lower(l.title), l.id) > (%(c_title)s, %(c_id)s)"
+            params.update(c_title=filters.cursor.title_key, c_id=filters.cursor.id)
+        elif isinstance(filters.cursor, IndexCursor):
             page_where += " AND (COALESCE(m.pinned, false), l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
             params.update(c_pinned=filters.cursor.pinned, c_at=filters.cursor.created_at, c_id=filters.cursor.id)
         params["limit"] = page_size + 1
+        params["pinned_limit"] = page_size
         joined = "FROM pergams_latest l LEFT JOIN pergam_meta m ON m.id = l.id"
-        searched = joined + " LEFT JOIN pergam_text t ON t.id = l.id AND t.version = l.version" if filters.q else joined
+        searched = joined + " LEFT JOIN pergam_text t ON t.id = l.id AND t.version = l.version"
+        counted_from, counted_where = joined, ""
         headline = HEADLINE_SQL if filters.q else "NULL"
+        columns = f"""
+            l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
+            (SELECT count(*) FROM pergams p WHERE p.id = l.id),
+            COALESCE(m.tags, '{{}}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
+            {headline}, left(t.body, %(source_chars)s), lower(l.title)
+        """
 
         with self.pool.connection() as conn:
             rows = conn.execute(
-                f"""
-                SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
-                       (SELECT count(*) FROM pergams p WHERE p.id = l.id),
-                       COALESCE(m.tags, '{{}}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
-                       {headline}
-                {searched} {page_where}
-                ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC
-                LIMIT %(limit)s
-                """,
+                f"SELECT {columns} {searched} {page_where} ORDER BY {order} LIMIT %(limit)s", params
+            ).fetchall()
+            pinned = conn.execute(
+                f"SELECT {columns} {searched} {where} AND COALESCE(m.pinned, false)"
+                f" ORDER BY {order} LIMIT %(pinned_limit)s",
                 params,
             ).fetchall()
             matching = conn.execute(f"SELECT count(*) {searched} {where}", params).fetchone()[0]
             type_counts = conn.execute(
-                f"SELECT l.type, count(*) {joined} WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
+                f"SELECT l.type, count(*) {counted_from} WHERE true{scope}{counted_where} GROUP BY 1 ORDER BY 2 DESC, 1",
+                params,
             ).fetchall()
             author_counts = conn.execute(
-                f"SELECT l.author, count(*) {joined} WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
+                f"SELECT l.author, count(*) {counted_from} WHERE true{scope}{counted_where} GROUP BY 1 ORDER BY 2 DESC, 1",
+                params,
             ).fetchall()
             tag_counts = conn.execute(
-                f"SELECT t, count(*) {joined} CROSS JOIN unnest(m.tags) t WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
+                f"SELECT tag, count(*) {counted_from} CROSS JOIN unnest(m.tags) tag WHERE true{scope}{counted_where}"
+                " GROUP BY 1 ORDER BY 2 DESC, 1",
+                params,
             ).fetchall()
-            archived_count = conn.execute("SELECT count(*) " + joined + " WHERE m.archived").fetchone()[0]
+            archived_count = conn.execute(
+                f"SELECT count(*) {counted_from} WHERE m.archived{counted_where}", params
+            ).fetchone()[0]
             stats = conn.execute(
                 """
                 SELECT
@@ -506,7 +536,7 @@ class PergamStore:
                 """
             ).fetchone()
 
-        page = [IndexRow(*row[:-1], snippet=Snippet.of(row[-1])) for row in rows[:page_size]]
+        page = [index_row(row) for row in rows[:page_size]]
         return IndexData(
             rows=page,
             type_counts=[(t, c) for t, c in type_counts],
@@ -515,7 +545,8 @@ class PergamStore:
             stats=IndexStats(*stats),
             matching=matching,
             archived_count=archived_count,
-            next_cursor=page[-1].cursor if len(rows) > page_size else None,
+            next_cursor=page[-1].cursor(filters.sort) if len(rows) > page_size else None,
+            pinned=[index_row(row) for row in pinned],
         )
 
     def feed(self, tag: str | None, author: str | None, limit: int = FEED_SIZE) -> list[FeedEntry]:

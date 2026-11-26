@@ -8,13 +8,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from pergam.cursor import DEFAULT_SORT
 from pergam.meta import Meta
 from pergam.public_url import PublicAddress
 from pergam.store import IndexData, IndexRow, VersionInfo
 
 
 def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
-    return {
+    """`summary` is left out, not null, while the version's text has not been extracted."""
+    body = {
         "id": row.id,
         "version": row.version,
         "title": row.title,
@@ -30,12 +32,16 @@ def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
         "text_url": public.url(f"{row.id}/text"),
         "snippet": row.snippet.text() if row.snippet else None,
     }
+    if row.summary is not None:
+        body["summary"] = row.summary
+    return body
 
 
-def index_json(data: IndexData, public: PublicAddress) -> dict[str, Any]:
+def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT) -> dict[str, Any]:
     stats = data.stats
     return {
         "pergams": [_row(row, public) for row in data.rows],
+        "sort": sort,
         "matching": data.matching,
         "next_cursor": data.next_cursor.encode() if data.next_cursor else None,
         "archived_count": data.archived_count,

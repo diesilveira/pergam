@@ -85,6 +85,7 @@ def test_api_index_row_shape(client: Client, catalogue: dict[str, str]) -> None:
         "view_url": f"http://localhost:{port}/{catalogue['notes']}/view",
         "text_url": f"http://localhost:{port}/{catalogue['notes']}/text",
         "snippet": None,
+        "summary": "doc",
     }
 
 

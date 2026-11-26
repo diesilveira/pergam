@@ -74,12 +74,12 @@ def test_only_the_latest_version_is_searched(client: Client) -> None:
 def test_body_match_shows_a_highlighted_snippet(client: Client, searchable: dict[str, str]) -> None:
     page = client.get("/?q=downtime").text
 
-    assert '<p class="row__snippet">' in page
+    assert '<span class="row__snippet">' in page
     assert "<mark>downtime</mark>" in page
 
 
 def test_title_only_match_has_no_snippet(client: Client, searchable: dict[str, str]) -> None:
-    assert '<p class="row__snippet">' not in client.get("/?q=budget").text
+    assert '<span class="row__snippet">' not in client.get("/?q=budget").text
 
 
 def test_snippet_escapes_body_text_except_the_highlight(client: Client) -> None:
@@ -94,7 +94,7 @@ def test_snippet_escapes_body_text_except_the_highlight(client: Client) -> None:
 
 
 def test_matching_count_includes_body_matches(client: Client, searchable: dict[str, str]) -> None:
-    assert "showing 2 of 3" in client.get("/?q=downtime").text
+    assert "<h1>2 results</h1>" in client.get("/?q=downtime").text
 
 
 def wait_for_text_rows(url: str, expected: int, timeout: float = 10.0) -> None:

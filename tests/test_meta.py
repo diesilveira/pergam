@@ -5,7 +5,7 @@ import json
 import psycopg
 import pytest
 
-from support import Client, Response
+from support import Client, Response, listed_order
 
 
 def patch(client: Client, pergam_id: str, payload: object) -> Response:
@@ -145,4 +145,4 @@ def test_new_version_keeps_archived_and_pinned(client: Client) -> None:
     client.publish(id=pid, html="<p>v2</p>", tags=["more"])
 
     assert client.get(f"/{pid}/meta").json() == {"id": pid, "tags": ["more"], "archived": True, "pinned": True}
-    assert f'data-href="/{pid}/view"' not in client.get("/").text
+    assert pid not in listed_order(client.get("/").text)
