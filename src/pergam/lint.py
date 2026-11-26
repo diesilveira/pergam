@@ -15,6 +15,9 @@ of the tag it is about:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from heapq import merge
+from itertools import islice
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
@@ -160,6 +163,9 @@ class _Linter(HTMLParser):
         self.in_style = False
 
     def add(self, rule: str, severity: str, message: str, position: tuple[int, int] | None = None) -> None:
+        """Keep at most one finding past `MAX_FINDINGS`: enough to tell that the list was cut."""
+        if len(self.findings) > MAX_FINDINGS:
+            return
         line, offset = position or self.getpos()
         self.findings.append(Finding(rule, severity, line, offset + 1, message))
 
@@ -237,16 +243,29 @@ class _Linter(HTMLParser):
         super().close()
         if self.mermaid is not None:
             self.finish_mermaid()
+
+    def missing_anchors(self) -> Iterator[Finding]:
+        """Links to an absent `#name`, in document order, made only as they are consumed."""
         for href, line, offset in self.anchor_links:
             name = unquote(href[1:])
             if name and name.lower() != "top" and name not in self.targets:
-                self.add("missing-anchor", "error", f"link to {_shown(href)} has no element with id {name!r}", (line, offset))
+                yield Finding("missing-anchor", "error", line, offset + 1, f"link to {_shown(href)} has no element with id {name!r}")
+
+
+def _position(finding: Finding) -> tuple[int, int]:
+    return finding.line, finding.column
 
 
 def lint_html(html: str) -> LintResult:
-    """Findings in document order, at most `MAX_FINDINGS` of them."""
+    """Findings in document order, at most `MAX_FINDINGS` of them.
+
+    Findings met while parsing stop being kept one past the cap, and anchor
+    findings are produced lazily and merged in, so memory stays bounded by the
+    cap rather than by the number of problems in the document.
+    """
     linter = _Linter()
     linter.feed(html)
     linter.close()
-    ordered = sorted(linter.findings, key=lambda finding: (finding.line, finding.column))
-    return LintResult(ordered[:MAX_FINDINGS], len(ordered) > MAX_FINDINGS)
+    parsed = sorted(linter.findings, key=_position)
+    merged = list(islice(merge(parsed, linter.missing_anchors(), key=_position), MAX_FINDINGS + 1))
+    return LintResult(merged[:MAX_FINDINGS], len(merged) > MAX_FINDINGS)

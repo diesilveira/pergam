@@ -6,7 +6,7 @@ import time
 import psycopg
 import pytest
 
-from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, lint_html
+from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, _Linter, lint_html
 from support import Client
 
 TABLES = ("pergams", "pergam_meta", "pergam_text", "pergam_note")
@@ -186,3 +186,23 @@ def test_lint_has_its_own_small_body_limit(client: Client) -> None:
     resp = client.request("POST", "/lint", json.dumps({"html": "<p>x</p>"}).encode(), headers)
 
     assert resp.status == 413
+
+
+def test_findings_past_the_cap_are_not_kept_while_parsing() -> None:
+    linter = _Linter()
+    linter.feed('<img src="https://img.example.com/a.png">' * (MAX_FINDINGS * 20))
+    linter.close()
+
+    assert len(linter.findings) == MAX_FINDINGS + 1
+
+
+def test_capped_findings_are_the_first_in_document_order_across_rules() -> None:
+    html = '<a href="#gone">x</a>\n<img src="https://img.example.com/a.png">\n' * MAX_FINDINGS
+
+    result = lint_html(html)
+
+    assert result.truncated
+    assert [(f.rule, f.line) for f in result.findings[:4]] == [
+        ("missing-anchor", 1), ("external-resource", 2), ("missing-anchor", 3), ("external-resource", 4)
+    ]
+    assert result.findings[-1].line == MAX_FINDINGS
