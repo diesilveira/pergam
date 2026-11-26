@@ -10,6 +10,8 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | -------- | --------------------- | -------------------------------------------------------------------- |
 | `POST`   | `/pergam`             | Body `{title, html, type, author, id?, tags?}`. Returns `{id, version, view_url, title, type, author}`, plus `tags` when the request sent them. Omit `id` for a new pergam; include it to bump the version of an existing one. `tags` are merged into the id's tags (see [Tags and metadata](#tags-and-metadata)). |
 | `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<search>` (title or text), `?archived=1`. See [Index](#index) and [Search](#search). |
+| `GET`    | `/api/pergams`        | JSON index: the same filters, order, pages and counts as `/`. See [JSON API](#json-api). |
+| `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags and every version of one pergam. **404** for an unknown id. |
 | `GET`    | `/{id}/view`          | Render the latest version.                                           |
 | `GET`    | `/{id}/v{n}/view`     | Render a specific version.                                           |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
@@ -62,6 +64,34 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 - **Order**: pinned first, then by the latest version's `created_at` (newest first), then by id. The order is total, so paging is stable.
 - **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters. While the data does not change, following the links visits every matching pergam exactly once. A pergam that gets a new version or is pinned, unpinned, archived or retagged mid-crawl changes its sort key or match, so it can move to a page already seen (skipped) or one still ahead (seen twice). A malformed `cursor` is **400**.
 - Pill counts (type, author, tag) and the count under the title cover every visible pergam, not only the current page: hidden archived pergams are left out of them and the title line says how many are hidden. The stats cards cover the whole instance, archived included. "clear all" drops every filter, `archived=1` included.
+
+## JSON API
+
+`GET /api/pergams` is the index as JSON. It takes the same query parameters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`) and comes from the same query, so for the same parameters it lists exactly the pergams the HTML index lists, in the same order, 100 per page.
+
+```json
+{
+  "pergams": [
+    {"id": "abc12345", "version": 2, "title": "Release notes", "type": "plan", "author": "you@example.com",
+     "created_at": "2025-03-04T05:06:07+00:00", "bytes": 5120, "versions": 2, "tags": ["q3"],
+     "archived": false, "pinned": false, "view_url": "http://localhost:1111/abc12345/view", "snippet": null}
+  ],
+  "matching": 1,
+  "next_cursor": null,
+  "archived_count": 0,
+  "counts": {"types": [{"type": "plan", "count": 1}], "authors": [{"author": "you@example.com", "count": 1}],
+             "tags": [{"tag": "q3", "count": 1}]},
+  "stats": {"pergams": 1, "authors": 1, "versions": 2, "bytes": 9000, "new_pergams_7d": 1, "new_versions_7d": 2}
+}
+```
+
+- Each row describes the latest version; `versions` is how many the id has. `snippet` is the matching text fragment (plain text) when `q` matched the body, else `null`.
+- `matching` counts every pergam that matches the filters, across pages. `next_cursor` is `null` on the last page; otherwise pass it back as `?cursor=` with the same filters. A malformed cursor is **400**.
+- `counts` and `stats` are the index's pills and cards: counts cover every visible pergam, stats the whole instance.
+
+`GET /api/pergams/{id}` returns one pergam: the latest version's `version`, `title`, `type`, `author`, `created_at`, `bytes` and `view_url`, the id's `tags`, `archived` and `pinned`, and `versions`, newest first, each with `version`, `title`, `type`, `author`, `bytes`, `created_at` and its pinned `view_url` (`/{id}/v{n}/view`). An unknown id is **404**.
+
+Both are `Cache-Control: no-store`.
 
 ## Search
 
@@ -138,6 +168,7 @@ pergam/
 │   ├── routes.py            HTTP routing and request validation
 │   ├── store.py             data access (all SQL)
 │   ├── index_page.py        HTML index renderer
+│   ├── api.py               JSON bodies of /api/pergams
 │   ├── templates/           index.html + index.css
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── taxonomy.py          accepted types and badge colours

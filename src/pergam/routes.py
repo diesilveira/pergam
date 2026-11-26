@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from pergam.api import index_json, pergam_json
 from pergam.cursor import CursorError, IndexCursor
 from pergam.index_page import render_index
 from pergam.meta import MetaError, parse_meta_change
@@ -30,6 +31,19 @@ def _utc_now_iso() -> str:
 
 def _first(query: dict[str, list[str]], key: str) -> str | None:
     return query.get(key, [None])[0] or None
+
+
+def parse_filters(query: dict[str, list[str]]) -> IndexFilters:
+    """Index filters from a query string, shared by `/` and `/api/pergams`; raises `CursorError`."""
+    token = _first(query, "cursor")
+    return IndexFilters(
+        type=normalise_type(_first(query, "type") or "") or None,
+        author=_first(query, "author"),
+        tag=normalise_tag(_first(query, "tag") or "") or None,
+        q=(_first(query, "q") or "").strip() or None,
+        archived=_first(query, "archived") in ("1", "true"),
+        cursor=IndexCursor.decode(token) if token else None,
+    )
 
 
 class PergamHandler(http.server.BaseHTTPRequestHandler):
@@ -95,11 +109,17 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if path == "":
             self._render_index(parse_qs(parsed.query))
             return
+        if path == "api/pergams":
+            self._render_index_json(parse_qs(parsed.query))
+            return
         if path == "healthz":
             self._send(200, "application/json", b'{"ok":true}')
             return
 
         parts = path.split("/")
+        if len(parts) == 3 and parts[:2] == ["api", "pergams"] and ID_RE.match(parts[2]):
+            self._render_pergam_json(parts[2])
+            return
         if len(parts) == 2 and ID_RE.match(parts[0]):
             if parts[1] == "versions":
                 self._render_versions_json(parts[0])
@@ -197,23 +217,37 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return None
         return data
 
-    def _render_index(self, query: dict[str, list[str]]) -> None:
-        token = _first(query, "cursor")
+    def _filters(self, query: dict[str, list[str]]) -> IndexFilters | None:
+        """Parsed filters, or None after answering 400 for a malformed cursor."""
         try:
-            cursor = IndexCursor.decode(token) if token else None
+            return parse_filters(query)
         except CursorError:
             self.send_error(400, "Invalid cursor")
+            return None
+
+    def _render_index(self, query: dict[str, list[str]]) -> None:
+        filters = self._filters(query)
+        if filters is None:
             return
-        filters = IndexFilters(
-            type=normalise_type(_first(query, "type") or "") or None,
-            author=_first(query, "author"),
-            tag=normalise_tag(_first(query, "tag") or "") or None,
-            q=(_first(query, "q") or "").strip() or None,
-            archived=_first(query, "archived") in ("1", "true"),
-            cursor=cursor,
-        )
         page = render_index(self.store.index(filters), filters, self.public.display)
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+
+    def _render_index_json(self, query: dict[str, list[str]]) -> None:
+        filters = self._filters(query)
+        if filters is None:
+            return
+        self._send_json(index_json(self.store.index(filters), self.public))
+
+    def _render_pergam_json(self, pergam_id: str) -> None:
+        versions = self.store.versions(pergam_id)
+        meta = self.store.meta(pergam_id) if versions else None
+        if meta is None:
+            self.send_error(404, "Pergam not found")
+            return
+        self._send_json(pergam_json(pergam_id, versions, meta, self.public))
+
+    def _send_json(self, body: object, status: int = 200) -> None:
+        self._send(status, "application/json", json.dumps(body).encode("utf-8"))
 
     def _send(self, status: int, content_type: str, payload: bytes, cache_control: str = NO_STORE) -> None:
         """Version-pinned content never changes, so only those routes pass `IMMUTABLE`."""

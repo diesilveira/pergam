@@ -163,6 +163,8 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | ------ | --------------------- | -------------------------------------------------------------------- |
 | POST   | `/pergam`             | Body `{title, html, type, author, id?, tags?}`. Returns `{id, version, view_url, title, type, author}` (+ `tags` when sent). |
 | GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=words`; `q` searches titles and visible text (`"quoted phrase"` for exact order); `?archived=1` includes archived ones. |
+| GET    | `/api/pergams`        | JSON index with the same filters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`): `{pergams, matching, next_cursor, counts, stats}`. Use it to find or count pergams instead of scraping `/`. |
+| GET    | `/api/pergams/{id}`   | JSON: latest title/type/author, `tags`, `archived`, `pinned` and `versions` (newest first). |
 | GET    | `/{id}/view`          | Render latest version.                                               |
 | GET    | `/{id}/v{n}/view`     | Render specific version.                                             |
 | GET    | `/{id}/raw`           | Raw HTML (latest).                                                   |

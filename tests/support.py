@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import http.client
+import html as html_lib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -81,6 +83,60 @@ def throwaway_postgres() -> Iterator[str]:
 def listed_ids(html: str, *ids: str) -> set[str]:
     """The ids among `ids` that the index page lists."""
     return {pid for pid in ids if f'data-href="/{pid}/view"' in html}
+
+
+def listed_order(html: str) -> list[str]:
+    """Ids the index page lists, in page order."""
+    return re.findall(r'data-href="/([a-f0-9]+)/view"', html)
+
+
+SEEDED = 230
+
+
+def seed(db: psycopg.Connection) -> dict[str, tuple[bool, bool, bool]]:
+    """Ids with shared timestamps (to exercise the id tie-break), some pinned, archived or tagged.
+
+    Ids with none of those flags get no `pergam_meta` row on every other index, so pages mix
+    rows with and without metadata.
+    """
+    flags: dict[str, tuple[bool, bool, bool]] = {}
+    with db.cursor() as cur:
+        for i in range(SEEDED):
+            pid = f"{i:08x}"
+            pinned, archived, tagged = i % 17 == 0, i % 5 == 0, i % 3 == 0
+            flags[pid] = (pinned, archived, tagged)
+            cur.execute(
+                "INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)"
+                " VALUES (%s, 1, %s, '<p>x</p>', %s, 'you@example.com', 8, '2025-01-01'::timestamptz + %s * interval '1 hour')",
+                (pid, f"Doc {i}", "plan" if i % 2 else "otro", i // 4),
+            )
+            if pinned or archived or tagged or i % 2:
+                cur.execute(
+                    "INSERT INTO pergam_meta (id, tags, archived, pinned) VALUES (%s, %s, %s, %s)",
+                    (pid, ["seeded"] if tagged else [], archived, pinned),
+                )
+    return flags
+
+
+def crawl(client: Client, path: str) -> list[str]:
+    visited: list[str] = []
+    pages = 0
+    while path:
+        resp = client.get(path)
+        assert resp.status == 200
+        visited.extend(listed_order(resp.text))
+        match = re.search(r'<a class="pager__next" href="([^"]+)"', resp.text)
+        path = html_lib.unescape(match.group(1)) if match else ""
+        pages += 1
+        assert pages < 10
+    return visited
+
+
+def patch_meta(client: Client, pergam_id: str, payload: dict) -> None:
+    resp = client.request(
+        "PATCH", f"/{pergam_id}/meta", json.dumps(payload).encode("utf-8"), {"Content-Type": "application/json"}
+    )
+    assert resp.status == 200, resp.body
 
 
 def apply_legacy_schema(database_url: str) -> None:

@@ -17,8 +17,11 @@ class PublicAddress:
     base_url: str
     display: str
 
+    def url(self, path: str) -> str:
+        return f"{self.base_url}/{path.lstrip('/')}"
+
     def view_url(self, pergam_id: str) -> str:
-        return f"{self.base_url}/{pergam_id}/view"
+        return self.url(f"{pergam_id}/view")
 
 
 def from_public_url(raw: str) -> PublicAddress:
