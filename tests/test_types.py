@@ -67,7 +67,7 @@ def test_custom_type_is_accepted_filterable_and_coloured(custom: tuple[Client, s
     assert f'data-href="/{pid}/view"' in page
     assert f'data-href="/{other}/view"' not in page
     rgb = ",".join(map(str, type_rgb("runbook")))
-    assert re.search(rf'class="type" style="--type-rgb:{rgb}"[^>]*>runbook</a>', page)
+    assert re.search(rf'class="badge" style="--type-rgb:{rgb}"[^>]*>runbook</a>', page)
 
 
 def test_custom_list_rejects_types_it_does_not_name(custom: tuple[Client, str]) -> None:
@@ -91,5 +91,5 @@ def test_stored_types_no_longer_listed_still_render_and_filter(custom: tuple[Cli
 
     assert client.get("/0dd00001/v1/raw").text == "<p>old</p>"
     assert 'data-href="/0dd00001/view"' in page
-    assert re.search(r'class="type" style="--type-rgb:86,211,100"[^>]*>informe</a>', page)
+    assert re.search(r'class="badge" style="--type-rgb:86,211,100"[^>]*>informe</a>', page)
     assert re.search(r'>informe <span class="cnt">1</span>', page)

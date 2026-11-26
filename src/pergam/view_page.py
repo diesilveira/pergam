@@ -21,6 +21,7 @@ from pathlib import Path
 from string import Template
 from urllib.parse import urlencode, urlparse
 
+from pergam.layout import HEAD_ASSETS, top_bar
 from pergam.meta import Meta, Origin
 from pergam.static_files import BRIDGE_PATH, STORAGE_SHIM
 from pergam.store import VersionInfo
@@ -163,30 +164,44 @@ def _outdated(pergam_id: str, current: int, latest: int) -> str:
     )
 
 
+def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[VersionInfo]) -> str:
+    latest = versions[0].version
+    items = "".join(_version_item(pergam_id, info, shown.version, latest) for info in versions)
+    return (
+        f'<h1 class="bar__title">{esc(shown.title)}</h1>'
+        f'<span class="badge" style="--type-rgb:{",".join(map(str, type_rgb(shown.type)))}">{esc(shown.type)}</span>'
+        f"{_tags(meta.tags)}"
+        f'<span class="bar__author">{esc(shown.author)}</span>'
+        f"{_origin(meta.origin)}"
+        f'<details class="versions"><summary class="ver">v{shown.version} of {len(versions)}</summary>'
+        f'<ol class="versions__list" reversed>{items}</ol></details>'
+    )
+
+
+def _bar_actions(pergam_id: str, version: int) -> str:
+    return (
+        '<nav class="bar__links" aria-label="Pergam">'
+        '<a href="/">index</a>'
+        f'<a href="/{pergam_id}/v{version}/raw">raw</a>'
+        f'<a href="/{pergam_id}/v{version}/text">text</a>'
+        f"{_changes_link(pergam_id, version)}"
+        f'<a href="{content_path(pergam_id, version)}">open document</a>'
+        '<button type="button" class="btn bar__print" hidden>print</button></nav>'
+    )
+
+
 def render_view(
     pergam_id: str, versions: list[VersionInfo], meta: Meta, version: int, policy: FramePolicy = FRAME_POLICY
 ) -> str:
     """`versions` newest first, as `PergamStore.versions` returns them; `version` must be one of them."""
     shown = next(info for info in versions if info.version == version)
-    latest = versions[0].version
     frame = (("class", "doc"), ("src", content_path(pergam_id, version)), ("title", shown.title))
     return _PAGE.substitute(
+        head_assets=HEAD_ASSETS,
         css=_CSS,
         page_title=esc(f"{shown.title} · v{version} · pergam"),
         title_suffix=esc(f" · v{version} · pergam"),
-        content_href=content_path(pergam_id, version),
-        title=esc(shown.title),
-        type=esc(shown.type),
-        type_rgb=",".join(map(str, type_rgb(shown.type))),
-        tags=_tags(meta.tags),
-        author=esc(shown.author),
-        origin=_origin(meta.origin),
-        version=version,
-        total=len(versions),
-        version_items="".join(_version_item(pergam_id, info, version, latest) for info in versions),
-        raw_href=f"/{pergam_id}/v{version}/raw",
-        text_href=f"/{pergam_id}/v{version}/text",
-        changes_link=_changes_link(pergam_id, version),
-        outdated=_outdated(pergam_id, version, latest),
+        top_bar=top_bar(middle=_bar_middle(pergam_id, shown, meta, versions), actions=_bar_actions(pergam_id, version)),
+        outdated=_outdated(pergam_id, version, versions[0].version),
         frame_attributes=_attributes(frame + policy.iframe_attributes),
     )

@@ -84,7 +84,7 @@ def test_diff_page_highlights_changes_per_section(client: Client) -> None:
     assert resp.headers["cache-control"] == "public, max-age=300"
     page = resp.text
     assert "<title>Plan · v1 → v3 · pergam</title>" in page
-    assert f'href="/{pid}/v1/view"><span class="ver__n">v1</span><span class="note">first draft</span>' in page
+    assert f'href="/{pid}/v1/view"><span class="ver">v1</span><span class="note">first draft</span>' in page
     assert f'href="/{pid}/v3/view"' in page
     assert '<span class="plus">+3</span> <span class="minus">−5</span> lines · 4 of 5 sections changed' in page
     assert "<del>10</del>" in page

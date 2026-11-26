@@ -10,6 +10,7 @@ from pathlib import Path
 from string import Template
 from urllib.parse import urlencode
 
+from pergam.layout import HEAD_ASSETS, top_bar
 from pergam.store import IndexData, IndexFilters, IndexRow
 from pergam.taxonomy import type_rgb
 
@@ -17,19 +18,16 @@ _TEMPLATES = Path(__file__).resolve().parent / "templates"
 _PAGE = Template((_TEMPLATES / "index.html").read_text(encoding="utf-8").rstrip("\n"))
 _CSS = (_TEMPLATES / "index.css").read_text(encoding="utf-8")
 
-_AVATAR_GRADIENTS = [
-    ("#f85149", "#f0d28a"),
-    ("#5ee7ff", "#7aa2ff"),
-    ("#f0d28a", "#f59f5a"),
-    ("#56d364", "#5ee7ff"),
-    ("#b692ff", "#7aa2ff"),
-    ("#f59f5a", "#f85149"),
-]
-
 _EMPTY = (
     '<div class="empty">No pergams match. '
     '<a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">'
     'POST one to <code>/pergam</code></a> to get started.</div>'
+)
+
+_NAV = (
+    '<nav class="topbar__nav" aria-label="Site">'
+    '<a href="/" aria-current="page">Index</a>'
+    '<a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">API</a></nav>'
 )
 
 esc = html_lib.escape
@@ -87,15 +85,13 @@ def human_age(ts: datetime, now: datetime) -> str:
 
 
 def avatar(author: str) -> str:
-    """Initials on a gradient picked deterministically from the author string."""
+    """Initials on a hue (`--h`, 0-359) picked deterministically from the author string."""
     h = 0
     for ch in author:
         h = (h * 131 + ord(ch)) & 0xFFFFFFFF
-    a, b = _AVATAR_GRADIENTS[h % len(_AVATAR_GRADIENTS)]
     initials = "".join(p[0] for p in re.split(r"[.\-_+ ]+", short_author(author)) if p)[:2].upper() or "?"
     return (
-        f'<span class="avatar" aria-hidden="true" '
-        f'style="background:linear-gradient(135deg,{a},{b})">{esc(initials)}</span>'
+        f'<span class="avatar" aria-hidden="true" style="--h:{h % 360}">{esc(initials)}</span>'
     )
 
 
@@ -139,7 +135,7 @@ def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
     author_href = esc(index_link(replace(filters, author=row.author, cursor=None)))
     type_href = esc(index_link(replace(filters, type=row.type, cursor=None)))
     versions_block = (
-        f'<details class="vers"><summary>v{ver}</summary>'
+        f'<details class="vers"><summary class="ver">v{ver}</summary>'
         f'<div class="vers__list">'
         + " · ".join(f'<a href="/{pid}/v{i}/view">v{i}</a>' for i in range(row.total_versions, 0, -1))
         + f' · <a href="/{pid}/versions" class="muted">json</a>'
@@ -162,7 +158,7 @@ def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
         f'    {tags}'
         f'  </div>'
         f'  <code class="row__id">{esc(pid)}</code>'
-        f'  <a class="type" style="--type-rgb:{",".join(map(str, type_rgb(row.type)))}" '
+        f'  <a class="badge" style="--type-rgb:{",".join(map(str, type_rgb(row.type)))}" '
         f'     href="{type_href}" title="filter by type">{esc(row.type)}</a>'
         f'  <a class="row__author" href="{author_href}" title="filter by author">'
         f'    {avatar(row.author)}<span class="row__author-name">{esc(short_author(row.author))}</span>'
@@ -196,8 +192,9 @@ def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> s
     stats = data.stats
     bytes_value, bytes_unit = human_bytes(stats.total_bytes)
     return _PAGE.substitute(
+        head_assets=HEAD_ASSETS,
         css=_CSS,
-        host_display=esc(host_display),
+        top_bar=top_bar(host=host_display, actions=_NAV),
         showing_note=showing_note(data, filters),
         total_pergams=stats.total_pergams,
         new_pergams_delta=delta(stats.new_pergams_7d),

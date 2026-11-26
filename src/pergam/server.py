@@ -10,6 +10,7 @@ Modules
 -------
   routes.py      HTTP routing and request validation
   store.py       data access (all SQL)
+  layout.py      head assets and the top bar shared by every page
   index_page.py  the HTML index, from templates/index.html + index.css
   view_page.py   the view page: version bar and the document in a frame
   diff.py        text diff of two versions, grouped by section
@@ -18,7 +19,7 @@ Modules
   limits.py      largest request body
   identity.py    the writer, from X-Forwarded-User when trusted
   access.py      owners, collaborators and who may change a pergam
-  static_files.py files served under /static/ (bridge, vendored Mermaid)
+  static_files.py files served under /static/ (stylesheet, theme script, bridge, vendored Mermaid)
   lint.py        static checks of a document for POST /lint
   taxonomy.py    accepted types and type badge colours
   migrate.py     numbered migrations applied at startup

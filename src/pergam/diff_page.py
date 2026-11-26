@@ -11,6 +11,7 @@ from pathlib import Path
 from string import Template
 
 from pergam.diff import DiffLine, Section, TooLargeToDiff
+from pergam.layout import HEAD_ASSETS, top_bar
 from pergam.store import VersionInfo
 
 _TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -109,10 +110,15 @@ def render_diff(
     else:
         body = "".join(_section(section) for section in sections) or '<p class="empty">Neither version has text.</p>'
         summary = _summary(sections)
+    middle = (
+        f'<h1 class="bar__title">{esc(new.title)}</h1>'
+        f'<span class="ver bar__range">v{old.version} → v{new.version}</span>'
+    )
     return _PAGE.substitute(
+        head_assets=HEAD_ASSETS,
         css=_CSS,
+        top_bar=top_bar(middle=middle, actions='<nav class="bar__links" aria-label="Pergam"><a href="/">index</a></nav>'),
         page_title=esc(f"{new.title} · v{old.version} → v{new.version} · pergam"),
-        title=esc(new.title),
         old=old.version,
         new=new.version,
         old_href=f"/{pergam_id}/v{old.version}/view",

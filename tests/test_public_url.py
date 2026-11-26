@@ -66,7 +66,7 @@ def test_server_uses_public_url(session_database: str, client: Client, start_ser
     body = public.publish()
 
     assert body["view_url"] == f"https://docs.example.com/{body['id']}/view"
-    assert "</span>docs.example.com</span>" in public.get("/").text
+    assert '<span class="topbar__host">docs.example.com</span>' in public.get("/").text
 
 
 def test_server_falls_back_to_public_host_and_port(session_database: str, client: Client, start_server) -> None:

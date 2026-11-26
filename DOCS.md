@@ -242,6 +242,37 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 - **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters. While the data does not change, following the links visits every matching pergam exactly once. A pergam that gets a new version or is pinned, unpinned, archived or retagged mid-crawl changes its sort key or match, so it can move to a page already seen (skipped) or one still ahead (seen twice). A malformed `cursor` is **400**.
 - Pill counts (type, author, tag) and the count under the title cover every visible pergam, not only the current page: hidden archived pergams are left out of them and the title line says how many are hidden. The stats cards cover the whole instance, archived included. "clear all" drops every filter, `archived=1` included.
 
+## Pages and theme
+
+The index, view and diff pages share one stylesheet, `/static/pergam.css`, and one script, `/static/theme.js`. Both are served with `Cache-Control: public, max-age=300` (an upgrade reaches readers within five minutes), use system fonts only and load nothing from elsewhere. The published document inside the view page keeps its own look.
+
+**Themes.** Every colour is a token holding a `light-dark(light, dark)` pair, resolved by the element's colour scheme: the system's (`prefers-color-scheme`) unless the reader has chosen. The top bar's toggle (the half-filled circle) switches between light and dark and stores the choice in `localStorage` under `pergam-theme`; `theme.js` runs synchronously in `<head>`, before the body is parsed, so a remembered choice is on `<html data-theme="light|dark">` before first paint. Without script the system scheme applies and the toggle stays hidden. Text tokens meet WCAG AA (4.5:1) on `--bg`, `--surface` and `--raised` in both themes, which a test checks.
+
+**Tokens** (defined once, on `:root`, in `pergam.css`):
+
+| Group | Names |
+| ----- | ----- |
+| Surfaces | `--bg` page, `--surface` cards and bars, `--raised` hover and fields, `--border`, `--border-strong`, `--doc-bg` (the frame behind a published document, white in both themes) |
+| Text | `--text`, `--soft`, `--muted`, `--accent`, `--accent-soft` (tint), `--on-accent` (text on an `--accent` fill) |
+| Status | `--ok`, `--danger`, `--warn-bg` with `--warn-text`, `--add-bg`/`--add-mark`, `--del-bg`/`--del-mark`, `--mark-bg` |
+| Type, space, shape | `--sans`, `--mono`, `--radius`, `--radius-sm`, `--space-1` to `--space-5`, `--shadow` |
+
+**Components** (shared classes; a page uses them as they are and adds layout in its own CSS):
+
+| Class | What it is |
+| ----- | ---------- |
+| `.topbar`, `.logo`, `.topbar__host`, `.topbar__actions`, `.topbar__nav` | the top bar, see below; `.topbar__nav a[aria-current]` marks the current page |
+| `.btn`, `.btn--primary`, `.icon-btn` | buttons (`<button>` or `<a>`); icon buttons are 32 px squares and need an `aria-label` |
+| `.badge` | a pergam type; set `style="--type-rgb:R,G,B"` from `taxonomy.type_rgb(type)` (the colour still derives from the type name) and the stylesheet darkens or lightens it per theme; use `<a class="badge">` for a filter link |
+| `.tag` | a tag pill, `<a>` or `<span>` |
+| `.avatar` | author initials on a hue: `style="--h:0-359"`, see `index_page.avatar` |
+| `.ver` | a version chip (`v3`), monospace accent |
+| `.input`, `.kbd`, `.card`, `.plus`, `.minus`, `.muted`, `.sr-only` | search field, key cap, bordered surface, diff counts, secondary text, text for screen readers only |
+
+**The top bar** is rendered in one place, `pergam.layout.top_bar(host=None, middle="", actions="")`: the logo linking to `/`, the optional server `host` (plain text, escaped there), then `middle` (grows with the bar), then `actions` and the theme toggle at the right edge. `middle` and `actions` are HTML the caller has escaped. A page puts `layout.HEAD_ASSETS` (colour-scheme meta, `theme.js`, the stylesheet link) in `<head>` and the bar first in `<body>`; its template fills `${head_assets}` and `${top_bar}`.
+
+**Page stylesheets** (`templates/*.css`, inlined in their page) hold layout and may only refer to tokens with `var(--name)`: no colour literal, no font name. A test fails on either, and on any inline `style` that is not `--h` or `--type-rgb`.
+
 ## JSON API
 
 `GET /api/pergams` is the index as JSON. It takes the same query parameters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`) and comes from the same query, so for the same parameters it lists exactly the pergams the HTML index lists, in the same order, 100 per page.
@@ -372,14 +403,15 @@ pergam/
 │   ├── server.py            entry point: migrations, pool, HTTP server
 │   ├── routes.py            HTTP routing and request validation
 │   ├── store.py             data access (all SQL)
+│   ├── layout.py            head assets and the top bar shared by every page
 │   ├── index_page.py        HTML index renderer
 │   ├── view_page.py         view page: version bar around the framed document
 │   ├── diff.py              text diff of two versions, grouped by section
 │   ├── diff_page.py         diff page renderer
 │   ├── api.py               JSON bodies of /api/pergams
 │   ├── feed.py              Atom feed of recent publications
-│   ├── templates/           index, view and diff pages (HTML + CSS)
-│   ├── static/              frame-bridge.js (added to /content) and vendored Mermaid
+│   ├── templates/           index, view, diff and error pages (HTML + layout CSS)
+│   ├── static/              pergam.css and theme.js (every page), frame-bridge.js (added to /content), vendored Mermaid
 │   ├── static_files.py      the files served under /static/
 │   ├── identity.py          the writer, from X-Forwarded-User when trusted
 │   ├── access.py            owners, collaborators and the 403 rules
@@ -444,7 +476,7 @@ make test
 
 That creates `.venv`, installs `requirements-dev.txt` and runs `pytest`. The suite boots the real server (`python3 src/pergam/server.py`) against a throwaway Postgres: by default it starts a `postgres:15-alpine` container named `pergam-test-*` on a random local port with no volume, and removes it at the end. Set `TEST_DATABASE_URL` to an admin connection string to use an existing server instead (CI does this with a `services: postgres` container). Either way every run works in its own `pergam_test_*` database, dropped afterwards; the bundled compose database is never touched.
 
-`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
+`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. `tests/test_ui_browser.py` does the same for the themes: both colour schemes, the toggle and its remembered choice (applied before first paint), keyboard use, phone width and the legibility of every type badge colour. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
 
 ## Make targets
 

@@ -3,18 +3,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>pergam · index</title>
 <link rel="alternate" type="application/atom+xml" title="pergam · recent publications" href="/feed.atom">
+${head_assets}
 <style>
 ${css}</style></head><body>
 
-<header class="topbar">
-  <span class="topbar__logo"><span class="blocks">▮▮</span> pergam</span>
-  <span class="topbar__pill">SELF-HOSTED</span>
-  <span class="topbar__url"><span class="topbar__dot"></span>${host_display}</span>
-  <nav class="topbar__nav">
-    <a href="/" class="active">Index</a>
-    <a href="https://github.com/diesilveira/pergam" target="_blank" rel="noopener">API</a>
-  </nav>
-</header>
+${top_bar}
 
 <main class="wrap">
   <div class="title-row">
@@ -48,7 +41,7 @@ ${css}</style></head><body>
     ${author_pills}
     ${tag_pills}
     <form class="search-form" method="get">
-      <input type="search" name="q" placeholder="search title and text…" value="${q_value}" autocomplete="off">
+      <input class="input" type="search" name="q" aria-label="Search title and text" placeholder="search title and text…" value="${q_value}" autocomplete="off">
       <input type="hidden" name="type" value="${type_value}">
       <input type="hidden" name="author" value="${author_value}">
       <input type="hidden" name="tag" value="${tag_value}">
