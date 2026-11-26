@@ -144,6 +144,7 @@ When iterating (new version of an existing pergam), **keep the same type as the 
 | GET    | `/{id}/v{n}/raw`      | Raw HTML (specific).                                                 |
 | GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
 | GET    | `/healthz`            | `{"ok":true}`.                                                       |
+| HEAD   | any GET route         | Same status and headers as GET, no body (cheap existence check).     |
 | DELETE | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |
 
 ---

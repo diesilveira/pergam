@@ -16,6 +16,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/v{n}/raw`      | Raw HTML source (specific version).                                  |
 | `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
 | `GET`    | `/healthz`            | Liveness probe.                                                      |
+| `HEAD`   | any `GET` route       | Same status and headers as `GET`, without the body.                  |
 | `DELETE` | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |
 
 ## Versioning model

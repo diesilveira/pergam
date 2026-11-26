@@ -117,6 +117,10 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
 
         self.send_error(404, "Not Found")
 
+    def do_HEAD(self) -> None:
+        """Same status and headers as GET; `_send` and `send_error` skip the body."""
+        self.do_GET()
+
     def do_DELETE(self) -> None:
         self.send_error(405, "Pergams are immutable")
 
@@ -161,4 +165,5 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(payload)
+        if self.command != "HEAD":
+            self.wfile.write(payload)
