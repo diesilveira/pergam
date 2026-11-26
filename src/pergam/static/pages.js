@@ -106,6 +106,27 @@
   };
 
   const REFUSED_TAGS = 'The server did not accept these tags: at most 20, each at most 40 characters. Nothing was changed.';
+  const PIN_LIMIT = 'As many pergams are pinned as this server allows: unpin another one first';
+  const MAX_REASON = 300;
+
+  /* The server's one-line reason from an error body: the standard library's page
+     ("Message: …") parsed as an inert document, or a JSON `message`/`error`; only text. */
+  const reasonOf = async (response) => {
+    try {
+      const body = await response.text();
+      if ((response.headers.get('Content-Type') || '').includes('json')) {
+        const data = JSON.parse(body);
+        const reason = data && (data.message || data.error || data.detail);
+        return typeof reason === 'string' ? reason.trim().slice(0, MAX_REASON) : '';
+      }
+      const page = new DOMParser().parseFromString(body, 'text/html');
+      const line = Array.from(page.querySelectorAll('p'), (node) => node.textContent.trim())
+        .find((text) => text.startsWith('Message: '));
+      return line ? line.slice('Message: '.length).replace(/\.$/, '').trim().slice(0, MAX_REASON) : '';
+    } catch (error) {
+      return '';
+    }
+  };
 
   const isMeta = (meta) => meta && typeof meta.pinned === 'boolean' && typeof meta.archived === 'boolean'
     && Array.isArray(meta.tags) && meta.tags.every((tag) => typeof tag === 'string');
@@ -157,6 +178,10 @@
           credentials: 'same-origin',
           cache: 'no-store',
         });
+        if (response.status === 409 && change.pinned === true) {
+          say(`${(await reasonOf(response)) || PIN_LIMIT}. Nothing was changed.`, true);
+          return false;
+        }
         if (!response.ok) {
           const refused = response.status === 400 && 'tags' in change ? REFUSED_TAGS : REFUSED[response.status];
           say(refused || `The server refused the change (${response.status}). Nothing was changed.`, true);

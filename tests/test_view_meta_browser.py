@@ -331,3 +331,37 @@ def test_opening_the_tag_editor_rereads_the_current_tags(open_page, client: Clie
     page.keyboard.press("Enter")
     assert status_text(page) == "Tags saved."
     assert db.execute(META, (pid,)).fetchone() == (["budget", "ops", "q3"], False, True)
+
+
+STANDARD_ERROR = """<!DOCTYPE HTML><html lang="en"><head><title>Error response</title></head><body>
+<h1>Error response</h1><p>Error code: 409</p><p>Message: {message}.</p>
+<p>Error code explanation: 409 - Request conflict.</p></body></html>"""
+
+
+@pytest.mark.parametrize(
+    ("body", "shown"),
+    [
+        (STANDARD_ERROR.format(message="At most 12 pergams can be pinned; unpin another one first"),
+         "At most 12 pergams can be pinned; unpin another one first. Nothing was changed."),
+        (STANDARD_ERROR.format(message="&lt;img src=x onerror=alert(1)&gt; limit"),
+         "<img src=x onerror=alert(1)> limit. Nothing was changed."),
+        ("", "As many pergams are pinned as this server allows: unpin another one first. Nothing was changed."),
+    ],
+    ids=["reason", "markup-in-reason", "no-reason"],
+)
+def test_pinning_over_the_limit_explains_and_changes_nothing(
+    open_page, client: Client, db: psycopg.Connection, body: str, shown: str
+) -> None:
+    pid = client.publish()["id"]
+    page = open_page(f"{base(client)}/{pid}/view")
+    page.route(f"**/{pid}/meta", lambda route: route.fulfill(status=409, content_type="text/html;charset=utf-8", body=body))
+    pin = page.get_by_role("button", name="Pin", exact=True)
+
+    pin.click()
+
+    assert status_text(page) == shown
+    assert page.get_by_role("status").inner_text() == shown
+    assert page.locator(".meta-status--error").is_visible()
+    assert pin.get_attribute("aria-pressed") == "false"
+    assert page.locator(".meta-status img").count() == 0
+    assert db.execute(META, (pid,)).fetchone() is None
