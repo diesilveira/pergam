@@ -10,11 +10,12 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from pergam.cursor import CursorError, IndexCursor
 from pergam.index_page import render_index
 from pergam.meta import MetaError, parse_meta_change
 from pergam.public_url import PublicAddress
 from pergam.store import IndexFilters, NewPergam, PergamStore
-from pergam.tags import TagError, parse_tags
+from pergam.tags import TagError, normalise_tag, parse_tags
 
 VALID_TYPES = {"plan", "investigacion", "informe", "reporte", "otro"}
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
@@ -196,10 +197,19 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         return data
 
     def _render_index(self, query: dict[str, list[str]]) -> None:
+        token = _first(query, "cursor")
+        try:
+            cursor = IndexCursor.decode(token) if token else None
+        except CursorError:
+            self.send_error(400, "Invalid cursor")
+            return
         filters = IndexFilters(
             type=(_first(query, "type") or "").lower() or None,
             author=_first(query, "author"),
+            tag=normalise_tag(_first(query, "tag") or "") or None,
             q=_first(query, "q"),
+            archived=_first(query, "archived") in ("1", "true"),
+            cursor=cursor,
         )
         page = render_index(self.store.index(filters), filters, self.public.display)
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))

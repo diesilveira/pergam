@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html as html_lib
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from string import Template
@@ -33,25 +34,24 @@ _EMPTY = (
 esc = html_lib.escape
 
 
-def filter_link(
-    filters: IndexFilters,
-    *,
-    type: str | None = None,
-    author: str | None = None,
-    clear_type: bool = False,
-    clear_author: bool = False,
-) -> str:
-    """Index URL that sets or clears one filter and keeps the other active ones."""
-    qs: dict[str, str] = {}
-    chosen_type = None if clear_type else (type if type is not None else filters.type)
-    chosen_author = None if clear_author else (author if author is not None else filters.author)
-    if chosen_type:
-        qs["type"] = chosen_type
-    if chosen_author:
-        qs["author"] = chosen_author
-    if filters.q:
-        qs["q"] = filters.q
+def index_link(filters: IndexFilters) -> str:
+    """Index URL for `filters`, cursor included; callers reset it with `replace(..., cursor=None)`."""
+    qs = {
+        key: value
+        for key, value in (("type", filters.type), ("author", filters.author), ("tag", filters.tag), ("q", filters.q))
+        if value
+    }
+    if filters.archived:
+        qs["archived"] = "1"
+    if filters.cursor:
+        qs["cursor"] = filters.cursor.encode()
     return "/?" + urlencode(qs) if qs else "/"
+
+
+def toggle_link(filters: IndexFilters, **change: str | None) -> str:
+    """Link that sets one filter, or clears it when it already has that value, back on page one."""
+    ((name, value),) = change.items()
+    return index_link(replace(filters, cursor=None, **{name: None if getattr(filters, name) == value else value}))
 
 
 def short_author(author: str) -> str:
@@ -98,28 +98,45 @@ def avatar(author: str) -> str:
     )
 
 
-def type_pill(filters: IndexFilters, pergam_type: str, count: int) -> str:
-    active = pergam_type == filters.type
-    cls = ' class="active"' if active else ""
-    href = filter_link(filters, clear_type=True) if active else filter_link(filters, type=pergam_type)
-    return f'<a href="{esc(href)}"{cls}>{esc(pergam_type)} <span class="cnt">{count}</span></a>'
-
-
-def author_pill(filters: IndexFilters, author: str, count: int) -> str:
-    active = author == filters.author
-    cls = ' class="active"' if active else ""
-    href = filter_link(filters, clear_author=True) if active else filter_link(filters, author=author)
+def pill(filters: IndexFilters, name: str, value: str, count: int, label: str | None = None) -> str:
+    cls = ' class="active"' if getattr(filters, name) == value else ""
     return (
-        f'<a href="{esc(href)}"{cls} title="{esc(author)}">'
-        f'{esc(short_author(author))} <span class="cnt">{count}</span></a>'
+        f'<a href="{esc(toggle_link(filters, **{name: value}))}"{cls} title="{esc(value)}">'
+        f'{esc(label or value)} <span class="cnt">{count}</span></a>'
     )
+
+
+def pill_group(label: str, pills: list[str]) -> str:
+    if not pills:
+        return ""
+    return f'<div class="filter-group"><span class="label">{label}</span><div class="pills">{" ".join(pills)}</div></div>'
+
+
+def archived_toggle(filters: IndexFilters, archived_count: int) -> str:
+    if not filters.archived and archived_count == 0:
+        return ""
+    label = "hide archived" if filters.archived else f"show archived ({archived_count})"
+    cls = "archived-toggle active" if filters.archived else "archived-toggle"
+    href = index_link(replace(filters, archived=not filters.archived, cursor=None))
+    return f'<a class="{cls}" href="{esc(href)}">{label}</a>'
+
+
+def pager(filters: IndexFilters, data: IndexData) -> str:
+    links = []
+    if filters.cursor:
+        links.append(f'<a class="pager__first" href="{esc(index_link(replace(filters, cursor=None)))}">← first page</a>')
+    if data.next_cursor:
+        links.append(
+            f'<a class="pager__next" href="{esc(index_link(replace(filters, cursor=data.next_cursor)))}">next →</a>'
+        )
+    return f'<nav class="pager" aria-label="Pages">{"".join(links)}</nav>' if links else ""
 
 
 def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
     """One list row; a <div> because <details> and inner <a>s cannot nest inside an <a>."""
     pid, ver = row.id, row.version
-    author_href = esc(filter_link(filters, author=row.author))
-    type_href = esc(filter_link(filters, type=row.type))
+    author_href = esc(index_link(replace(filters, author=row.author, cursor=None)))
+    type_href = esc(index_link(replace(filters, type=row.type, cursor=None)))
     versions_block = (
         f'<details class="vers"><summary>v{ver}</summary>'
         f'<div class="vers__list">'
@@ -127,9 +144,21 @@ def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
         + f' · <a href="/{pid}/versions" class="muted">json</a>'
         + "</div></details>"
     )
+    flags = ('<span class="flag flag--pinned" title="pinned">pinned</span>' if row.pinned else "") + (
+        '<span class="flag flag--archived" title="archived">archived</span>' if row.archived else ""
+    )
+    tag_links = "".join(
+        f'<a class="tag" href="{esc(index_link(replace(filters, tag=tag, cursor=None)))}" title="filter by tag">'
+        f"{esc(tag)}</a>"
+        for tag in row.tags
+    )
+    tags = f'<span class="row__tags">{tag_links}</span>' if tag_links else ""
     return (
-        f'<div class="row" data-href="/{pid}/view" tabindex="0" role="link">'
-        f'  <a class="row__title" href="/{pid}/view">{esc(row.title)}</a>'
+        f'<div class="row{" row--archived" if row.archived else ""}" data-href="/{pid}/view" tabindex="0" role="link">'
+        f'  <div class="row__main">{flags}'
+        f'    <a class="row__title" href="/{pid}/view">{esc(row.title)}</a>'
+        f'    {tags}'
+        f'  </div>'
         f'  <code class="row__id">{esc(pid)}</code>'
         f'  <a class="type t-{esc(row.type)}" '
         f'     href="{type_href}" title="filter by type">{esc(row.type)}</a>'
@@ -150,10 +179,9 @@ def delta(n: int) -> str:
 def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> str:
     now = datetime.now(timezone.utc)
     stats = data.stats
-    showing = len(data.rows)
     showing_note = (
-        f"showing {showing} of {stats.total_pergams}"
-        if filters.active and showing != stats.total_pergams
+        f"showing {data.matching} of {stats.total_pergams}"
+        if filters.active and data.matching != stats.total_pergams
         else f"{stats.total_pergams} pergams · {stats.total_authors} authors · {stats.total_versions} versions"
     )
     bytes_value, bytes_unit = human_bytes(stats.total_bytes)
@@ -168,11 +196,18 @@ def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> s
         new_versions_delta=delta(stats.new_versions_7d),
         bytes_value=bytes_value,
         bytes_unit=bytes_unit,
-        type_pills=" ".join(type_pill(filters, t, c) for t, c in data.type_counts),
-        author_pills=" ".join(author_pill(filters, a, c) for a, c in data.author_counts),
+        type_pills=pill_group("Type", [pill(filters, "type", t, c) for t, c in data.type_counts]),
+        author_pills=pill_group(
+            "Author", [pill(filters, "author", a, c, short_author(a)) for a, c in data.author_counts]
+        ),
+        tag_pills=pill_group("Tag", [pill(filters, "tag", t, c) for t, c in data.tag_counts]),
         q_value=esc(filters.q or ""),
         type_value=esc(filters.type or ""),
         author_value=esc(filters.author or ""),
+        tag_value=esc(filters.tag or ""),
+        archived_value="1" if filters.archived else "",
+        archived_toggle=archived_toggle(filters, data.archived_count),
         clear_link='<a class="clear" href="/">clear all</a>' if filters.active else "",
         rows="\n".join(render_row(row, filters, now) for row in data.rows) or _EMPTY,
+        pager=pager(filters, data),
     )

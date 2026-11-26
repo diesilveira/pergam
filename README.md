@@ -40,7 +40,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🔒 **Immutable** — pergams can't be edited or deleted, only superseded with a new version.
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
 - 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
-- 🏷️ **Typed taxonomy** — `plan`, `investigacion`, `informe`, `reporte`, `otro`. Filter the index by type, author, or substring.
+- 🏷️ **Typed and tagged** — a `type` per pergam plus free-form tags. Filter the index by type, author, tag or substring; pin what matters, archive what doesn't.
 - 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.
 - 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. A tiny edge worker for the hosted variant. No framework, no build step.

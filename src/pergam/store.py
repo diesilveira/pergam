@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 import psycopg
 from psycopg_pool import ConnectionPool
 
+from pergam.cursor import IndexCursor
 from pergam.meta import Meta, MetaChange
 from pergam.tags import merge_tags
 
@@ -44,11 +45,14 @@ class VersionInfo:
 class IndexFilters:
     type: str | None = None
     author: str | None = None
+    tag: str | None = None
     q: str | None = None
+    archived: bool = False
+    cursor: IndexCursor | None = None
 
     @property
     def active(self) -> bool:
-        return bool(self.type or self.author or self.q)
+        return bool(self.type or self.author or self.tag or self.q)
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,13 @@ class IndexRow:
     created_at: datetime
     bytes: int
     total_versions: int
+    tags: list[str] = field(default_factory=list)
+    archived: bool = False
+    pinned: bool = False
+
+    @property
+    def cursor(self) -> IndexCursor:
+        return IndexCursor(self.pinned, self.created_at, self.id)
 
 
 @dataclass(frozen=True)
@@ -78,8 +89,14 @@ class IndexData:
     rows: list[IndexRow]
     type_counts: list[tuple[str, int]]
     author_counts: list[tuple[str, int]]
+    tag_counts: list[tuple[str, int]]
     stats: IndexStats
+    matching: int
+    archived_count: int
+    next_cursor: IndexCursor | None
 
+
+PAGE_SIZE = 100
 
 VERSION_LOCK_NAMESPACE = 0x7067
 
@@ -204,33 +221,58 @@ class PergamStore:
             ).fetchall()
         return [VersionInfo(*row) for row in rows]
 
-    def index(self, filters: IndexFilters) -> IndexData:
-        sql = """
-            SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
-                   (SELECT count(*) FROM pergams p WHERE p.id = l.id) AS total_versions
-            FROM pergams_latest l
-            WHERE 1=1
+    def index(self, filters: IndexFilters, page_size: int = PAGE_SIZE) -> IndexData:
+        """One page of the index plus the counts around it.
+
+        Rows sort pinned first, then newest first, then by id, so the order is total
+        and a page resumes strictly after `filters.cursor`. Pill counts cover every
+        visible pergam (archived ones only with `filters.archived`), not just the page.
         """
-        params: list[Any] = []
+        scope = "" if filters.archived else " AND NOT COALESCE(m.archived, false)"
+        where = "WHERE true" + scope
+        params: dict[str, Any] = {}
         if filters.type:
-            sql += " AND l.type = %s"
-            params.append(filters.type)
+            where += " AND l.type = %(type)s"
+            params["type"] = filters.type
         if filters.author:
-            sql += " AND l.author = %s"
-            params.append(filters.author)
+            where += " AND l.author = %(author)s"
+            params["author"] = filters.author
+        if filters.tag:
+            where += " AND m.tags @> ARRAY[%(tag)s]::text[]"
+            params["tag"] = filters.tag
         if filters.q:
-            sql += " AND l.title ILIKE %s"
-            params.append(f"%{filters.q}%")
-        sql += " ORDER BY l.created_at DESC LIMIT 500"
+            where += " AND l.title ILIKE %(q)s"
+            params["q"] = f"%{filters.q}%"
+        page_where = where
+        if filters.cursor:
+            page_where += " AND (COALESCE(m.pinned, false), l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
+            params.update(c_pinned=filters.cursor.pinned, c_at=filters.cursor.created_at, c_id=filters.cursor.id)
+        params["limit"] = page_size + 1
+        joined = "FROM pergams_latest l LEFT JOIN pergam_meta m ON m.id = l.id"
 
         with self.pool.connection() as conn:
-            rows = conn.execute(sql, params).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
+                       (SELECT count(*) FROM pergams p WHERE p.id = l.id),
+                       COALESCE(m.tags, '{{}}'), COALESCE(m.archived, false), COALESCE(m.pinned, false)
+                {joined} {page_where}
+                ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC
+                LIMIT %(limit)s
+                """,
+                params,
+            ).fetchall()
+            matching = conn.execute(f"SELECT count(*) {joined} {where}", params).fetchone()[0]
             type_counts = conn.execute(
-                "SELECT type, count(*) FROM pergams_latest GROUP BY type ORDER BY 2 DESC, 1"
+                f"SELECT l.type, count(*) {joined} WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
             ).fetchall()
             author_counts = conn.execute(
-                "SELECT author, count(*) FROM pergams_latest GROUP BY author ORDER BY 2 DESC, 1"
+                f"SELECT l.author, count(*) {joined} WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
             ).fetchall()
+            tag_counts = conn.execute(
+                f"SELECT t, count(*) {joined} CROSS JOIN unnest(m.tags) t WHERE true{scope} GROUP BY 1 ORDER BY 2 DESC, 1"
+            ).fetchall()
+            archived_count = conn.execute("SELECT count(*) " + joined + " WHERE m.archived").fetchone()[0]
             stats = conn.execute(
                 """
                 SELECT
@@ -243,9 +285,14 @@ class PergamStore:
                 """
             ).fetchone()
 
+        page = [IndexRow(*row) for row in rows[:page_size]]
         return IndexData(
-            rows=[IndexRow(*row) for row in rows],
+            rows=page,
             type_counts=[(t, c) for t, c in type_counts],
             author_counts=[(a, c) for a, c in author_counts],
+            tag_counts=[(t, c) for t, c in tag_counts],
             stats=IndexStats(*stats),
+            matching=matching,
+            archived_count=archived_count,
+            next_cursor=page[-1].cursor if len(rows) > page_size else None,
         )

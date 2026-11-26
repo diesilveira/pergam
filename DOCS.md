@@ -9,7 +9,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | Method   | Path                  | Description                                                          |
 | -------- | --------------------- | -------------------------------------------------------------------- |
 | `POST`   | `/pergam`             | Body `{title, html, type, author, id?, tags?}`. Returns `{id, version, view_url, title, type, author}`, plus `tags` when the request sent them. Omit `id` for a new pergam; include it to bump the version of an existing one. `tags` are merged into the id's tags (see [Tags and metadata](#tags-and-metadata)). |
-| `GET`    | `/`                   | HTML index. Filters: `?type=<type>`, `?author=<email>`, `?q=<title-substring>`. |
+| `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<title-substring>`, `?archived=1`. See [Index](#index). |
 | `GET`    | `/{id}/view`          | Render the latest version.                                           |
 | `GET`    | `/{id}/v{n}/view`     | Render a specific version.                                           |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
@@ -51,6 +51,16 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
   -d '{"tags":["billing","q3"],"pinned":true}'
 # → {"id":"abc12345","tags":["billing","q3"],"archived":false,"pinned":true}
 ```
+
+## Index
+
+`GET /` lists the latest version of every pergam.
+
+- **Filters** combine with AND: `type`, `author`, `tag` (normalised like stored tags, so `?tag=Q3` matches `q3`) and `q` (case-insensitive title substring). Clicking a type, author or tag pill sets that filter and keeps the others; clicking the active one clears it.
+- **Archived** pergams are left out unless `?archived=1`, which lists them alongside the rest, marked `archived`. They stay reachable by URL either way.
+- **Order**: pinned first, then by the latest version's `created_at` (newest first), then by id. The order is total, so paging is stable.
+- **Pages** hold 100 pergams. The "next →" link carries an opaque `cursor` (the sort key of the last row) plus the active filters, and every pergam that matches is visited exactly once. A malformed `cursor` is **400**.
+- Pill counts (type, author, tag) cover every visible pergam, not only the current page; the stats cards cover the whole instance, archived included.
 
 ## Pergam types
 
@@ -116,6 +126,7 @@ pergam/
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── tags.py              tag normalisation and limits
 │   ├── meta.py              per-id metadata and PATCH validation
+│   ├── cursor.py            keyset cursor for index pagination
 │   └── migrate.py           numbered migrations runner
 ├── db/
 │   └── migrations/          NNN_*.sql, applied at server startup

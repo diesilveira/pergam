@@ -43,25 +43,24 @@ ${css}</style></head><body>
   </section>
 
   <div class="toolbar">
-    <div class="filter-group">
-      <span class="label">Type</span>
-      <div class="pills">${type_pills}</div>
-    </div>
-    <div class="filter-group">
-      <span class="label">Author</span>
-      <div class="pills">${author_pills}</div>
-    </div>
+    ${type_pills}
+    ${author_pills}
+    ${tag_pills}
     <form class="search-form" method="get">
       <input type="search" name="q" placeholder="search title…" value="${q_value}" autocomplete="off">
       <input type="hidden" name="type" value="${type_value}">
       <input type="hidden" name="author" value="${author_value}">
+      <input type="hidden" name="tag" value="${tag_value}">
+      <input type="hidden" name="archived" value="${archived_value}">
     </form>
+    ${archived_toggle}
     ${clear_link}
   </div>
 
   <section class="list" aria-label="Pergams">
     ${rows}
   </section>
+  ${pager}
 </main>
 
 <script>
