@@ -225,12 +225,21 @@
 
   const setUpSectionLinks = () => {
     if (!document.querySelector('.toc')) return;
-    const reveal = () => {
-      const target = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    const open = (hash) => {
+      let id;
+      try {
+        id = decodeURIComponent(hash.slice(1));
+      } catch (error) {
+        return;
+      }
+      const target = id && document.getElementById(id);
       if (target instanceof HTMLDetailsElement) target.open = true;
     };
-    addEventListener('hashchange', reveal);
-    reveal();
+    addEventListener('hashchange', () => open(location.hash));
+    document.querySelectorAll('.toc a[href^="#"]').forEach((link) => {
+      link.addEventListener('click', () => open(link.getAttribute('href')));
+    });
+    open(location.hash);
   };
 
   document.addEventListener('DOMContentLoaded', () => {

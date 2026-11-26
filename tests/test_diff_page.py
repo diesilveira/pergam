@@ -158,6 +158,24 @@ def test_section_link_opens_a_collapsed_section(page_at, client: Client) -> None
 
     page.wait_for_function("document.querySelector('#sec-1').open")
     assert page.url.endswith("#sec-1")
+    plan.locator("summary").click()
+    assert plan.evaluate("node => node.open") is False
+    page.locator(".toc").get_by_role("link", name=re.compile(r"^Plan")).click()
+    page.wait_for_function("document.querySelector('#sec-1').open")
+
+
+def test_a_malformed_fragment_breaks_nothing(page_at, client: Client) -> None:
+    pid = publish_three(client)
+    errors: list[str] = []
+    page = page_at("about:blank")
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    page.goto(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2#%E0%A4%A")
+    page.evaluate("location.hash = '#%zz'")
+    page.locator(".toc").get_by_role("link", name=re.compile(r"^Plan")).click()
+
+    page.wait_for_function("document.querySelector('#sec-1').open")
+    assert errors == []
 
 
 def test_without_script_pickers_and_section_links_still_work(page_at, client: Client) -> None:
