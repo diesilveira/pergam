@@ -9,7 +9,7 @@ import psycopg
 import pytest
 
 import pergam
-from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, MERMAID_DIAGRAMS, _Linter, lint_html
+from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, MERMAID_DIAGRAMS, _Linter, authorities, lint_html
 from pergam.static_files import MERMAID_VERSION
 from support import Client
 
@@ -227,3 +227,37 @@ def test_every_diagram_type_is_one_the_vendored_mermaid_detects() -> None:
     detected = {word for body in detectors for word in re.findall(r"[A-Za-z][A-Za-z0-9-]*", body)}
 
     assert set(MERMAID_DIAGRAMS) <= detected
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://Docs.Example.com", {"docs.example.com:443"}),
+        ("http://localhost:1111/x.js", {"localhost:1111"}),
+        ("//docs.example.com/x.js", {"docs.example.com:80", "docs.example.com:443"}),
+        ("docs.example.com", {"docs.example.com:80", "docs.example.com:443"}),
+        ("127.0.0.1:8080", {"127.0.0.1:8080"}),
+        ("http://[broken", set()),
+    ],
+)
+def test_authorities(url: str, expected: set[str]) -> None:
+    assert authorities(url) == expected
+
+
+def test_scripts_from_this_server_are_not_external_but_its_images_are() -> None:
+    html = (
+        '<script src="https://docs.example.com/static/mermaid/11.17.2/mermaid.min.js"></script>\n'
+        '<script src="http://127.0.0.1:8080/static/frame-bridge.js"></script>\n'
+        '<img src="https://docs.example.com/logo.png">\n'
+        '<script src="https://other.example.com/x.js"></script>'
+    )
+
+    result = lint_html(html, ("https://docs.example.com", "127.0.0.1:8080"))
+
+    assert [(f.rule, f.line) for f in result.findings] == [("external-resource", 3), ("external-resource", 4)]
+
+
+def test_lint_endpoint_knows_its_own_origin(client: Client) -> None:
+    html = f'<script src="http://127.0.0.1:{client.port}/static/frame-bridge.js"></script>'
+
+    assert client.post_json({"html": html}, "/lint").json()["findings"] == []

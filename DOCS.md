@@ -152,7 +152,7 @@ Findings come in document order, at most 500 (`truncated` says when there were m
 
 | Rule | Severity | Reported when |
 | ---- | -------- | ------------- |
-| `external-resource` | error | A tag loads from another server: `<script src>`, a loading `<link>` (stylesheet, icon, preload, …), `<img src/srcset>`, `<source>`, `<video>`/`<audio>`/`<track>`, `<iframe>`, `<embed>`, `<object>`, SVG `<image>`/`<use>`, or `url(…)`/`@import` in a `<style>` or `style` attribute. The [sandbox](#sandbox) blocks it. |
+| `external-resource` | error | A tag loads from another server: `<script src>`, a loading `<link>` (stylesheet, icon, preload, …), `<img src/srcset>`, `<source>`, `<video>`/`<audio>`/`<track>`, `<iframe>`, `<embed>`, `<object>`, SVG `<image>`/`<use>`, or `url(…)`/`@import` in a `<style>` or `style` attribute. The [sandbox](#sandbox) blocks it. A `<script>` from this server's own origin (its public URL or the `Host` the lint request came to) is allowed, so it is not reported. |
 | `external-resource` | warning | A `<script>` or `<link>` from `cdn.jsdelivr.net`, which the sandbox allows for older pergams; prefer the server's [Mermaid](#mermaid). |
 | `missing-anchor` | error | `<a href="#name">` with no element whose `id` is `name` (or `<a name="name">`); `#` and `#top` are fine. |
 | `mermaid-empty` | error | A `class="mermaid"` element with no diagram text (comments, directives and front matter do not count). |

@@ -184,7 +184,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if not isinstance(html, str) or not html.strip():
             self.send_error(400, "Missing html")
             return
-        self._send_json(lint_html(html).to_json())
+        own = tuple(origin for origin in (self.public.origin, self.headers.get("Host")) if origin)
+        self._send_json(lint_html(html, own).to_json())
 
     def _import(self) -> None:
         """201 when any version was written, 200 when every one was already here, 409 on a conflict."""

@@ -5,7 +5,7 @@ of the tag it is about:
 
 - `external-resource`: a tag that loads something from another server (script,
   stylesheet, image, frame, media, font or `@import` in CSS). The sandbox's CSP
-  blocks it, so it is an error; scripts and styles from jsDelivr are allowed for
+  blocks it, so it is an error, except a script from this server itself; scripts and styles from jsDelivr are allowed for
   documents published before `/static/` served Mermaid, so those are warnings.
 - `missing-anchor`: a link to `#name` with no element whose `id` (or `<a name>`) is `name`.
 - `mermaid-empty`: a `class="mermaid"` block with no diagram text.
@@ -125,6 +125,28 @@ def _external_host(url: str) -> str | None:
         return ""
 
 
+_DEFAULT_PORTS = {"http": (80,), "https": (443,), "": (80, 443)}
+
+
+def authorities(url: str) -> set[str]:
+    """The `host:port` pairs an absolute, scheme-relative or bare-host URL can reach; empty when it has no host.
+
+    Without a scheme or port both web ports count, as for a `Host` header behind a TLS proxy.
+    """
+    url = url.strip()
+    if "//" not in url:
+        url = "//" + url
+    try:
+        parsed = urlparse(url)
+        host, port = parsed.hostname, parsed.port
+    except ValueError:
+        return set()
+    if not host:
+        return set()
+    scheme = parsed.scheme.lower()
+    return {f"{host}:{number}" for number in ((port,) if port else _DEFAULT_PORTS.get(scheme, ()))}
+
+
 def _srcset_urls(value: str) -> list[str]:
     return [candidate.split()[0] for candidate in value.split(",") if candidate.strip()]
 
@@ -154,8 +176,9 @@ def _first_statement(text: str) -> str | None:
 
 
 class _Linter(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, own_authorities: frozenset[str] = frozenset()) -> None:
         super().__init__(convert_charrefs=True)
+        self.own_authorities = own_authorities
         self.findings: list[Finding] = []
         self.targets: set[str] = set()
         self.anchor_links: list[tuple[str, int, int]] = []
@@ -171,7 +194,7 @@ class _Linter(HTMLParser):
 
     def external(self, tag: str, url: str, position: tuple[int, int] | None = None) -> None:
         host = _external_host(url)
-        if host is None:
+        if host is None or (tag == "script" and authorities(url) & self.own_authorities):
             return
         if host == ALLOWED_CDN_HOST and tag in _CDN_KINDS:
             message = f"<{tag}> loads {_shown(url)}: allowed, but a self-hosted server serves Mermaid from /static/"
@@ -256,14 +279,16 @@ def _position(finding: Finding) -> tuple[int, int]:
     return finding.line, finding.column
 
 
-def lint_html(html: str) -> LintResult:
+def lint_html(html: str, own_origins: tuple[str, ...] = ()) -> LintResult:
     """Findings in document order, at most `MAX_FINDINGS` of them.
 
     Findings met while parsing stop being kept one past the cap, and anchor
     findings are produced lazily and merged in, so memory stays bounded by the
-    cap rather than by the number of problems in the document.
+    cap rather than by the number of problems in the document. A script from one
+    of `own_origins` (this server, by URL or `Host` header) is not external: the
+    sandbox's CSP allows it.
     """
-    linter = _Linter()
+    linter = _Linter(frozenset(authority for origin in own_origins for authority in authorities(origin)))
     linter.feed(html)
     linter.close()
     parsed = sorted(linter.findings, key=_position)
