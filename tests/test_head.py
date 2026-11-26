@@ -20,6 +20,8 @@ def test_head_mirrors_get_on_every_route(client: Client) -> None:
         f"/{pid}/v1/view",
         f"/{pid}/v1/raw",
         f"/{pid}/versions",
+        f"/{pid}/meta",
+        "/abcdef12/meta",
         f"/{pid}/v9/view",
         "/abcdef12/versions",
         "/nope",

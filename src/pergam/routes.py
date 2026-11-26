@@ -7,9 +7,11 @@ import json
 import re
 import sys
 from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from pergam.index_page import render_index
+from pergam.meta import MetaError, parse_meta_change
 from pergam.public_url import PublicAddress
 from pergam.store import IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, parse_tags
@@ -41,21 +43,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if urlparse(self.path).path != "/pergam":
             self.send_error(404, "Not Found")
             return
-
-        length = int(self.headers.get("Content-Length", "0") or 0)
-        if length <= 0:
-            self.send_error(400, "Empty body")
-            return
-
-        ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
-        if ctype != "application/json":
-            self.send_error(415, "Use application/json")
-            return
-
-        try:
-            data = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            self.send_error(400, f"Invalid JSON: {exc}")
+        data = self._read_json_object()
+        if data is None:
             return
 
         html = data.get("html", "")
@@ -113,6 +102,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             if parts[1] == "versions":
                 self._render_versions_json(parts[0])
                 return
+            if parts[1] == "meta":
+                self._render_meta_json(parts[0])
+                return
             if parts[1] in ("view", "raw"):
                 self._serve_pergam(parts[0], None, raw=parts[1] == "raw")
                 return
@@ -123,6 +115,25 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
                 return
 
         self.send_error(404, "Not Found")
+
+    def do_PATCH(self) -> None:
+        parts = urlparse(self.path).path.strip("/").split("/")
+        if len(parts) != 2 or parts[1] != "meta" or not ID_RE.match(parts[0]):
+            self.send_error(404, "Not Found")
+            return
+        data = self._read_json_object()
+        if data is None:
+            return
+        try:
+            change = parse_meta_change(data)
+        except MetaError as exc:
+            self.send_error(400, str(exc))
+            return
+        meta = self.store.update_meta(parts[0], change)
+        if meta is None:
+            self.send_error(404, "Pergam not found")
+            return
+        self._send(200, "application/json", json.dumps(meta.to_json(parts[0])).encode("utf-8"))
 
     def do_HEAD(self) -> None:
         """Same status and headers as GET; `_send` and `send_error` skip the body."""
@@ -156,6 +167,33 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             for v in versions
         ]
         self._send(200, "application/json", json.dumps(out).encode("utf-8"))
+
+    def _render_meta_json(self, pergam_id: str) -> None:
+        meta = self.store.meta(pergam_id)
+        if meta is None:
+            self.send_error(404, "Pergam not found")
+            return
+        self._send(200, "application/json", json.dumps(meta.to_json(pergam_id)).encode("utf-8"))
+
+    def _read_json_object(self) -> dict[str, Any] | None:
+        """The request's JSON object body, or None after answering 400/415."""
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length <= 0:
+            self.send_error(400, "Empty body")
+            return None
+        ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            self.send_error(415, "Use application/json")
+            return None
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self.send_error(400, f"Invalid JSON: {exc}")
+            return None
+        if not isinstance(data, dict):
+            self.send_error(400, "JSON body must be an object")
+            return None
+        return data
 
     def _render_index(self, query: dict[str, list[str]]) -> None:
         filters = IndexFilters(

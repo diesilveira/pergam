@@ -142,6 +142,18 @@ Optional. Send `tags` when the user names topics, a project, a quarter or a team
 - On a new version, `tags` are **merged** with the ones the id already has; omitting `tags` leaves them untouched. You don't need to resend old tags.
 - Limits: 20 tags per id, 40 characters per tag.
 
+**Tagging, pinning or archiving an already-published pergam** ("tagueá el informe de ayer con billing", "archivá ese plan", "pin it"): don't post a new version. `PATCH` its metadata instead; this never creates a version.
+
+```bash
+curl -sS "$PERGAM_URL/abc12345/meta"      # -> {"id":"abc12345","tags":["q3"],"archived":false,"pinned":false}
+curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
+     -H "Content-Type: application/json" \
+     -d '{"tags":["q3","billing"]}'
+```
+
+- `PATCH` `tags` **replaces** the set: to add a tag, `GET /{id}/meta` first and send the old tags plus the new one. `[]` clears them.
+- `archived: true` hides it from the index (still reachable by URL); `pinned: true` lists it first. Send only the fields you change.
+
 ### Flow B endpoints
 
 | Method | Path                  | Description                                                          |
@@ -153,6 +165,8 @@ Optional. Send `tags` when the user names topics, a project, a quarter or a team
 | GET    | `/{id}/raw`           | Raw HTML (latest).                                                   |
 | GET    | `/{id}/v{n}/raw`      | Raw HTML (specific).                                                 |
 | GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
+| GET    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`.                                |
+| PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |
 | GET    | `/healthz`            | `{"ok":true}`.                                                       |
 | HEAD   | any GET route         | Same status and headers as GET, no body (cheap existence check).     |
 | DELETE | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |
@@ -197,4 +211,5 @@ Replace ASCII art with Mermaid in long-form content. Only allowed external depen
 - **Container restarts in a loop, logs show "could not connect to server"** → the pergam server can't reach its Postgres. If using bundled compose, `docker compose restart` after the db is ready.
 - **400 "type must be one of …"** → fix the payload to use `plan | investigacion | informe | reporte | otro`.
 - **400 "Missing author"** → always pass `author`.
-- **405 on DELETE** → expected. Pergams are immutable. Post a new version to supersede.
+- **405 on DELETE** → expected. Pergams are immutable. Post a new version to supersede, or `PATCH /{id}/meta` with `{"archived": true}` to hide it.
+- **404 on `PATCH /{id}/meta`** → the id has no versions on this server; check the id.

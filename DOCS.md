@@ -15,6 +15,8 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
 | `GET`    | `/{id}/v{n}/raw`      | Raw HTML source (specific version).                                  |
 | `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
+| `GET`    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`. **404** for an unknown id.     |
+| `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
 | `GET`    | `/healthz`            | Liveness probe.                                                      |
 | `HEAD`   | any `GET` route       | Same status and headers as `GET`, without the body.                  |
 | `DELETE` | `/{id}`               | **405 Method Not Allowed** — pergams are immutable.                  |
@@ -32,7 +34,7 @@ Version numbers are assigned atomically: concurrent posts to the same `id` are s
 
 Caching: a version-pinned route (`/{id}/v{n}/view`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. Everything else (latest `/{id}/view` and `/{id}/raw`, the index, JSON routes) is `no-store`.
 
-Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id.
+Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id; to hide it, archive it with `PATCH /{id}/meta`.
 
 ## Tags and metadata
 
@@ -41,6 +43,14 @@ Tags, `archived` and `pinned` belong to the logical `id`, not to a version, and 
 - Tags are free-form and normalised: trimmed, lowercased, runs of whitespace, `_` and `-` collapsed to one `-`, empties dropped, duplicates removed, stored sorted. `" Q3  Review_notes "` → `q3-review-notes`.
 - At most 20 tags per id, each at most 40 characters after normalisation; beyond that the request gets **400** and nothing is written.
 - `POST /pergam` with `tags` **merges** them into the id's existing tags; posting without `tags` (or `"tags": null`) leaves them as they are.
+- `PATCH /{id}/meta` edits metadata of an id that already has versions. Fields it omits keep their value; `tags` **replaces** the whole set (`[]` clears it); `archived` and `pinned` must be JSON booleans. Unknown fields, an empty object or a wrong type are **400**.
+
+```bash
+curl -sS -X PATCH http://localhost:1111/abc12345/meta \
+  -H 'Content-Type: application/json' \
+  -d '{"tags":["billing","q3"],"pinned":true}'
+# → {"id":"abc12345","tags":["billing","q3"],"archived":false,"pinned":true}
+```
 
 ## Pergam types
 
@@ -105,6 +115,7 @@ pergam/
 │   ├── templates/           index.html + index.css
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── tags.py              tag normalisation and limits
+│   ├── meta.py              per-id metadata and PATCH validation
 │   └── migrate.py           numbered migrations runner
 ├── db/
 │   └── migrations/          NNN_*.sql, applied at server startup

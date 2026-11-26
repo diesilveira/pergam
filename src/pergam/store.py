@@ -10,6 +10,7 @@ from typing import Any
 import psycopg
 from psycopg_pool import ConnectionPool
 
+from pergam.meta import Meta, MetaChange
 from pergam.tags import merge_tags
 
 
@@ -141,6 +142,41 @@ class PergamStore:
                 pergam_id, version = insert_with_new_id(conn, values), 1
             tags = None if pergam.tags is None else add_tags(conn, pergam_id, pergam.tags)
         return Published(pergam_id, version, tags)
+
+    def meta(self, pergam_id: str) -> Meta | None:
+        """Metadata of an id, defaults when it has no row; None when the id has no versions."""
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(m.tags, '{}'), COALESCE(m.archived, false), COALESCE(m.pinned, false)
+                FROM (SELECT DISTINCT id FROM pergams WHERE id = %(id)s) p
+                LEFT JOIN pergam_meta m ON m.id = p.id
+                """,
+                {"id": pergam_id},
+            ).fetchone()
+        return Meta(*row) if row else None
+
+    def update_meta(self, pergam_id: str, change: MetaChange) -> Meta | None:
+        """Apply `change` without touching any version; None when the id has no versions."""
+        params = {"id": pergam_id, "tags": change.tags, "archived": change.archived, "pinned": change.pinned}
+        with self.pool.connection() as conn, conn.transaction():
+            lock_id(conn, pergam_id)
+            if conn.execute("SELECT 1 FROM pergams WHERE id = %(id)s LIMIT 1", params).fetchone() is None:
+                return None
+            row = conn.execute(
+                """
+                INSERT INTO pergam_meta (id, tags, archived, pinned)
+                VALUES (%(id)s, COALESCE(%(tags)s::text[], '{}'),
+                        COALESCE(%(archived)s::boolean, false), COALESCE(%(pinned)s::boolean, false))
+                ON CONFLICT (id) DO UPDATE SET
+                    tags     = COALESCE(%(tags)s::text[], pergam_meta.tags),
+                    archived = COALESCE(%(archived)s::boolean, pergam_meta.archived),
+                    pinned   = COALESCE(%(pinned)s::boolean, pergam_meta.pinned)
+                RETURNING tags, archived, pinned
+                """,
+                params,
+            ).fetchone()
+        return Meta(*row)
 
     def html(self, pergam_id: str, version: int | None) -> str | None:
         """HTML of one version, or of the latest one when `version` is None."""
