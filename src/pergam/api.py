@@ -27,6 +27,7 @@ def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
         "archived": row.archived,
         "pinned": row.pinned,
         "view_url": public.view_url(row.id),
+        "text_url": public.url(f"{row.id}/text"),
         "snippet": row.snippet.text() if row.snippet else None,
     }
 
@@ -63,6 +64,7 @@ def _version(pergam_id: str, version: VersionInfo, public: PublicAddress) -> dic
         "bytes": version.bytes,
         "created_at": version.created_at.isoformat(),
         "view_url": public.url(f"{pergam_id}/v{version.version}/view"),
+        "text_url": public.url(f"{pergam_id}/v{version.version}/text"),
     }
 
 
@@ -81,5 +83,6 @@ def pergam_json(pergam_id: str, versions: list[VersionInfo], meta: Meta, public:
         "archived": meta.archived,
         "pinned": meta.pinned,
         "view_url": public.view_url(pergam_id),
+        "text_url": public.url(f"{pergam_id}/text"),
         "versions": [_version(pergam_id, version, public) for version in versions],
     }

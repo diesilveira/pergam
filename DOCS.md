@@ -16,6 +16,8 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/v{n}/view`     | Render a specific version.                                           |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
 | `GET`    | `/{id}/v{n}/raw`      | Raw HTML source (specific version).                                  |
+| `GET`    | `/{id}/text`          | Visible text of the latest version as Markdown (`text/markdown`). See [Text](#text). |
+| `GET`    | `/{id}/v{n}/text`     | Visible text of a specific version as Markdown.                      |
 | `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
 | `GET`    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`. **404** for an unknown id.     |
 | `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
@@ -34,7 +36,7 @@ Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `v
 
 Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails.
 
-Caching: a version-pinned route (`/{id}/v{n}/view`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. Everything else (latest `/{id}/view` and `/{id}/raw`, the index, JSON routes) is `no-store`.
+Caching: a version-pinned route (`/{id}/v{n}/view`, `/{id}/v{n}/raw`, `/{id}/v{n}/text`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. Everything else (latest `/{id}/view`, `/{id}/raw` and `/{id}/text`, the index, JSON routes) is `no-store`.
 
 Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id; to hide it, archive it with `PATCH /{id}/meta`.
 
@@ -74,7 +76,8 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
   "pergams": [
     {"id": "abc12345", "version": 2, "title": "Release notes", "type": "plan", "author": "you@example.com",
      "created_at": "2025-03-04T05:06:07+00:00", "bytes": 5120, "versions": 2, "tags": ["q3"],
-     "archived": false, "pinned": false, "view_url": "http://localhost:1111/abc12345/view", "snippet": null}
+     "archived": false, "pinned": false, "view_url": "http://localhost:1111/abc12345/view",
+     "text_url": "http://localhost:1111/abc12345/text", "snippet": null}
   ],
   "matching": 1,
   "next_cursor": null,
@@ -89,9 +92,24 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 - `matching` counts every pergam that matches the filters, across pages. `next_cursor` is `null` on the last page; otherwise pass it back as `?cursor=` with the same filters. A malformed cursor is **400**.
 - `counts` and `stats` are the index's pills and cards: counts cover every visible pergam, stats the whole instance.
 
-`GET /api/pergams/{id}` returns one pergam: the latest version's `version`, `title`, `type`, `author`, `created_at`, `bytes` and `view_url`, the id's `tags`, `archived` and `pinned`, and `versions`, newest first, each with `version`, `title`, `type`, `author`, `bytes`, `created_at` and its pinned `view_url` (`/{id}/v{n}/view`). An unknown id is **404**.
+`GET /api/pergams/{id}` returns one pergam: the latest version's `version`, `title`, `type`, `author`, `created_at`, `bytes`, `view_url` and `text_url`, the id's `tags`, `archived` and `pinned`, and `versions`, newest first, each with `version`, `title`, `type`, `author`, `bytes`, `created_at` and its pinned `view_url` and `text_url` (`/{id}/v{n}/view`, `/{id}/v{n}/text`). An unknown id is **404**.
 
 Both are `Cache-Control: no-store`.
+
+## Text
+
+`GET /{id}/text` (latest) and `GET /{id}/v{n}/text` return what a reader sees on the page, as Markdown, for agents and scripts that need the content without the markup. It is the same extraction the search index uses:
+
+- the contents of `script`, `style`, `template`, `noscript` and `head` are dropped;
+- `h1`–`h6` become `#`–`######` lines, `ul`/`ol` items `-` or `1.` lines (nested lists indented two spaces), `pre` a fenced code block with its whitespace kept;
+- a `table` becomes a pipe table whose first row is the header (cells padded to the widest row, `|` escaped as `\|`, nested tables flattened into their cell), its `caption` a paragraph before it;
+- everything else is paragraphs, whitespace collapsed and entities decoded. Links, images and inline styling are reduced to their text.
+
+The body is `text/markdown; charset=utf-8` and ends with a newline, or is empty when the page has no visible text. Unknown ids or versions are **404**.
+
+```bash
+curl -sS http://localhost:1111/abc12345/text
+```
 
 ## Search
 
@@ -174,7 +192,7 @@ pergam/
 │   ├── taxonomy.py          accepted types and badge colours
 │   ├── tags.py              tag normalisation and limits
 │   ├── meta.py              per-id metadata and PATCH validation
-│   ├── text.py              visible text of a pergam as Markdown
+│   ├── text.py              visible text of a pergam as Markdown (search and /text)
 │   ├── search.py            full-text search SQL and snippets
 │   ├── backfill.py          text of versions published before search existed
 │   ├── cursor.py            keyset cursor for index pagination

@@ -18,9 +18,15 @@ from pergam.public_url import PublicAddress
 from pergam.store import IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
+from pergam.text import extract_markdown
 
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 VERSION_RE = re.compile(r"^v(\d+)$")
+CONTENT_TYPES = {
+    "view": "text/html; charset=utf-8",
+    "raw": "text/plain; charset=utf-8",
+    "text": "text/markdown; charset=utf-8",
+}
 NO_STORE = "no-store"
 IMMUTABLE = "public, max-age=31536000, immutable"
 
@@ -127,13 +133,13 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             if parts[1] == "meta":
                 self._render_meta_json(parts[0])
                 return
-            if parts[1] in ("view", "raw"):
-                self._serve_pergam(parts[0], None, raw=parts[1] == "raw")
+            if parts[1] in CONTENT_TYPES:
+                self._serve_pergam(parts[0], None, parts[1])
                 return
-        if len(parts) == 3 and parts[2] in ("view", "raw") and ID_RE.match(parts[0]):
+        if len(parts) == 3 and parts[2] in CONTENT_TYPES and ID_RE.match(parts[0]):
             match = VERSION_RE.match(parts[1])
             if match:
-                self._serve_pergam(parts[0], int(match.group(1)), raw=parts[2] == "raw")
+                self._serve_pergam(parts[0], int(match.group(1)), parts[2])
                 return
 
         self.send_error(404, "Not Found")
@@ -164,13 +170,15 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         self.send_error(405, "Pergams are immutable")
 
-    def _serve_pergam(self, pergam_id: str, version: int | None, *, raw: bool) -> None:
+    def _serve_pergam(self, pergam_id: str, version: int | None, kind: str) -> None:
+        """`kind` is `view` (the HTML), `raw` (the HTML as plain text) or `text` (its visible text as Markdown)."""
         html_text = self.store.html(pergam_id, version)
         if html_text is None:
             self.send_error(404, "Pergam not found")
             return
-        ctype = "text/plain; charset=utf-8" if raw else "text/html; charset=utf-8"
-        self._send(200, ctype, html_text.encode("utf-8"), cache_control=NO_STORE if version is None else IMMUTABLE)
+        body = extract_markdown(html_text) if kind == "text" else html_text
+        cache_control = NO_STORE if version is None else IMMUTABLE
+        self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control)
 
     def _render_versions_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)

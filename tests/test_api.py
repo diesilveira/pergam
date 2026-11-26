@@ -82,6 +82,7 @@ def test_api_index_row_shape(client: Client, catalogue: dict[str, str]) -> None:
         "archived": False,
         "pinned": False,
         "view_url": f"http://localhost:{port}/{catalogue['notes']}/view",
+        "text_url": f"http://localhost:{port}/{catalogue['notes']}/text",
         "snippet": None,
     }
 
@@ -132,11 +133,13 @@ def test_api_pergam_has_metadata_tags_and_versions(client: Client, catalogue: di
         "archived": False,
         "pinned": False,
         "view_url": f"http://localhost:{port}/{pid}/view",
+        "text_url": f"http://localhost:{port}/{pid}/text",
     }
     assert [v["version"] for v in versions] == [2, 1]
     assert [v["title"] for v in versions] == ["Release notes v2", "Release notes"]
     assert versions[1]["view_url"] == f"http://localhost:{port}/{pid}/v1/view"
-    assert set(versions[0]) == {"version", "title", "type", "author", "bytes", "created_at", "view_url"}
+    assert versions[1]["text_url"] == f"http://localhost:{port}/{pid}/v1/text"
+    assert set(versions[0]) == {"version", "title", "type", "author", "bytes", "created_at", "view_url", "text_url"}
 
 
 def test_api_pergam_reports_archived_and_pinned(client: Client, catalogue: dict[str, str]) -> None:

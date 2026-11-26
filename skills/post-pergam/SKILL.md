@@ -111,7 +111,7 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | "armá un pergam nuevo de X", "publish a fresh report"                | **New `id`**. Omit `id` in the POST.                                          |
 | "actualizá el pergam", "nueva versión", "v2", "siguiente versión"    | **Same `id`, version++**. Resolve `id` from context — usually the most recent `view_url` posted in this conversation. |
-| "iterá sobre el plan anterior", "modificá el informe"                | Same as above.                                                                |
+| "iterá sobre el plan anterior", "modificá el informe"                | Same as above. Read the current content first with `GET /{id}/text` (see [§ Reading](#reading-an-existing-pergam-flow-b)). |
 | User mentions an explicit id (`6548a9b9`, `1eb85505`, …)             | **That `id`, version++**. Even if it's new to this conversation.              |
 | Ambiguous and there is a recent pergam in the conversation           | Default to **new version** of the most recent.                                |
 | Ambiguous and no recent pergam                                       | Default to **new `id`**.                                                      |
@@ -119,6 +119,19 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
 **How to find the "current" id**: search this conversation for the most recent `view_url` you (or another assistant message) emitted. The id is the 8-hex segment between the host and `/view`. If you can't find one and the user asked to "iterate", ask the user for the id rather than guess.
 
 The server is permissive: posting with an `id` that doesn't exist yet is accepted as that id's `v1`.
+
+### Reading an existing pergam (Flow B)
+
+When the user asks to read, summarise, quote, check or **iterate on** a pergam that already exists, read its text in **one call** instead of downloading the HTML:
+
+```bash
+curl -sS "$PERGAM_URL/abc12345/text"       # latest version, as Markdown
+curl -sS "$PERGAM_URL/abc12345/v2/text"    # a specific version
+```
+
+- It returns only what a reader sees: headings as `#`, lists as `-`/`1.`, tables as pipe tables, code as fenced blocks; scripts and styles are dropped. **404** means the id (or version) doesn't exist on this server.
+- To iterate, build the new version from that text plus the user's changes, then POST it with the same `id` (see [§ Versioning](#versioning-flow-b)). Fetch `/{id}/raw` only when the new version must keep the old markup or styling exactly.
+- To find a pergam whose id you don't have, search: `curl -sS "$PERGAM_URL/api/pergams?q=<words>"` and pick from `pergams[].id` (each row has `title`, `author`, `created_at` and a `snippet` of the match).
 
 ### Pergam types (Flow B)
 
@@ -169,6 +182,8 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | GET    | `/{id}/v{n}/view`     | Render specific version.                                             |
 | GET    | `/{id}/raw`           | Raw HTML (latest).                                                   |
 | GET    | `/{id}/v{n}/raw`      | Raw HTML (specific).                                                 |
+| GET    | `/{id}/text`          | Visible text of the latest version as Markdown (headings, lists, tables). Cheapest way to read a pergam. |
+| GET    | `/{id}/v{n}/text`     | Same, for a specific version.                                        |
 | GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at}, …]`.      |
 | GET    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`.                                |
 | PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |
