@@ -110,7 +110,7 @@
   const MAX_REASON = 300;
 
   /* The server's one-line reason from an error body: the standard library's page
-     ("Message: …") parsed as an inert document, or a JSON `message`/`error`; only text. */
+     ("Message: …") parsed as an inert document, or the reason field of a JSON body; only text. */
   const reasonOf = async (response) => {
     try {
       const body = await response.text();
