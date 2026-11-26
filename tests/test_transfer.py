@@ -340,7 +340,7 @@ def test_parse_import_window_is_relative_to_now() -> None:
     doc["versions"][0]["created_at"] = "2025-01-01T00:06:00+00:00"
     now = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
-    with pytest.raises(TransferError, match="between 1970-01-01 and now"):
+    with pytest.raises(TransferError, match="more than 5 minutes ahead of this server's clock.*clock skew"):
         parse_import(doc, TYPES, now=now)
     assert parse_import(doc, TYPES, now=now + timedelta(minutes=1)).versions[0].created_at.tzinfo == timezone.utc
 
@@ -364,15 +364,14 @@ def test_gap_check_does_not_enumerate_up_to_the_largest_version(target: Client, 
     assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
 
 
-def test_versions_dated_backwards_in_the_document_are_400(target: Client, target_db: psycopg.Connection) -> None:
+def test_an_export_with_an_inverted_pair_still_imports(target: Client) -> None:
     doc = document(versions=3)
     doc["versions"][2]["created_at"] = "2024-12-31T00:00:00+00:00"
 
     resp = target.post_json(doc, "/import")
 
-    assert resp.status == 400
-    assert b"v3 is dated before v2" in resp.body
-    assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)
+    assert (resp.status, resp.json()["imported"]) == (201, [1, 2, 3])
+    assert export(target, "abcd1234")["versions"][2]["created_at"] == "2024-12-31T00:00:00+00:00"
 
 
 def test_equal_dates_are_accepted() -> None:
@@ -382,15 +381,13 @@ def test_equal_dates_are_accepted() -> None:
     assert len(parse_import(doc, TYPES).versions) == 2
 
 
-def test_imported_version_dated_before_one_already_here_is_409(target: Client, target_db: psycopg.Connection) -> None:
+def test_version_dated_before_one_already_here_still_imports(target: Client) -> None:
     target.publish(id="abcd1234", title="Doc v1", html="<p>version 1</p>")
-    state = target_db.execute(STATE).fetchone()
 
     resp = target.post_json(document(versions=2), "/import")
 
-    assert resp.status == 409
-    assert b"v2 of abcd1234 would be dated before v1" in resp.body
-    assert target_db.execute(STATE).fetchone() == state
+    assert (resp.status, resp.json()["imported"], resp.json()["skipped"]) == (201, [2], [1])
+
 
 
 def test_an_import_carries_at_most_the_version_limit(target: Client, target_db: psycopg.Connection) -> None:
@@ -446,3 +443,13 @@ def test_export_carries_the_html_as_posted_not_the_framed_content(client: Client
     assert exported == client.get(f"/{pid}/v1/raw").text == "<h1>as posted</h1>"
     assert BRIDGE_TAG not in exported
     assert client.get(f"/{pid}/v1/content").text == framed(exported)
+
+
+def test_future_date_error_names_clock_skew(target: Client) -> None:
+    doc = document()
+    doc["versions"][1]["created_at"] = "2999-01-01T00:00:00+00:00"
+
+    resp = target.post_json(doc, "/import")
+
+    assert resp.status == 400
+    assert b"clock skew" in resp.body

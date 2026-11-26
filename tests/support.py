@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+import pytest
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -27,6 +28,17 @@ MIGRATIONS_DIR = REPO_ROOT / "db" / "migrations"
 LEGACY_SCHEMA = REPO_ROOT / "tests" / "fixtures" / "legacy_schema.sql"
 POSTGRES_IMAGE = "postgres:15-alpine"
 TARGET_PUBLIC_URL = "https://team.example.com"
+
+
+def in_ci(env: Mapping[str, str] = os.environ) -> bool:
+    return env.get("CI", "").strip().lower() not in ("", "0", "false", "no")
+
+
+def unavailable(reason: str, env: Mapping[str, str] = os.environ) -> None:
+    """Skip a test that needs an optional tool, or fail it in CI, where every test must run."""
+    if in_ci(env):
+        pytest.fail(f"{reason}; CI runs every test, install it there", pytrace=False)
+    pytest.skip(reason)
 
 
 def free_port() -> int:

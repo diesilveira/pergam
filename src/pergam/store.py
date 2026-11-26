@@ -198,22 +198,17 @@ def exported_versions(conn: psycopg.Connection, pergam_id: str) -> list[Exported
 def import_conflict(doc: ImportDocument, present: dict[int, ExportedVersion]) -> str | None:
     """Why `doc` cannot be imported over `present`, or None when it can.
 
-    The merged versions must number 1..n and, wherever an imported version
-    borders another, keep `created_at` non-decreasing. Gaps are found by
-    walking the sorted numbers, never by enumerating up to the largest one.
+    The merged versions must number 1..n. Gaps are found by walking the sorted
+    numbers, never by enumerating up to the largest one.
     """
     differing = [v.version for v in doc.versions if v.version in present and not present[v.version].same_content(v)]
     if differing:
         listed = ", ".join(f"v{n}" for n in differing)
         return f"{listed} of {doc.id} already exist here with different content"
-    merged = {v.version: v for v in doc.versions} | present
-    numbers = sorted(merged)
+    numbers = sorted(set(present) | {v.version for v in doc.versions})
     gap = next((expected for expected, number in enumerate(numbers, 1) if number != expected), None)
     if gap is not None:
         return f"importing would leave v{gap} of {doc.id} missing"
-    for older, newer in zip(numbers, numbers[1:]):
-        if (older not in present or newer not in present) and merged[newer].created_at < merged[older].created_at:
-            return f"v{newer} of {doc.id} would be dated before v{older}"
     return None
 
 
@@ -259,7 +254,9 @@ class PergamStore:
 
         Posts to an explicit id take a transaction-scoped advisory lock on that id
         before reading `MAX(version)`, so concurrent posts get consecutive versions
-        instead of colliding on the primary key. New random ids retry on collision.
+        instead of colliding on the primary key. Their `created_at` is the clock
+        after the lock, never earlier than the id's latest version, so dates follow
+        version order (the transaction's start, the column default, does not). New random ids retry on collision.
         A tag merge that fails (`TagError`) rolls the version back with it. The note,
         when given, is written in the same transaction as its version. With a trusted
         `editor`, a new version of an existing id needs its owner or a collaborator
@@ -271,8 +268,9 @@ class PergamStore:
                 lock_id(conn, existing_id)
                 check_editor(conn, existing_id, editor)
                 row = conn.execute(
-                    "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
-                    " SELECT %s, COALESCE(MAX(version), 0) + 1, %s, %s, %s, %s, %s FROM pergams WHERE id = %s"
+                    "INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)"
+                    " SELECT %s, COALESCE(MAX(version), 0) + 1, %s, %s, %s, %s, %s,"
+                    " GREATEST(clock_timestamp(), MAX(created_at)) FROM pergams WHERE id = %s"
                     " RETURNING version",
                     (existing_id, *values, existing_id),
                 ).fetchone()

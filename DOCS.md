@@ -44,7 +44,7 @@ Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `v
 - `GET /{id}/view` → latest version
 - `GET /{id}/v3/view` → version 3 specifically
 
-Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails.
+Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails. Each version's `created_at` is taken once its post holds the id, and is never earlier than the previous version's, so dates follow version order.
 
 Caching: a version-pinned raw route (`/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. Routes derived from a pinned version can change with an upgrade, so they are cached for five minutes only (`public, max-age=300`): `/{id}/v{n}/content`, which adds the server's frame bridge and sandbox headers to those bytes, `/{id}/v{n}/text`, built by the text extractor, and `/{id}/diff/v{a}..v{b}`, built from the same extraction. Everything else (both view pages, which count the versions, latest `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
 
@@ -170,7 +170,7 @@ The range is `v{a}..v{b}`, the newer side on the right; `a` may be larger than `
 
 The work is bounded, so a diff answers in well under a second whatever the input:
 
-- Text both versions share at the start and at the end is matched without cost; lines or words that repeat more than 8 times on the newer side never anchor a match (they still extend one).
+- Text both versions share at the start and at the end is matched without cost. Lines (and words) that occur exactly once in each version anchor the comparison, as in patience diff, so a large document with scattered edits is compared gap by gap. Within a gap, lines or words that repeat more than 8 times on the newer side never anchor a match (they still extend one).
 - Matching is metered. A replaced line whose word comparison would overrun its share, or any once the request has spent its total, is marked as a whole line instead of word by word.
 - A version over 2 MB of HTML or 20,000 lines of text, or line matching that overruns its budget, gets a **too large to diff** page (still `200`) with links to both versions' `/text`.
 
@@ -203,7 +203,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
   - `title`, `html` and `author` must not contain NUL;
   - `format_version` must be 1 and the id 6 to 16 lowercase hex characters;
   - `version`s must be distinct integers from 1 to 2147483647, at most 10,000 of them per import (a longer history goes in several imports, each carrying the next versions);
-  - `created_at` must be ISO 8601 with a UTC offset, between 1970-01-01 and five minutes past the server's clock; it is stored in UTC and must not decrease from one version to the next (a document whose versions go back in time is **400**; one whose versions would be dated before a version already here is **409**);
+  - `created_at` must be ISO 8601 with a UTC offset, between 1970-01-01 and five minutes past the server's clock (the allowed clock skew between servers); it is stored in UTC. Dates need not grow with the version number: older histories, or ones across a clock step, can date a version before the previous one, and they import as they are;
   - `server` (optional) must be an absolute `http(s)` URL with a valid host and port, without credentials, query or fragment.
   Anything else is **400** and writes nothing. `bytes` is recomputed from the HTML and unknown fields are ignored.
 - The body may be as large as `PERGAM_MAX_BODY_MB` (see [Configuration](#configuration)).
@@ -440,7 +440,7 @@ make test
 
 That creates `.venv`, installs `requirements-dev.txt` and runs `pytest`. The suite boots the real server (`python3 src/pergam/server.py`) against a throwaway Postgres: by default it starts a `postgres:15-alpine` container named `pergam-test-*` on a random local port with no volume, and removes it at the end. Set `TEST_DATABASE_URL` to an admin connection string to use an existing server instead (CI does this with a `services: postgres` container). Either way every run works in its own `pergam_test_*` database, dropped afterwards; the bundled compose database is never touched.
 
-`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. Without Playwright or a browser those tests are skipped.
+`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
 
 ## Make targets
 

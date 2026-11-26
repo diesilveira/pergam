@@ -9,8 +9,9 @@ dates, tags and notes, and the target records where it came from. When the
 target already has the id, only the versions it lacks are uploaded; a version it
 has with different content stops the promote before anything is uploaded, and
 the server refuses such an import anyway. Running it again is a no-op. Long
-histories go in imports of `BATCH_SIZE` versions, oldest first, well below the
-server's limit per import; a promote stopped midway resumes where it stopped.
+histories go in imports of at most `BATCH_SIZE` versions and `BATCH_BYTES` of
+JSON, oldest first; a batch the target still finds too large is split in half
+until it fits. A promote stopped midway resumes where it stopped.
 
 Exit status: 0 promoted or nothing to do, 1 refused or failed, 2 bad arguments or profiles.
 """
@@ -34,10 +35,13 @@ from pergam_profiles import HOSTED_URL, ProfileError, Server, resolve
 COMPARED = ("title", "html", "type", "author", "note")
 TIMEOUT = 120
 BATCH_SIZE = 1000
+BATCH_BYTES = 32 * 1024 * 1024
 
 
 class PromoteError(RuntimeError):
-    pass
+    def __init__(self, message: str, too_large: bool = False) -> None:
+        super().__init__(message)
+        self.too_large = too_large
 
 
 @dataclass(frozen=True)
@@ -57,9 +61,11 @@ def _send(server: Server, request: urllib.request.Request) -> dict[str, Any]:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = _message(exc.read().decode("utf-8", "replace"))
-        raise PromoteError(f"{server.name}: {request.get_method()} {request.selector} answered {exc.code}: {detail}") from exc
+        message = f"{server.name}: {request.get_method()} {request.selector} answered {exc.code}: {detail}"
+        raise PromoteError(message, too_large=exc.code == 413) from exc
     except (urllib.error.URLError, OSError) as exc:
-        raise PromoteError(f"{server.name}: cannot reach {server.url}: {exc}") from None
+        cut_off = isinstance(getattr(exc, "reason", exc), (BrokenPipeError, ConnectionResetError))
+        raise PromoteError(f"{server.name}: cannot reach {server.url}: {exc}", too_large=cut_off and request.data is not None) from None
 
 
 def _get(server: Server, path: str) -> dict[str, Any] | None:
@@ -89,6 +95,43 @@ def _numbers(versions: list[int]) -> str:
     return ", ".join(f"v{n}" for n in versions)
 
 
+def batches(versions: list[dict[str, Any]], max_count: int, max_bytes: int) -> list[list[dict[str, Any]]]:
+    """Consecutive runs of at most `max_count` versions and, unless one alone is larger, `max_bytes` of JSON."""
+    runs: list[list[dict[str, Any]]] = []
+    run: list[dict[str, Any]] = []
+    size = 0
+    for version in versions:
+        version_size = len(json.dumps(version).encode("utf-8"))
+        if run and (len(run) >= max_count or size + version_size > max_bytes):
+            runs.append(run)
+            run, size = [], 0
+        run.append(version)
+        size += version_size
+    return runs + [run] if run else runs
+
+
+def _upload(target: Server, exported: dict[str, Any], run: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The import answers for `run`, halved and retried while the target refuses the body as too large.
+
+    A server answers 413 and closes the connection without reading the body, so
+    the client usually sees the upload cut off rather than the status. Imports
+    are idempotent, so resending a half that already arrived is harmless.
+    """
+    try:
+        return [_post(target, "/import", {**exported, "versions": run})]
+    except PromoteError as exc:
+        if not exc.too_large:
+            raise
+        if len(run) == 1:
+            megabytes = len(json.dumps(run[0]).encode("utf-8")) / 1024 / 1024
+            raise PromoteError(
+                f"v{run[0]['version']} ({megabytes:.1f} MB) is larger than {target.name} accepts in one request;"
+                f" raise its PERGAM_MAX_BODY_MB ({exc})"
+            ) from None
+    half = len(run) // 2
+    return _upload(target, exported, run[:half]) + _upload(target, exported, run[half:])
+
+
 def missing_versions(source: dict[str, Any], target: dict[str, Any] | None) -> tuple[list[dict[str, Any]], list[int]]:
     """Source versions the target lacks, and the numbers it already has; raises when one it has differs."""
     present = {v["version"]: v for v in (target or {}).get("versions", [])}
@@ -116,11 +159,8 @@ def promote(pergam_id: str, source: Server, target: Server) -> Promoted:
     if not missing:
         described = _get(target, f"/api/pergams/{quote(pergam_id, safe='')}")
         return Promoted([], already_there, described["view_url"] if described else f"{target.url}/{pergam_id}/view")
-    uploaded: list[int] = []
-    for start in range(0, len(missing), BATCH_SIZE):
-        answer = _post(target, "/import", {**exported, "versions": missing[start : start + BATCH_SIZE]})
-        uploaded += answer["imported"]
-    return Promoted(uploaded, already_there, answer["view_url"])
+    answers = [answer for run in batches(missing, BATCH_SIZE, BATCH_BYTES) for answer in _upload(target, exported, run)]
+    return Promoted([n for answer in answers for n in answer["imported"]], already_there, answers[-1]["view_url"])
 
 
 def main(argv: list[str]) -> int:

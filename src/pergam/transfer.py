@@ -134,8 +134,14 @@ def _created_at(entry: dict[str, Any], label: str, now: datetime) -> datetime:
         created_at = created_at.astimezone(timezone.utc)
     except OverflowError:
         created_at = None
-    if created_at is None or not EARLIEST_CREATED_AT <= created_at <= now + CLOCK_SKEW:
+    if created_at is None or created_at < EARLIEST_CREATED_AT:
         raise TransferError(f"{label}: created_at must be between 1970-01-01 and now (UTC)")
+    if created_at > now + CLOCK_SKEW:
+        minutes = int(CLOCK_SKEW.total_seconds() // 60)
+        raise TransferError(
+            f"{label}: created_at {created_at.isoformat()} is more than {minutes} minutes ahead of this server's clock"
+            f" ({now.isoformat(timespec='seconds')}); check for clock skew between the two servers"
+        )
     return created_at
 
 
@@ -184,8 +190,10 @@ def _meta(value: object) -> tuple[list[str], bool, bool]:
 def parse_import(data: dict[str, Any], types: tuple[str, ...], now: datetime | None = None) -> ImportDocument:
     """Validate a `POST /import` body against this server's accepted types; raises `TransferError`.
 
-    `created_at` must not decrease from one version to the next. `bytes` is
-    recomputed from each version's HTML, unknown fields are ignored.
+    `bytes` is recomputed from each version's HTML, unknown fields are ignored.
+    Dates are not required to grow with the version number: histories written
+    before publish stamped dates after the per-id lock, or across a clock step,
+    can have a version dated before the previous one.
     """
     if data.get("format_version") != FORMAT_VERSION:
         raise TransferError(f"format_version must be {FORMAT_VERSION}")
@@ -202,9 +210,6 @@ def parse_import(data: dict[str, Any], types: tuple[str, ...], now: datetime | N
     repeated = next((b for a, b in zip(versions, versions[1:]) if a.version == b.version), None)
     if repeated:
         raise TransferError(f"v{repeated.version} appears more than once")
-    backwards = next(((a, b) for a, b in zip(versions, versions[1:]) if b.created_at < a.created_at), None)
-    if backwards:
-        raise TransferError(f"v{backwards[1].version} is dated before v{backwards[0].version}")
     server = data.get("server")
     origin = None if server is None else Origin(parse_server_url(server), pergam_id)
     tags, archived, pinned = _meta(data.get("meta"))

@@ -5,7 +5,15 @@ import time
 
 import pytest
 
-from pergam.diff import MAX_HTML_BYTES, MAX_LINES, Budget, TooLargeToDiff, bounded_opcodes, diff_sections
+from pergam.diff import (
+    MAX_HTML_BYTES,
+    MAX_LINES,
+    Budget,
+    TooLargeToDiff,
+    anchors,
+    bounded_opcodes,
+    diff_sections,
+)
 from support import Client
 
 V1 = (
@@ -145,14 +153,23 @@ def test_view_links_to_the_changes_and_to_what_changed_since(client: Client) -> 
     assert f'<a href="/{pid}/diff/v1..v2" title="diff with v1">changes</a>' in middle
 
 
-INTERLEAVED = 8_000
+DOUBLED = 4_000
+
+
+def doubled(n: int) -> tuple[list[str], list[str]]:
+    """Every element twice on each side, so nothing is unique to anchor on, and new ones interleaved."""
+    return [str(i) for i in range(n)] * 2, [x for i in range(n) for x in (str(i), f"f{i}")] * 2
+
+
+def paragraph(words: list[str]) -> str:
+    return "<p>" + " ".join(words) + "</p>"
+
+
+OLD_WORDS, NEW_WORDS = doubled(DOUBLED)
+OLD_LINES, NEW_LINES = doubled(DOUBLED)
 PATHOLOGICAL = (
-    "<p>" + " ".join(["the"] * 20_000) + "</p>"
-    + "<p>" + " ".join(str(i) for i in range(INTERLEAVED)) + "</p>"
-    + "".join(f"<p>{i}</p>" for i in range(INTERLEAVED)),
-    "<p>" + " ".join(["the", "a"] * 10_000) + "</p>"
-    + "<p>" + " ".join(f"{i} f{i}" for i in range(INTERLEAVED)) + "</p>"
-    + "".join(f"<p>{i}</p><p>f{i}</p>" for i in range(INTERLEAVED)),
+    paragraph(["the"] * 20_000) + paragraph(OLD_WORDS) + "".join(f"<p>{line}</p>" for line in OLD_LINES),
+    paragraph(["the", "a"] * 10_000) + paragraph(NEW_WORDS) + "".join(f"<p>{line}</p>" for line in NEW_LINES),
 )
 
 
@@ -165,12 +182,27 @@ def test_pathological_pair_is_answered_within_a_time_bound() -> None:
     assert time.perf_counter() - started < 2
 
 
-def test_pair_over_the_budget_is_marked_as_whole_lines() -> None:
-    old = "<p>" + " ".join(str(i) for i in range(INTERLEAVED)) + "</p>"
-    new = "<p>" + " ".join(f"{i} f{i}" for i in range(INTERLEAVED)) + "</p>"
+def test_large_document_with_scattered_edits_gets_a_real_diff_within_a_time_bound() -> None:
+    paragraphs = [f"<p>Paragraph {i} keeps the same few words in it.</p>" for i in range(4_000)]
+    edited = [text.replace("few", "many") if i % 5 == 0 else text for i, text in enumerate(paragraphs)]
     started = time.perf_counter()
 
-    lines = diff_sections(old, new)[0].lines
+    sections = diff_sections("".join(paragraphs), "".join(edited))
+
+    assert time.perf_counter() - started < 2
+    changed = [line for section in sections for line in section.lines if line.kind != "same"]
+    assert len(changed) == 2 * 800
+    assert all([s.text for s in line.segments if s.changed] in (["few"], ["many"]) for line in changed)
+
+
+def test_anchors_are_elements_unique_on_both_sides_in_order() -> None:
+    assert anchors(list("xabcqdx"), list("dabxcqx")) == [(1, 1), (2, 2), (3, 4), (4, 5)]
+
+
+def test_pair_over_the_budget_is_marked_as_whole_lines() -> None:
+    started = time.perf_counter()
+
+    lines = diff_sections(paragraph(OLD_WORDS), paragraph(NEW_WORDS))[0].lines
 
     assert time.perf_counter() - started < 1
     assert [(line.kind, [segment.changed for segment in line.segments]) for line in lines] == [
@@ -180,9 +212,7 @@ def test_pair_over_the_budget_is_marked_as_whole_lines() -> None:
 
 
 def test_repeated_words_are_junk_and_still_diffed_word_by_word() -> None:
-    old, new = "<p>" + " ".join(["the"] * 20_000) + "</p>", "<p>" + " ".join(["the", "a"] * 10_000) + "</p>"
-
-    removed, added = diff_sections(old, new)[0].lines
+    removed, added = diff_sections(paragraph(["the"] * 20_000), paragraph(["the", "a"] * 10_000))[0].lines
 
     assert len(added.segments) > 1
 
@@ -199,24 +229,25 @@ def test_common_ends_cost_nothing() -> None:
 
 
 def test_matching_work_is_charged_and_refused_over_the_budget() -> None:
-    a = [str(i) for i in range(1_000)]
-    b = [x for i in range(1_000) for x in (str(i), f"f{i}")]
+    a, b = doubled(1_000)
     budget = Budget(10**9)
 
     assert bounded_opcodes(a, b, budget) is not None
-    assert budget.spent > 1_000 * 1_000 // 2
+    assert budget.spent > 1_000 * 1_000
     assert bounded_opcodes(a, b, Budget(budget.spent - 1)) is None
 
 
 def test_request_budget_is_shared_by_every_pair() -> None:
-    old = "".join(f"<p>{' '.join(str(k) for k in range(i, i + 1_500))}</p>" for i in range(30))
-    new = "".join(f"<p>{' '.join(f'{k} z{k}' for k in range(i, i + 1_500))}</p>" for i in range(30))
+    old_words, new_words = doubled(250)
+    old, new = paragraph(old_words), paragraph(new_words)
     started = time.perf_counter()
 
-    sections = diff_sections(old, new)
+    lines = diff_sections(old * 30, new * 30)[0].lines
 
-    assert time.perf_counter() - started < 1
-    assert all(len(line.segments) == 1 for line in sections[0].lines)
+    assert time.perf_counter() - started < 2
+    marked = [len(line.segments) > 1 for line in lines if line.kind == "added"]
+    assert marked[0] and not marked[-1]
+    assert marked == sorted(marked, reverse=True)
 
 
 def test_pathological_pair_answers_over_http_within_a_time_bound(client: Client) -> None:
