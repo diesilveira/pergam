@@ -59,11 +59,11 @@ Pergams cannot be deleted. To "supersede" a pergam, post a new version with the 
 By default the `author` of a version is whatever `POST /pergam` sends: pergam has no accounts and assumes the network is a trust boundary. Behind a reverse proxy that authenticates users (see [Deployment](#deployment)), set `TRUST_PROXY_USER=1` and the author comes from the proxy instead:
 
 - every `POST /pergam` takes its author from the `X-Forwarded-User` header, trimmed; the body's `author` is ignored, may be left out, and the response's `author` is the header's value, so nobody can publish under someone else's name;
-- a write without the header, or with a blank one, is **401** and writes nothing; one longer than 320 characters or holding a control character is **400**. The header is read as UTF-8;
+- a write without the header, or with a blank one, is **401** and writes nothing; one that carries the header twice is **400**, so a client's copy left in front of the proxy's never counts; one longer than 320 characters or holding a control character is **400**. The header is read as UTF-8;
 - the same header names the writer of `PATCH /{id}/meta`, `PUT /{id}/collaborators` and `POST /import`, with the same **401** and **400**, and decides what each may change (see [Ownership](#ownership));
 - reads (`GET`, `HEAD`) never need it.
 
-Only turn it on when the proxy sets `X-Forwarded-User` on every request itself, drops any copy a client sends, and pergam is reachable through that proxy alone: pergam trusts the header as it arrives. With the flag off (the default) the header is never read and nothing changes. A value of `TRUST_PROXY_USER` that is neither `1/true/yes/on` nor `0/false/no/off` stops the server at startup.
+Only turn it on when the proxy sets `X-Forwarded-User` on every request itself, replacing (not appending to) any copy a client sends, and pergam is reachable through that proxy alone: pergam trusts the header as it arrives. With the flag off (the default) the header is never read and nothing changes. A value of `TRUST_PROXY_USER` that is neither `1/true/yes/on` nor `0/false/no/off` stops the server at startup.
 
 ### Ownership
 

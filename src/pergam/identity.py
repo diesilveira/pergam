@@ -81,6 +81,17 @@ def proxy_user(value: str | None) -> str:
         raise IdentityError(400, f"Invalid {PROXY_USER_HEADER}") from None
 
 
+def single_proxy_user(values: list[str]) -> str:
+    """The user of a request's `X-Forwarded-User` headers, which must be at most one.
+
+    A proxy that appends its header after a client's copy instead of replacing it
+    would leave the client's first; refusing duplicates keeps that copy from counting.
+    """
+    if len(values) > 1:
+        raise IdentityError(400, f"{PROXY_USER_HEADER} sent more than once")
+    return proxy_user(values[0] if values else None)
+
+
 @dataclass(frozen=True)
 class Writer:
     """Who sends a write: `user` is the trusted proxy user, None when identity is not trusted."""

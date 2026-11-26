@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import http.client
+import json
 from pathlib import Path
 
 import psycopg
 import pytest
 
-from pergam.identity import IdentityError, parse_author, proxy_user, trusts_proxy_user
+from pergam.identity import IdentityError, parse_author, proxy_user, single_proxy_user, trusts_proxy_user
 from support import Client, ServerProcess
 
 
@@ -109,3 +111,30 @@ def test_import_refuses_an_author_with_control_characters(client: Client) -> Non
 
     assert resp.status == 400
     assert "control characters" in resp.text
+
+
+def test_a_repeated_proxy_user_header_is_refused() -> None:
+    assert single_proxy_user(["ana@example.com"]) == "ana@example.com"
+    with pytest.raises(IdentityError) as info:
+        single_proxy_user(["eve@example.com", "ana@example.com"])
+
+    assert info.value.status == 400
+
+
+def test_trusted_publish_with_two_user_headers_is_400_and_writes_nothing(
+    trusting: Client, db: psycopg.Connection
+) -> None:
+    conn = http.client.HTTPConnection("127.0.0.1", trusting.port, timeout=10)
+    try:
+        conn.putrequest("POST", "/pergam")
+        body = json.dumps({"title": "x", "html": "<p>x</p>", "type": "otro"}).encode()
+        for name, value in [("Content-Type", "application/json"), ("Content-Length", str(len(body))),
+                            ("X-Forwarded-User", "eve@example.com"), ("X-Forwarded-User", "ana@example.com")]:
+            conn.putheader(name, value)
+        conn.endheaders(body)
+        status = conn.getresponse().status
+    finally:
+        conn.close()
+
+    assert status == 400
+    assert db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)

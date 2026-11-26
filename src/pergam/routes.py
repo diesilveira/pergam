@@ -17,7 +17,7 @@ from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
-from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, proxy_user
+from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, single_proxy_user
 from pergam.ids import ID_RE
 from pergam.index_page import render_index
 from pergam.lint import LINT_MAX_BODY_BYTES, lint_html
@@ -110,7 +110,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if not self.trust_proxy_user:
             return Writer()
         try:
-            return Writer(proxy_user(self.headers.get(PROXY_USER_HEADER)))
+            return Writer(single_proxy_user(self.headers.get_all(PROXY_USER_HEADER) or []))
         except IdentityError as exc:
             self.send_error(exc.status, str(exc))
             return None
