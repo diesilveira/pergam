@@ -14,7 +14,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags, `origin` and every version of one pergam. **404** for an unknown id. |
 | `GET`    | `/{id}/view`          | View page of the latest version: a bar with title, type, tags, author and versions, and the document in a frame. See [View](#view). |
 | `GET`    | `/{id}/v{n}/view`     | View page of a specific version; tells when a newer one exists.      |
-| `GET`    | `/{id}/v{n}/content`  | The posted HTML followed by the frame bridge tag (`text/html`), what the view page frames. Version-pinned only. See [View](#view). |
+| `GET`    | `/{id}/v{n}/content`  | The posted HTML with the frame bridge tag added (`text/html`, sandboxed by its CSP), what the view page frames. Version-pinned only. See [View](#view) and [Sandbox](#sandbox). |
 | `GET`    | `/{id}/raw`           | Raw HTML source (latest).                                            |
 | `GET`    | `/{id}/v{n}/raw`      | Raw HTML source (specific version).                                  |
 | `GET`    | `/{id}/text`          | Visible text of the latest version as Markdown (`text/markdown`). See [Text](#text). |
@@ -44,9 +44,13 @@ Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `v
 
 Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails.
 
-Caching: a version-pinned content route (`/{id}/v{n}/content`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. `/{id}/v{n}/text` is derived from that version by the text extractor, which can improve with an upgrade, so it is cached for five minutes only (`public, max-age=300`), and so is `/{id}/diff/v{a}..v{b}`, built from the same extraction. Everything else (both view pages, which count the versions, latest `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
+Caching: a version-pinned raw route (`/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. Routes derived from a pinned version can change with an upgrade, so they are cached for five minutes only (`public, max-age=300`): `/{id}/v{n}/content`, which adds the server's frame bridge and sandbox headers to those bytes, `/{id}/v{n}/text`, built by the text extractor, and `/{id}/diff/v{a}..v{b}`, built from the same extraction. Everything else (both view pages, which count the versions, latest `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
 
 Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id; to hide it, archive it with `PATCH /{id}/meta`.
+
+### Version notes
+
+`note` on `POST /pergam` is an optional one-line description of what this version changes (`"adds the costs section"`). It is stored with the version and, like the version, never changes. Whitespace is collapsed; a blank note is the same as none; a note that is not a string, holds a control character other than whitespace or is longer than 280 characters is **400** and publishes nothing. Notes are returned by `/{id}/versions` and `/api/pergams/{id}` (`null` for versions without one) and shown in the view page's version selector.
 
 ## Identity
 
@@ -87,19 +91,15 @@ curl -sS -X PUT https://pergam.example.com/abc12345/collaborators \
 - The owner of a pergam published before the flag was turned on is whatever `author` its v1 was posted with; when that is not the name the proxy now sends, nobody can add versions to it until the owner name and the proxy agree. Plan the switch so authors already match the proxy's names (usually the email).
 - With the flag off nothing is enforced: anyone may version, patch, import and edit the list, which is still validated and stored and takes effect once the flag is turned on.
 
-### Version notes
-
-`note` on `POST /pergam` is an optional one-line description of what this version changes (`"adds the costs section"`). It is stored with the version and, like the version, never changes. Whitespace is collapsed; a blank note is the same as none; a note that is not a string, holds a control character other than whitespace or is longer than 280 characters is **400** and publishes nothing. Notes are returned by `/{id}/versions` and `/api/pergams/{id}` (`null` for versions without one) and shown in the view page's version selector.
-
 ## View
 
 `/{id}/view` and `/{id}/v{n}/view` are pergam's own page around the document:
 
 - **A slim bar** with the version's title, type, the id's tags, the author, the server it was [imported](#export-and-import) from when it was, `v3 of 5`, a version selector (every version, newest first, with its date and [note](#version-notes)), links to the index, the version's `raw` HTML, its `text` and the document alone (`open document`), and a **print** button.
 - **A notice** on any version that is not the latest, linking to the current one (`/{id}/view`).
-- **The document** in a full-height iframe loaded from `/{id}/v{n}/content`, always version-pinned, so the browser caches it for good.
+- **The document** in a full-height, sandboxed iframe loaded from `/{id}/v{n}/content`, always version-pinned (see [Sandbox](#sandbox)).
 
-`/raw` returns the posted bytes untouched, as `text/plain`. `/content` returns them followed by one tag, `<script src="/static/frame-bridge.js"></script>`: the **frame bridge**, which talks to the view page with `postMessage` only, never reaching into the other side's DOM or location, so it keeps working once the frame is sandboxed. Through it:
+`/raw` returns the posted bytes untouched, as `text/plain`. `/content` returns them with one tag added, `<script src="/static/frame-bridge.js" defer></script>`, right after a leading `<!doctype>` (or first when there is none, so a document that ends inside `<title>` or `<textarea>` cannot swallow it as text): the **frame bridge**, which talks to the view page with `postMessage` only, never reaching into the other side's DOM or location, so it works inside the sandbox. `/raw` and `/{id}/export` never carry it. Through it:
 
 - **Anchors**: in-document links (`#section`) scroll the document, and the view URL follows them (`/{id}/view#section`, replaced, not a new history entry). A fragment on the view URL, at load or changed later, scrolls the document without adding history.
 - **Links** that leave the document and have no `target` of their own (and no `<base target>`) open in the whole window, not inside the frame. Links with a `target`, downloads, and clicks with a modifier key keep their usual behaviour.
@@ -112,9 +112,21 @@ What changes for a document inside the frame, compared with opening `/content` o
 - Relative URLs resolve against `/{id}/v{n}/` (`href="notes"` is `/{id}/v{n}/notes`, a 404): link other pergams and assets by absolute path or full URL.
 - The frame is the viewport: `100vh`, `position: fixed` and `sticky`, and `matchMedia` measure the frame, below the bar.
 - The tab title comes from the document's `<title>`; without one it stays the pergam's title.
-- The bridge needs script to run: a document whose own CSP forbids `/static/frame-bridge.js`, or whose markup leaves an element such as `<script>` or a comment unclosed at the end, keeps its links inside the frame and shows no print button.
+- The bridge needs script to run: a document whose own CSP forbids `/static/frame-bridge.js` keeps its links inside the frame and shows no print button.
 
-The view page treats every message as untrusted data: it accepts only those from its own frame, only strings, at most 2,048 characters, and a fragment only when it starts with `#`; nothing is ever inserted as HTML. The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). Unknown ids or versions are **404**. The frame is not sandboxed yet: published scripts run on the server's origin as they did before the view page.
+The view page treats every message as untrusted data: it accepts only those from its own frame whose origin is its own or `null` (the sandbox's), only strings, at most 2,048 characters, and a fragment only when it starts with `#`; nothing is ever inserted as HTML. The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notice on an earlier version to what changed since (`/{id}/diff/v{n}..v{latest}`). Unknown ids or versions are **404**.
+
+### Sandbox
+
+A published document never runs with the server's privileges, framed or opened on its own at `/content`:
+
+- The iframe is `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation-by-user-activation"`, without `allow-same-origin`, and every `/content` response repeats those tokens in the `sandbox` directive of its `Content-Security-Policy`. The document runs in an opaque origin (`origin` is `"null"`): no cookies or `localStorage` of this server, and every request it makes to the API is cross-origin.
+- The rest of that CSP is the hosted viewer's: `default-src 'none'`; scripts inline, from this server and from `https://cdn.jsdelivr.net`; styles inline and from jsDelivr; images only `data:`; fonts `data:` and jsDelivr; `connect-src` only jsDelivr; `form-action 'none'`, `base-uri 'none'`; framed only by this server (`frame-ancestors`). "This server" is `'self'` plus its public origin by name (from `PUBLIC_URL`, or `PUBLIC_HOST`/`PUBLIC_PORT`), for browsers that do not match `'self'` from an opaque origin. `/content` also sends `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`; `/raw` is `text/plain` with `nosniff`, so it never renders.
+- So a script inside a pergam cannot read the index, post a version, patch metadata, submit a form, beacon or embed a frame against the API: the browser blocks the request before it leaves.
+- What still works: inline scripts and styles, Mermaid from `/static/` or jsDelivr, in-page anchors, links that leave the document (on a click), links that open a new tab (as an ordinary page outside the sandbox), printing, `data:` images.
+- What a document loses: images, fonts, scripts and styles from anywhere else, `fetch` and XHR except to jsDelivr, forms, nested frames, `localStorage`/`sessionStorage`/cookies, and navigating the whole window without a click. The skill keeps documents within these limits.
+
+`/content` is cached for five minutes (`public, max-age=300`), not for good like `/raw`, because the bridge tag and these headers are the server's and may change with an upgrade.
 
 ## Diff
 
@@ -395,7 +407,7 @@ make test
 
 That creates `.venv`, installs `requirements-dev.txt` and runs `pytest`. The suite boots the real server (`python3 src/pergam/server.py`) against a throwaway Postgres: by default it starts a `postgres:15-alpine` container named `pergam-test-*` on a random local port with no volume, and removes it at the end. Set `TEST_DATABASE_URL` to an admin connection string to use an existing server instead (CI does this with a `services: postgres` container). Either way every run works in its own `pergam_test_*` database, dropped afterwards; the bundled compose database is never touched.
 
-`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, each case plain and with the frame sandboxed. Without Playwright or a browser those tests are skipped.
+`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. Without Playwright or a browser those tests are skipped.
 
 ## Make targets
 

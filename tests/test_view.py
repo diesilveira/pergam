@@ -7,7 +7,7 @@ import pytest
 
 from pergam.meta import Meta
 from pergam.store import VersionInfo
-from pergam.view_page import FramePolicy, render_view
+from pergam.view_page import BRIDGE_TAG, SANDBOX, FramePolicy, frame_policy, framed, render_view
 from support import Client
 
 
@@ -111,11 +111,67 @@ def test_content_is_the_posted_html_plus_the_bridge_tag_and_raw_is_untouched(cli
     content, raw = client.get(f"/{pid}/v1/content"), client.get(f"/{pid}/v1/raw")
 
     assert raw.body == html.encode("utf-8")
-    assert content.body == (html + '<script src="/static/frame-bridge.js"></script>').encode("utf-8")
+    assert content.body == (
+        '<!doctype html><script src="/static/frame-bridge.js" defer></script><a href="#s">s</a><h2 id="s">ñ — 日本</h2>'
+    ).encode("utf-8")
     assert content.headers["content-length"] == str(len(content.body))
     assert content.headers["content-type"] == "text/html; charset=utf-8"
     assert raw.headers["content-type"] == "text/plain; charset=utf-8"
-    assert content.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ("<p>x</p>", f"{BRIDGE_TAG}<p>x</p>"),
+        ("<!DOCTYPE html>\n<title>t", f"<!DOCTYPE html>{BRIDGE_TAG}\n<title>t"),
+        ("\ufeff <!-- a -->\n<!doctype html><p>", f"\ufeff <!-- a -->\n<!doctype html>{BRIDGE_TAG}<p>"),
+        ("<p>x</p><!doctype html>", f"{BRIDGE_TAG}<p>x</p><!doctype html>"),
+        ("<!-- never closed <!doctype html>", f"{BRIDGE_TAG}<!-- never closed <!doctype html>"),
+    ],
+    ids=["no-doctype", "doctype", "bom-and-comment", "late-doctype", "open-comment"],
+)
+def test_bridge_tag_goes_after_a_leading_doctype_or_first(html: str, expected: str) -> None:
+    assert framed(html) == expected
+
+
+def test_content_is_sandboxed_away_from_the_api_origin(client: Client) -> None:
+    pid = client.publish()["id"]
+
+    headers = client.get(f"/{pid}/v1/content").headers
+
+    directives = dict(d.strip().split(" ", 1) for d in headers["content-security-policy"].split(";"))
+    own = f"'self' http://localhost:{client.port}"
+    assert directives == {
+        "sandbox": SANDBOX,
+        "default-src": "'none'",
+        "script-src": f"'unsafe-inline' {own} https://cdn.jsdelivr.net",
+        "style-src": "'unsafe-inline' https://cdn.jsdelivr.net",
+        "img-src": "data:",
+        "font-src": "data: https://cdn.jsdelivr.net",
+        "connect-src": "https://cdn.jsdelivr.net",
+        "form-action": "'none'",
+        "frame-ancestors": own,
+        "base-uri": "'none'",
+    }
+    assert "allow-same-origin" not in SANDBOX
+    assert headers["x-content-type-options"] == "nosniff"
+    assert headers["referrer-policy"] == "no-referrer"
+
+
+def test_view_frames_the_document_in_a_sandbox_without_its_origin(client: Client) -> None:
+    pid = client.publish(title="Doc")["id"]
+
+    page = client.get(f"/{pid}/view").text
+
+    assert f'<iframe class="doc" src="/{pid}/v1/content" title="Doc" sandbox="{SANDBOX}"></iframe>' in page
+
+
+def test_frame_policy_names_the_public_origin_only_when_a_csp_can() -> None:
+    named = frame_policy("https://docs.example.com")
+    unnamed = frame_policy(None)
+
+    assert "script-src 'unsafe-inline' 'self' https://docs.example.com https://cdn.jsdelivr.net" in named.content_headers[0][1]
+    assert "frame-ancestors 'self';" in unnamed.content_headers[0][1]
 
 
 @pytest.mark.parametrize("path", ["/abcdef12/view", "/abcdef12/v1/view", "/abcdef12/v1/content", "/{pid}/v2/view"])

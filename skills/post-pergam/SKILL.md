@@ -269,6 +269,7 @@ Shared between both flows.
 
 - Complete document: `<!doctype html><html lang="...">...</html>`.
 - Inline all CSS. **No external fonts.** **No external JS** except Mermaid (see below).
+- Both backends run the document sandboxed, in an opaque origin, under a strict CSP: no external images (use inline SVG or `data:` URIs), no `fetch`/XHR, no forms, no nested iframes, no `localStorage` or cookies. In-page anchors, links, inline scripts, printing and Mermaid keep working.
 - Use CSS Grid or flexbox for the actual layout.
 - Dark theme. Paleta from `polish-guide.md`: `bg:#0d1117`, `bg2:#161b22`, `text:#e6edf3`, `muted:#8b949e`, `border:#30363d`, accent `#58a6ff`, ok `#3fb950`, warn `#d29922`, critical `#f85149`.
 

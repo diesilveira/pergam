@@ -30,7 +30,7 @@ from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
 from pergam.text import extract_text
 from pergam.transfer import TransferError, export_json, parse_import
-from pergam.view_page import BRIDGE_PATH, BRIDGE_SCRIPT, FRAME_POLICY, framed, render_view
+from pergam.view_page import BRIDGE_PATH, BRIDGE_SCRIPT, FRAME_POLICY, FramePolicy, framed, render_view
 
 VERSION_RE = re.compile(r"^v(\d+)$")
 RANGE_RE = re.compile(r"^v([1-9]\d*)\.\.v([1-9]\d*)$")
@@ -73,6 +73,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     types: tuple[str, ...] = DEFAULT_TYPES
     max_body_bytes: int = DEFAULT_MAX_BODY_MB * MIB
     trust_proxy_user: bool = False
+    frame: FramePolicy = FRAME_POLICY
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {format % args}\n")
@@ -294,7 +295,11 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self.send_error(405, "Pergams are immutable")
 
     def _serve_pergam(self, pergam_id: str, version: int | None, kind: str) -> None:
-        """`kind` is `content` (the HTML plus the frame bridge), `raw` (the HTML as posted) or `text` (Markdown)."""
+        """`kind` is `content` (the HTML plus the frame bridge), `raw` (the HTML as posted) or `text` (Markdown).
+
+        Only `/raw` is the stored bytes alone, so only it is cached for good; `/content`
+        carries the bridge tag and the frame's headers, which may change with an upgrade.
+        """
         html_text = self.store.html(pergam_id, version)
         if html_text is None:
             self.send_error(404, "Pergam not found")
@@ -305,8 +310,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             body = framed(html_text)
         else:
             body = html_text
-        cache_control = NO_STORE if version is None else DERIVED if kind == "text" else IMMUTABLE
-        headers = FRAME_POLICY.content_headers if kind == "content" else ()
+        cache_control = NO_STORE if version is None else IMMUTABLE if kind == "raw" else DERIVED
+        headers = self.frame.content_headers if kind == "content" else (("X-Content-Type-Options", "nosniff"),)
         self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control, headers=headers)
 
     def _render_view(self, pergam_id: str, version: int | None) -> None:
@@ -317,7 +322,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if meta is None or all(info.version != shown for info in versions):
             self.send_error(404, "Pergam not found")
             return
-        page = render_view(pergam_id, versions, meta, shown)
+        page = render_view(pergam_id, versions, meta, shown, self.frame)
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
 
     def _render_diff(self, pergam_id: str, version_range: str) -> None:

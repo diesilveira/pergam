@@ -53,6 +53,7 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from pergam import identity, limits, public_url, taxonomy
+from pergam.view_page import frame_policy
 from pergam.backfill import run_backfill
 from pergam.migrate import MigrationError, apply_migrations, migrations_dir
 from pergam.routes import PergamHandler
@@ -83,6 +84,7 @@ def main() -> int:
         PergamHandler.public = public_url.resolve(os.environ, port)
         PergamHandler.max_body_bytes = limits.max_body_bytes(os.environ)
         PergamHandler.trust_proxy_user = identity.trusts_proxy_user(os.environ)
+        PergamHandler.frame = frame_policy(PergamHandler.public.origin)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

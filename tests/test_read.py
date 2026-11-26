@@ -36,7 +36,7 @@ def test_pinned_version_serves_that_version(client: Client, kind: str, content_t
 
     assert resp.status == 200
     assert resp.headers["content-type"] == f"{content_type}; charset=utf-8"
-    assert resp.text.removesuffix(BRIDGE_TAG) == "<p>one</p>"
+    assert resp.text.removeprefix(BRIDGE_TAG) == "<p>one</p>"
 
 
 def test_body_is_utf8_with_matching_length(client: Client) -> None:
@@ -100,13 +100,21 @@ def test_latest_index_and_json_routes_are_no_store(client: Client) -> None:
         assert client.get(path).headers["cache-control"] == "no-store", path
 
 
-@pytest.mark.parametrize("kind", ["content", "raw"])
-def test_pinned_versions_are_cached_as_immutable(client: Client, kind: str) -> None:
+def test_pinned_raw_is_cached_as_immutable_and_never_sniffed(client: Client) -> None:
     body = client.publish()
 
-    resp = client.get(f"/{body['id']}/v1/{kind}")
+    resp = client.get(f"/{body['id']}/v1/raw")
 
     assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+def test_pinned_content_carries_server_markup_so_it_is_cached_briefly(client: Client) -> None:
+    body = client.publish()
+
+    resp = client.get(f"/{body['id']}/v1/content")
+
+    assert resp.headers["cache-control"] == "public, max-age=300"
 
 
 def test_missing_pinned_version_is_not_cached_as_immutable(client: Client) -> None:

@@ -15,6 +15,7 @@ the headers of its content response) lives in `FRAME_POLICY` and nowhere else.
 from __future__ import annotations
 
 import html as html_lib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from string import Template
@@ -32,29 +33,78 @@ esc = html_lib.escape
 
 
 BRIDGE_PATH = "/static/frame-bridge.js"
-BRIDGE_TAG = f'<script src="{BRIDGE_PATH}"></script>'
+BRIDGE_TAG = f'<script src="{BRIDGE_PATH}" defer></script>'
 BRIDGE_SCRIPT = (Path(__file__).resolve().parent / "static" / "frame-bridge.js").read_bytes()
+_LEADING_DOCTYPE = re.compile(r"\A\ufeff?(?:\s|<!--.*?-->)*<!doctype\b[^>]*>", re.IGNORECASE | re.DOTALL)
 
 
 def framed(html: str) -> str:
-    """The body of `/content`: the posted HTML, then the bridge tag (a browser runs it even after `</html>`)."""
-    return html + BRIDGE_TAG
+    """The body of `/content`: the posted HTML with the bridge tag right after a leading doctype, else first.
+
+    At the start, a document that ends inside `<title>`, `<textarea>` or `<plaintext>`
+    cannot swallow the tag as text, and the doctype still comes first so the
+    document keeps its rendering mode. `defer` runs the bridge once the document is parsed.
+    """
+    match = _LEADING_DOCTYPE.match(html)
+    cut = match.end() if match else 0
+    return html[:cut] + BRIDGE_TAG + html[cut:]
+
+
+SANDBOX = (
+    "allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-top-navigation-by-user-activation"
+)
+MERMAID_CDN = "https://cdn.jsdelivr.net"
 
 
 @dataclass(frozen=True)
 class FramePolicy:
-    """Isolation of the framed document: extra iframe attributes, and headers sent with `/content`.
-
-    A `sandbox` needs `allow-scripts` for the bridge, `allow-top-navigation-by-user-activation`
-    for links that leave the document, `allow-modals` for printing and `allow-popups` for
-    links with `target="_blank"`. A CSP must allow the bridge script from this origin.
-    """
+    """Isolation of the framed document: extra iframe attributes, and headers sent with `/content`."""
 
     iframe_attributes: tuple[tuple[str, str], ...] = ()
     content_headers: tuple[tuple[str, str], ...] = ()
 
 
-FRAME_POLICY = FramePolicy()
+def frame_policy(own_origin: str | None) -> FramePolicy:
+    """The sandbox and CSP of every published document, framed or opened alone at `/content`.
+
+    Without `allow-same-origin` the document runs in an opaque origin: it cannot
+    read cookies or storage of this server, and its requests to the API are
+    cross-origin. The CSP, the hosted viewer's, also forbids any connection, form
+    or frame to this server, and its `sandbox` directive applies the same
+    isolation when `/content` is opened directly. Scripts load only inline, from
+    this server (the bridge, the vendored Mermaid in `/static/`) and from
+    jsDelivr, which documents published before `/static/` still use. A browser
+    that does not match `'self'` from an opaque origin gets the server's public
+    origin by name. The sandbox tokens keep scripts, links that leave the document
+    (top navigation on a click), printing (`allow-modals`) and links that open a
+    tab, which open as ordinary pages outside the sandbox.
+    """
+    own = " ".join(source for source in ("'self'", own_origin) if source)
+    csp = "; ".join(
+        (
+            f"sandbox {SANDBOX}",
+            "default-src 'none'",
+            f"script-src 'unsafe-inline' {own} {MERMAID_CDN}",
+            f"style-src 'unsafe-inline' {MERMAID_CDN}",
+            "img-src data:",
+            f"font-src data: {MERMAID_CDN}",
+            f"connect-src {MERMAID_CDN}",
+            "form-action 'none'",
+            f"frame-ancestors {own}",
+            "base-uri 'none'",
+        )
+    )
+    return FramePolicy(
+        iframe_attributes=(("sandbox", SANDBOX),),
+        content_headers=(
+            ("Content-Security-Policy", csp),
+            ("X-Content-Type-Options", "nosniff"),
+            ("Referrer-Policy", "no-referrer"),
+        ),
+    )
+
+
+FRAME_POLICY = frame_policy(None)
 
 
 def content_path(pergam_id: str, version: int) -> str:

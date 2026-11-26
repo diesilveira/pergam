@@ -1,25 +1,45 @@
-"""The view page and the frame bridge in a real browser, with and without the sandbox planned in #28.
+"""The view page, its frame bridge and the sandbox of published documents, in a real browser.
 
 Needs Playwright and a Chrome or Chromium it can launch; skipped when either is missing.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 
+import psycopg
 import pytest
 
 from support import Client
 
 sync_api = pytest.importorskip("playwright.sync_api")
 
-SANDBOX = "allow-scripts allow-top-navigation-by-user-activation allow-modals allow-popups"
 DOCUMENT = """<!doctype html><html><head><title>Inner  title</title></head><body>
 <a id="to-c" href="#sec-c">to c</a> <a id="to-index" href="/">index</a> <a id="blank" href="/" target="_blank">new tab</a>
 <div style="height:3000px"></div><h2 id="sec-b">B</h2>
 <div style="height:3000px"></div><h2 id="sec-c">C</h2>
 <div style="height:3000px"></div>
 </body></html>"""
+
+INTRUDER = """<!doctype html><title>Intruder</title><body><script>
+window.attempts = {};
+const note = (name) => [() => { attempts[name] = 'reached'; }, () => { attempts[name] = 'blocked'; }];
+const post = JSON.stringify({title: 'owned', html: '<p>owned</p>', type: 'otro', author: 'intruder@example.com'});
+const json = {'Content-Type': 'application/json'};
+fetch('/api/pergams').then(...note('read'));
+fetch('/pergam', {method: 'POST', headers: json, body: post}).then(...note('write'));
+fetch('/pergam', {method: 'POST', mode: 'no-cors', headers: {'Content-Type': 'text/plain'}, body: post}).then(...note('blind-write'));
+try { navigator.sendBeacon('/pergam', post); } catch (e) {}
+try { localStorage.length; attempts.storage = 'reached'; } catch (e) { attempts.storage = 'blocked'; }
+try { document.cookie; attempts.cookie = 'reached'; } catch (e) { attempts.cookie = 'blocked'; }
+attempts.origin = origin;
+const form = document.createElement('form');
+form.method = 'POST'; form.action = '/pergam'; form.enctype = 'text/plain';
+form.innerHTML = '<input name="x" value="y">';
+document.body.append(form);
+form.submit();
+</script></body>"""
 
 
 @pytest.fixture(scope="module")
@@ -37,22 +57,13 @@ def browser() -> Iterator[object]:
         launched.close()
 
 
-@pytest.fixture(params=[False, True], ids=["plain", "sandboxed"])
-def view(request: pytest.FixtureRequest, browser, client: Client) -> Iterator[tuple[object, str, str]]:
-    """A page opened on nothing yet, the base URL, and the id of a published two-version pergam."""
+@pytest.fixture
+def view(browser, client: Client) -> Iterator[tuple[object, str, str]]:
+    """A page opened on nothing yet, the base URL, and the id of a published pergam."""
     base = f"http://127.0.0.1:{client.port}"
     pid = client.publish(title="Bridge", html=DOCUMENT)["id"]
     context = browser.new_context()
-    page = context.new_page()
-    if request.param:
-
-        def sandboxed(route) -> None:
-            response = route.fetch()
-            body = response.text().replace('<iframe class="doc"', f'<iframe class="doc" sandbox="{SANDBOX}"', 1)
-            route.fulfill(response=response, body=body)
-
-        page.route("**/view*", sandboxed)
-    yield page, base, pid
+    yield context.new_page(), base, pid
     context.close()
 
 
@@ -121,7 +132,9 @@ def test_links_with_their_own_target_are_left_alone(view) -> None:
     with page.context.expect_page() as opened:
         frame.click("#blank")
 
+    opened.value.wait_for_load_state()
     assert opened.value.url == f"{base}/"
+    assert opened.value.evaluate("origin") == base
     assert page.url == f"{base}/{pid}/view"
 
 
@@ -206,3 +219,60 @@ def test_imported_pergam_shows_its_origin_next_to_a_working_bridge(view, client:
     page.wait_for_function("document.title === 'Inner title · v1 · pergam'")
     frame.click("#to-c")
     page.wait_for_function("location.hash === '#sec-c'")
+
+
+def intruder_attempts(page, frame) -> dict[str, str]:
+    frame.wait_for_function("['read', 'write', 'blind-write'].every(name => name in window.attempts)")
+    page.wait_for_timeout(300)
+    return frame.evaluate("window.attempts")
+
+
+@pytest.mark.parametrize("opened", ["framed", "alone"])
+def test_a_published_script_cannot_read_or_write_through_the_api(
+    browser, client: Client, db: psycopg.Connection, opened: str
+) -> None:
+    base = f"http://127.0.0.1:{client.port}"
+    pid = client.publish(title="Intruder", html=INTRUDER)["id"]
+    page = browser.new_page()
+    console: list[str] = []
+    page.on("console", lambda message: console.append(message.text))
+    try:
+        if opened == "framed":
+            page.goto(f"{base}/{pid}/view")
+            frame = page.frame(url=lambda url: "/content" in url)
+        else:
+            page.goto(f"{base}/{pid}/v1/content")
+            frame = page.main_frame
+
+        attempts = intruder_attempts(page, frame)
+    finally:
+        page.close()
+
+    assert attempts == {
+        "read": "blocked",
+        "write": "blocked",
+        "blind-write": "blocked",
+        "storage": "blocked",
+        "cookie": "blocked",
+        "origin": "null",
+    }
+    assert any("form submission" in line and "allow-forms" in line for line in console)
+    assert any("connect-src" in line for line in console)
+    assert db.execute("SELECT count(*) FROM pergams").fetchone() == (1,)
+
+
+def test_messages_from_another_origin_are_dropped(view, browser) -> None:
+    page, base, pid = view
+    foreign = "http://foreign.example.com/"
+    forged = json.dumps({"pergam": 1, "type": "title", "value": "Forged"})
+    page.route(foreign, lambda route: route.fulfill(
+        content_type="text/html", body=f"<script>parent.postMessage({forged}, '*')</script>"
+    ))
+    open_view(page, f"{base}/{pid}/v1/view")
+    page.wait_for_function("document.title === 'Inner title · v1 · pergam'")
+
+    page.evaluate(f"() => {{ const f = document.querySelector('iframe.doc'); f.removeAttribute('sandbox'); f.src = '{foreign}'; }}")
+
+    page.wait_for_function("document.querySelector('iframe.doc').contentWindow.length === 0")
+    page.wait_for_timeout(300)
+    assert page.evaluate("document.title") == "Inner title · v1 · pergam"

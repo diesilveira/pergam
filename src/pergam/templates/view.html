@@ -50,6 +50,7 @@ ${outdated}
     });
     addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
+      if (event.origin !== location.origin && event.origin !== 'null') return;
       const data = event.data;
       if (!data || typeof data !== 'object' || data.pergam !== 1) return;
       if (typeof data.type !== 'string' || typeof data.value !== 'string' || data.value.length > MAX_LENGTH) return;

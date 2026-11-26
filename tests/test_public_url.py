@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pergam.public_url import resolve
+from pergam.public_url import PublicAddress, resolve
 from support import Client, ServerProcess
 
 
@@ -87,3 +87,15 @@ def test_server_refuses_invalid_public_url(session_database: str, server_logs: P
         server.stop()
 
     assert "PUBLIC_URL" in server.log()
+
+
+@pytest.mark.parametrize(
+    ("base", "origin"),
+    [
+        ("https://Docs.Example.com/pergam", "https://docs.example.com"),
+        ("http://localhost:1111", "http://localhost:1111"),
+        ("http://[::1]:1111", None),
+    ],
+)
+def test_origin_is_a_csp_source_or_none(base: str, origin: str | None) -> None:
+    assert PublicAddress(base_url=base, display="").origin == origin

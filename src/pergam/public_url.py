@@ -7,9 +7,12 @@ means https and ports 80/443 are left out of the authority.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlparse
+
+_CSP_ORIGIN = re.compile(r"^https?://[a-z0-9.-]+(:\d+)?$")
 
 
 @dataclass(frozen=True)
@@ -22,6 +25,13 @@ class PublicAddress:
 
     def view_url(self, pergam_id: str) -> str:
         return self.url(f"{pergam_id}/view")
+
+    @property
+    def origin(self) -> str | None:
+        """`scheme://host[:port]` of the base URL as a CSP source, None when its host cannot be named in one (IPv6)."""
+        parsed = urlparse(self.base_url)
+        origin = f"{parsed.scheme}://{parsed.netloc}".lower()
+        return origin if _CSP_ORIGIN.match(origin) else None
 
 
 def from_public_url(raw: str) -> PublicAddress:
