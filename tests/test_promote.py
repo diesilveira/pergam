@@ -15,8 +15,8 @@ import pytest
 
 import pergam_promote
 from pergam_profiles import Server
-from pergam_promote import PromoteError, missing_versions
-from support import REPO_ROOT, Client
+from pergam_promote import PromoteError, batches, missing_versions
+from support import REPO_ROOT, Client, DatabaseFactory
 from test_transfer import STATE
 
 SCRIPT = REPO_ROOT / "skills" / "post-pergam" / "pergam_promote.py"
@@ -239,3 +239,39 @@ def test_running_the_helpers_leaves_no_bytecode_in_the_skill_folder(profiles: di
     promote(profiles, "abcdef12", "--from", "local", "--to", "team")
 
     assert not (SCRIPT.parent / "__pycache__").exists()
+
+
+@pytest.fixture
+def small_target(databases: DatabaseFactory, start_server) -> Client:
+    """A target that takes request bodies of at most 1 MB."""
+    return start_server(databases.create(), PERGAM_MAX_BODY_MB="1")
+
+
+def test_a_history_larger_than_the_target_body_limit_is_split_until_it_fits(client: Client, small_target: Client) -> None:
+    pid = client.publish(html="<p>" + "a" * 300_000 + "</p>")["id"]
+    for n in range(2, 6):
+        client.publish(id=pid, html="<p>" + str(n) * 300_000 + "</p>")
+
+    result = promote({}, pid, "--from", f"http://127.0.0.1:{client.port}", "--to", f"http://127.0.0.1:{small_target.port}")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[0].endswith("uploaded v1, v2, v3, v4, v5")
+    assert [v["bytes"] for v in small_target.get(f"/{pid}/versions").json()] == [300_007] * 5
+
+
+def test_a_version_alone_above_the_target_body_limit_is_reported(client: Client, small_target: Client) -> None:
+    pid = client.publish(html="<p>" + "a" * 1_200_000 + "</p>")["id"]
+
+    result = promote({}, pid, "--from", f"http://127.0.0.1:{client.port}", "--to", f"http://127.0.0.1:{small_target.port}")
+
+    assert result.returncode == 1
+    assert "v1 (1.1 MB) is larger than" in result.stderr
+    assert small_target.get(f"/{pid}/versions").status == 404
+
+
+def test_batches_are_bounded_by_count_and_bytes() -> None:
+    versions = [{"version": n, "html": "x" * size} for n, size in enumerate([10, 10, 10, 500, 10], 1)]
+    size = len(json.dumps(versions[0]))
+
+    assert [[v["version"] for v in run] for run in batches(versions, 2, 10_000)] == [[1, 2], [3, 4], [5]]
+    assert [[v["version"] for v in run] for run in batches(versions, 10, 3 * size)] == [[1, 2, 3], [4], [5]]
