@@ -32,6 +32,7 @@ CONTENT_TYPES = {
 }
 NO_STORE = "no-store"
 IMMUTABLE = "public, max-age=31536000, immutable"
+DERIVED = "public, max-age=300"
 
 
 def _utc_now_iso() -> str:
@@ -183,7 +184,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "Pergam not found")
             return
         body = extract_text(html_text).markdown if kind == "text" else html_text
-        cache_control = NO_STORE if version is None else IMMUTABLE
+        cache_control = NO_STORE if version is None else DERIVED if kind == "text" else IMMUTABLE
         self._send(200, CONTENT_TYPES[kind], body.encode("utf-8"), cache_control=cache_control)
 
     def _render_versions_json(self, pergam_id: str) -> None:
@@ -272,7 +273,11 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self._send(status, "application/json", json.dumps(body).encode("utf-8"))
 
     def _send(self, status: int, content_type: str, payload: bytes, cache_control: str = NO_STORE) -> None:
-        """Version-pinned content never changes, so only those routes pass `IMMUTABLE`."""
+        """Version-pinned content never changes, so those routes pass `IMMUTABLE`.
+
+        Content derived from a pinned version (its `/text`) changes when the
+        extractor improves, so it gets the short `DERIVED` lifetime instead.
+        """
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))

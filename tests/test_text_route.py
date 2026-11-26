@@ -37,14 +37,14 @@ def test_text_serves_the_latest_version_as_markdown(client: Client) -> None:
     assert resp.text == DOC_TEXT
 
 
-def test_pinned_version_text_is_immutable(client: Client) -> None:
+def test_pinned_version_text_is_cached_briefly(client: Client) -> None:
     first = client.publish(html="<h2>first</h2>")
     client.publish(id=first["id"], html=DOC)
 
     resp = client.get(f"/{first['id']}/v1/text")
 
     assert resp.status == 200
-    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert resp.headers["cache-control"] == "public, max-age=300"
     assert resp.text == "## first\n"
 
 

@@ -37,7 +37,7 @@ Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `v
 
 Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails.
 
-Caching: a version-pinned route (`/{id}/v{n}/view`, `/{id}/v{n}/raw`, `/{id}/v{n}/text`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. Everything else (latest `/{id}/view`, `/{id}/raw` and `/{id}/text`, the index, JSON routes) is `no-store`.
+Caching: a version-pinned route (`/{id}/v{n}/view`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. `/{id}/v{n}/text` is derived from that version by the text extractor, which can improve with an upgrade, so it is cached for five minutes only (`public, max-age=300`). Everything else (latest `/{id}/view`, `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
 
 Pergams cannot be deleted. To "supersede" a pergam, post a new version with the same id; to hide it, archive it with `PATCH /{id}/meta`.
 
