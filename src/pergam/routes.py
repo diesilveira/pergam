@@ -16,6 +16,8 @@ from pergam.store import IndexFilters, NewPergam, PergamStore
 VALID_TYPES = {"plan", "investigacion", "informe", "reporte", "otro"}
 ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 VERSION_RE = re.compile(r"^v(\d+)$")
+NO_STORE = "no-store"
+IMMUTABLE = "public, max-age=31536000, immutable"
 
 
 def _utc_now_iso() -> str:
@@ -127,7 +129,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "Pergam not found")
             return
         ctype = "text/plain; charset=utf-8" if raw else "text/html; charset=utf-8"
-        self._send(200, ctype, html_text.encode("utf-8"))
+        self._send(200, ctype, html_text.encode("utf-8"), cache_control=NO_STORE if version is None else IMMUTABLE)
 
     def _render_versions_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)
@@ -156,11 +158,12 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         page = render_index(self.store.index(filters), filters, self.public.display)
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
 
-    def _send(self, status: int, content_type: str, payload: bytes) -> None:
+    def _send(self, status: int, content_type: str, payload: bytes, cache_control: str = NO_STORE) -> None:
+        """Version-pinned content never changes, so only those routes pass `IMMUTABLE`."""
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache_control)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(payload)

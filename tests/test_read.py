@@ -101,8 +101,26 @@ def test_missing_version_is_not_found(client: Client) -> None:
     assert client.get(f"/{body['id']}/v2/view").status == 404
 
 
-def test_every_success_is_no_store(client: Client) -> None:
+def test_latest_index_and_json_routes_are_no_store(client: Client) -> None:
     body = client.publish()
 
     for path in ["/", "/healthz", f"/{body['id']}/view", f"/{body['id']}/raw", f"/{body['id']}/versions"]:
         assert client.get(path).headers["cache-control"] == "no-store", path
+
+
+@pytest.mark.parametrize("kind", ["view", "raw"])
+def test_pinned_versions_are_cached_as_immutable(client: Client, kind: str) -> None:
+    body = client.publish()
+
+    resp = client.get(f"/{body['id']}/v1/{kind}")
+
+    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_missing_pinned_version_is_not_cached_as_immutable(client: Client) -> None:
+    body = client.publish()
+
+    resp = client.get(f"/{body['id']}/v2/view")
+
+    assert resp.status == 404
+    assert "immutable" not in resp.headers.get("cache-control", "")
