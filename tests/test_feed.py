@@ -72,6 +72,7 @@ def test_every_publication_is_an_entry_newest_first(client: Client) -> None:
     assert one(oldest, "title").text == "Plan"
     assert one(oldest, "summary").text == "Plan first draft"
     assert one(feed, "updated").text == one(newest, "updated").text
+    assert len({one(entry, "updated").text for entry in feed.findall(A + "entry")}) == 3
     assert one(feed, "id").text == f"{base}/feed.atom"
 
 

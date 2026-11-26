@@ -27,7 +27,8 @@ def _xml_text(value: str) -> str:
 
 
 def _timestamp(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    """RFC 3339 in UTC, sub-second precision kept so versions posted in the same second stay distinct."""
+    return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _add(parent: ET.Element, tag: str, text: str | None = None, **attrs: str) -> ET.Element:
