@@ -39,6 +39,10 @@ Env (12-factor)
   DATABASE_URL   postgres connection string    (required)
   PUBLIC_HOST    host for returned URLs        (default localhost)
   PUBLIC_PORT    port for returned URLs        (default PORT)
+  MIGRATIONS_DIR directory of NNN_*.sql files  (default <repo>/db/migrations)
+
+Pending migrations are applied before the server starts listening; a failing
+migration aborts startup.
 """
 
 from __future__ import annotations
@@ -52,11 +56,17 @@ import socketserver
 import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, parse_qs
 
+if __package__ in (None, ""):
+    sys.path[0] = str(Path(__file__).resolve().parent.parent)
+
 import psycopg
 from psycopg_pool import ConnectionPool
+
+from pergam.migrate import MigrationError, apply_migrations, migrations_dir
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 1111
@@ -709,6 +719,15 @@ def main() -> int:
 
     pool = ConnectionPool(db_url, min_size=1, max_size=8, kwargs={"autocommit": True}, open=True)
     pool.wait(timeout=10.0)
+    try:
+        with pool.connection() as conn:
+            applied = apply_migrations(conn, migrations_dir())
+    except (MigrationError, psycopg.Error) as exc:
+        print(f"ERROR: migrations failed, not starting: {exc}", file=sys.stderr)
+        pool.close()
+        return 1
+    for migration in applied:
+        print(f"applied migration {migration.name}", flush=True)
     PergamHandler.pool = pool
 
     with ThreadingHTTPServer((host, port), PergamHandler) as httpd:

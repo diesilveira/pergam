@@ -10,9 +10,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from support import REPO_ROOT, Client, DatabaseFactory, ServerProcess, throwaway_postgres
-
-LEGACY_SCHEMA = REPO_ROOT / "db" / "schema.sql"
+from support import Client, DatabaseFactory, ServerProcess, throwaway_postgres
 
 
 @pytest.fixture(scope="session")
@@ -30,11 +28,6 @@ def databases(admin_url: str) -> Iterator[DatabaseFactory]:
     factory = DatabaseFactory(admin_url)
     yield factory
     factory.close()
-
-
-def apply_schema(database_url: str) -> None:
-    with psycopg.connect(database_url, autocommit=True) as conn:
-        conn.execute(LEGACY_SCHEMA.read_text())
 
 
 @pytest.fixture(scope="session")
@@ -60,9 +53,7 @@ def start_server(server_logs: Path) -> Iterator[StartServer]:
 
 @pytest.fixture(scope="session")
 def session_database(databases: DatabaseFactory) -> str:
-    url = databases.create()
-    apply_schema(url)
-    return url
+    return databases.create()
 
 
 @pytest.fixture(scope="session")
@@ -71,7 +62,7 @@ def session_server(session_database: str, start_server: StartServer) -> Client:
 
 
 @pytest.fixture
-def db(session_database: str) -> Iterator[psycopg.Connection]:
+def db(session_database: str, session_server: Client) -> Iterator[psycopg.Connection]:
     with psycopg.connect(session_database, autocommit=True) as conn:
         conn.execute("TRUNCATE pergams")
         yield conn

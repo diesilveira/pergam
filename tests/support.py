@@ -21,6 +21,8 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SERVER_SCRIPT = REPO_ROOT / "src" / "pergam" / "server.py"
+MIGRATIONS_DIR = REPO_ROOT / "db" / "migrations"
+LEGACY_SCHEMA = REPO_ROOT / "tests" / "fixtures" / "legacy_schema.sql"
 POSTGRES_IMAGE = "postgres:15-alpine"
 
 
@@ -74,6 +76,12 @@ def throwaway_postgres() -> Iterator[str]:
         yield url
     finally:
         subprocess.run(["docker", "rm", "-fv", name], capture_output=True)
+
+
+def apply_legacy_schema(database_url: str) -> None:
+    """Initialise a database the pre-migrations way (the old `docker-entrypoint-initdb.d` script)."""
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        conn.execute(LEGACY_SCHEMA.read_text())
 
 
 class DatabaseFactory:

@@ -54,8 +54,19 @@ App env vars follow 12-factor conventions (no `PERGAM_*` prefix inside the conta
 | `PUBLIC_PORT`       | `1111`                 | Port used in returned `view_url`s.           |
 | `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
+| `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
 
 See `.env.example` for the full set.
+
+## Schema migrations
+
+The schema lives in numbered files, `db/migrations/NNN_description.sql`, shipped inside the image. On every start the server applies the pending ones before it listens:
+
+- Applied migrations are recorded in `schema_migrations (version, name, applied_at)`.
+- Each migration runs in its own transaction: a failure rolls it back completely, the server logs `migrations failed` and exits non-zero.
+- A Postgres advisory lock serializes servers that start at the same time against one database.
+
+Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`; it is a strict no-op on a database that was initialised that way, so existing instances upgrade in place with every row untouched. To add a change, create the next number and restart the server.
 
 ## Project layout
 
@@ -64,7 +75,7 @@ pergam/
 ├── src/pergam/
 │   └── server.py            ~500 LOC stdlib http.server + psycopg
 ├── db/
-│   └── schema.sql           postgres init script (runs on first boot)
+│   └── migrations/          NNN_*.sql, applied at server startup
 ├── scripts/
 │   └── migrate_from_fs.py   import legacy ./data/*.html files
 ├── skills/post-pergam/      Claude Code skill (see below)
