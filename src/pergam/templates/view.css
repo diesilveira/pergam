@@ -26,6 +26,9 @@
            color:rgb(var(--type-rgb)); background:rgba(var(--type-rgb),.1);
            border:1px solid rgba(var(--type-rgb),.4); }
   .bar__author { color:var(--muted); font-size:.78rem; }
+  .bar__origin { color:var(--muted-2); font-size:.72rem; white-space:nowrap; }
+  .bar__origin a { color:var(--muted); }
+  .bar__origin a:hover { color:var(--accent); }
   .bar__links { margin-left:auto; display:flex; gap:.9rem; font-size:.78rem; }
   .bar__links a { color:var(--muted-2); }
   .bar__links a:hover { color:var(--text); }
@@ -56,7 +59,7 @@
   .doc { flex:1 1 auto; width:100%; min-height:0; border:0; display:block; background:#fff; }
 
   @media (max-width: 700px) {
-    .bar__author, .bar__tags { display:none; }
+    .bar__author, .bar__tags, .bar__origin { display:none; }
     .bar__title { max-width:100%; }
     .versions__list { min-width:16rem; }
   }

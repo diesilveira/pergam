@@ -134,6 +134,7 @@ def test_api_pergam_has_metadata_tags_and_versions(client: Client, catalogue: di
         "tags": ["ops", "q3"],
         "archived": False,
         "pinned": False,
+        "origin": None,
         "view_url": f"http://localhost:{port}/{pid}/view",
         "text_url": f"http://localhost:{port}/{pid}/text",
     }

@@ -1,10 +1,10 @@
 """The page behind `/{id}/view` and `/{id}/v{n}/view`, from `templates/view.html` and `view.css`.
 
 The page is pergam's own: a slim bar with the version's title, type, tags,
-author and a version selector with each version's note, and the published
-document in a full-height iframe loaded from the version-pinned
-`/{id}/v{n}/content`. The document itself
-is never altered, so `/raw` and `/content` stay byte-identical to what was posted.
+author, the server it was imported from (if any) and a version selector with
+each version's note, and the published document in a full-height iframe loaded
+from the version-pinned `/{id}/v{n}/content`. The document itself is never
+altered, so `/raw` and `/content` stay byte-identical to what was posted.
 How the framed document is isolated (iframe attributes and the headers of its
 content response) lives in `FRAME_POLICY` and nowhere else.
 """
@@ -15,9 +15,9 @@ import html as html_lib
 from dataclasses import dataclass
 from pathlib import Path
 from string import Template
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
-from pergam.meta import Meta
+from pergam.meta import Meta, Origin
 from pergam.store import VersionInfo
 from pergam.taxonomy import type_rgb
 
@@ -74,6 +74,16 @@ def _tags(tags: list[str]) -> str:
     return f'<span class="bar__tags">{links}</span>' if links else ""
 
 
+def _origin(origin: Origin | None) -> str:
+    if origin is None:
+        return ""
+    shown = f"{urlparse(origin.url).netloc}/{origin.id}"
+    return (
+        f'<span class="bar__origin">imported from '
+        f'<a href="{esc(origin.view_url)}" rel="noreferrer" title="{esc(origin.view_url)}">{esc(shown)}</a></span>'
+    )
+
+
 def _outdated(pergam_id: str, current: int, latest: int) -> str:
     if current == latest:
         return ""
@@ -99,6 +109,7 @@ def render_view(
         type_rgb=",".join(map(str, type_rgb(shown.type))),
         tags=_tags(meta.tags),
         author=esc(shown.author),
+        origin=_origin(meta.origin),
         version=version,
         total=len(versions),
         version_items="".join(_version_item(pergam_id, info, version, latest) for info in versions),

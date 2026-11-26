@@ -12,10 +12,11 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from pergam.cursor import IndexCursor
-from pergam.meta import Meta, MetaChange
+from pergam.meta import Meta, MetaChange, Origin
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
 from pergam.tags import merge_tags
 from pergam.text import EXTRACTOR_VERSION, PageText, extract_text
+from pergam.transfer import ExportedVersion, ImportDocument
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,17 @@ class VersionInfo:
     bytes: int
     created_at: datetime
     note: str | None = None
+
+
+@dataclass(frozen=True)
+class ImportResult:
+    imported: list[int]
+    skipped: list[int]
+    origin: Origin | None
+
+
+class ImportConflict(Exception):
+    """The import disagrees with the versions this server already has; nothing was written."""
 
 
 @dataclass(frozen=True)
@@ -152,6 +164,30 @@ def add_tags(conn: psycopg.Connection, pergam_id: str, tags: list[str]) -> list[
     return merged
 
 
+_EXPORTED_VERSIONS = """
+    SELECT p.version, p.title, p.html, p.type, p.author, n.note, p.bytes, p.created_at
+    FROM pergams p LEFT JOIN pergam_note n ON n.id = p.id AND n.version = p.version
+    WHERE p.id = %s ORDER BY p.version
+"""
+
+
+def exported_versions(conn: psycopg.Connection, pergam_id: str) -> list[ExportedVersion]:
+    return [ExportedVersion(*row) for row in conn.execute(_EXPORTED_VERSIONS, (pergam_id,)).fetchall()]
+
+
+def import_conflict(doc: ImportDocument, present: dict[int, ExportedVersion]) -> str | None:
+    """Why `doc` cannot be imported over `present`, or None when it can."""
+    differing = [v.version for v in doc.versions if v.version in present and not present[v.version].same_content(v)]
+    if differing:
+        listed = ", ".join(f"v{n}" for n in differing)
+        return f"{listed} of {doc.id} already exist here with different content"
+    numbers = set(present) | {v.version for v in doc.versions}
+    gaps = sorted(set(range(1, max(numbers) + 1)) - numbers)
+    if gaps:
+        return f"importing would leave v{gaps[0]} of {doc.id} missing"
+    return None
+
+
 def extract_or_empty(pergam_id: str, version: int, html: str) -> PageText:
     """The extracted text, or empty text after logging when the extractor fails on this HTML.
 
@@ -224,13 +260,18 @@ class PergamStore:
         with self.pool.connection() as conn:
             row = conn.execute(
                 """
-                SELECT COALESCE(m.tags, '{}'), COALESCE(m.archived, false), COALESCE(m.pinned, false)
+                SELECT COALESCE(m.tags, '{}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
+                       m.origin_url, m.origin_id
                 FROM (SELECT DISTINCT id FROM pergams WHERE id = %(id)s) p
                 LEFT JOIN pergam_meta m ON m.id = p.id
                 """,
                 {"id": pergam_id},
             ).fetchone()
-        return Meta(*row) if row else None
+        if row is None:
+            return None
+        tags, archived, pinned, origin_url, origin_id = row
+        origin = Origin(origin_url, origin_id) if origin_url and origin_id else None
+        return Meta(tags, archived, pinned, origin)
 
     def update_meta(self, pergam_id: str, change: MetaChange) -> Meta | None:
         """Apply `change` without touching any version; None when the id has no versions."""
@@ -268,6 +309,58 @@ class PergamStore:
                     (pergam_id, version),
                 ).fetchone()
         return row[0] if row else None
+
+    def export(self, pergam_id: str) -> list[ExportedVersion]:
+        """Every version of an id with its HTML and note, oldest first; empty for an unknown id."""
+        with self.pool.connection() as conn:
+            return exported_versions(conn, pergam_id)
+
+    def import_pergam(self, doc: ImportDocument) -> ImportResult:
+        """Write the versions of `doc` this server lacks, keeping their numbers and `created_at`.
+
+        One transaction under the id's advisory lock: versions already present with
+        the same content are skipped, and when any present version differs, or the
+        result would leave a version number missing, `ImportConflict` is raised
+        before anything is written. Tags are merged as on publish; `archived`,
+        `pinned` and `origin` are set only when the id is new to this server.
+        """
+        with self.pool.connection() as conn, conn.transaction():
+            lock_id(conn, doc.id)
+            present = {v.version: v for v in exported_versions(conn, doc.id)}
+            conflict = import_conflict(doc, present)
+            if conflict:
+                raise ImportConflict(conflict)
+            missing = [v for v in doc.versions if v.version not in present]
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    [(doc.id, v.version, v.title, v.html, v.type, v.author, v.bytes, v.created_at) for v in missing],
+                )
+                cur.executemany(
+                    "INSERT INTO pergam_note (id, version, note) VALUES (%s, %s, %s)",
+                    [(doc.id, v.version, v.note) for v in missing if v.note],
+                )
+            save_text(conn, [(doc.id, v.version, v.html) for v in missing])
+            if present:
+                if doc.tags:
+                    add_tags(conn, doc.id, doc.tags)
+                origin = self._origin(conn, doc.id)
+            else:
+                origin = doc.origin
+                conn.execute(
+                    "INSERT INTO pergam_meta (id, tags, archived, pinned, origin_url, origin_id)"
+                    " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET tags = EXCLUDED.tags,"
+                    " archived = EXCLUDED.archived, pinned = EXCLUDED.pinned,"
+                    " origin_url = EXCLUDED.origin_url, origin_id = EXCLUDED.origin_id",
+                    (doc.id, doc.tags, doc.archived, doc.pinned, origin and origin.url, origin and origin.id),
+                )
+        return ImportResult([v.version for v in missing], sorted(set(present) & {v.version for v in doc.versions}), origin)
+
+    @staticmethod
+    def _origin(conn: psycopg.Connection, pergam_id: str) -> Origin | None:
+        row = conn.execute("SELECT origin_url, origin_id FROM pergam_meta WHERE id = %s", (pergam_id,)).fetchone()
+        return Origin(*row) if row and row[0] and row[1] else None
 
     def versions(self, pergam_id: str) -> list[VersionInfo]:
         with self.pool.connection() as conn:

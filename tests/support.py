@@ -26,6 +26,7 @@ SERVER_SCRIPT = REPO_ROOT / "src" / "pergam" / "server.py"
 MIGRATIONS_DIR = REPO_ROOT / "db" / "migrations"
 LEGACY_SCHEMA = REPO_ROOT / "tests" / "fixtures" / "legacy_schema.sql"
 POSTGRES_IMAGE = "postgres:15-alpine"
+TARGET_PUBLIC_URL = "https://team.example.com"
 
 
 def free_port() -> int:

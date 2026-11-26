@@ -1,4 +1,7 @@
-"""Per-id metadata (`tags`, `archived`, `pinned`) and the validation of a `PATCH /{id}/meta` body."""
+"""Per-id metadata (`tags`, `archived`, `pinned`, `origin`) and the validation of a `PATCH /{id}/meta` body.
+
+`origin` is set once, by `POST /import`, and is not editable.
+"""
 
 from __future__ import annotations
 
@@ -15,10 +18,26 @@ class MetaError(ValueError):
 
 
 @dataclass(frozen=True)
+class Origin:
+    """The server a pergam was imported from (its `PUBLIC_URL`) and its id there."""
+
+    url: str
+    id: str
+
+    @property
+    def view_url(self) -> str:
+        return f"{self.url}/{self.id}/view"
+
+    def to_json(self) -> dict[str, str]:
+        return {"url": self.url, "id": self.id}
+
+
+@dataclass(frozen=True)
 class Meta:
     tags: list[str]
     archived: bool
     pinned: bool
+    origin: Origin | None = None
 
     def to_json(self, pergam_id: str) -> dict[str, Any]:
         return {"id": pergam_id, "tags": self.tags, "archived": self.archived, "pinned": self.pinned}

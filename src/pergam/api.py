@@ -84,6 +84,7 @@ def pergam_json(pergam_id: str, versions: list[VersionInfo], meta: Meta, public:
         "tags": meta.tags,
         "archived": meta.archived,
         "pinned": meta.pinned,
+        "origin": meta.origin.to_json() if meta.origin else None,
         "view_url": public.view_url(pergam_id),
         "text_url": public.url(f"{pergam_id}/text"),
         "versions": [_version(pergam_id, version, public) for version in versions],

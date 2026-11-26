@@ -16,19 +16,20 @@ from pergam.diff import diff_sections
 from pergam.diff_page import render_diff
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
+from pergam.ids import ID_RE
 from pergam.index_page import render_index
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
 from pergam.meta import MetaError, parse_meta_change
 from pergam.notes import NoteError, parse_note
 from pergam.public_url import PublicAddress
 from pergam.search import QueryError, parse_query
-from pergam.store import IndexFilters, NewPergam, PergamStore
+from pergam.store import ImportConflict, IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
 from pergam.text import extract_text
+from pergam.transfer import TransferError, export_json, parse_import
 from pergam.view_page import FRAME_POLICY, render_view
 
-ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 VERSION_RE = re.compile(r"^v(\d+)$")
 RANGE_RE = re.compile(r"^v([1-9]\d*)\.\.v([1-9]\d*)$")
 CONTENT_TYPES = {
@@ -74,9 +75,15 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         sys.stderr.write(f"[{_utc_now_iso()}] {self.address_string()} - {format % args}\n")
 
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/pergam":
+        path = urlparse(self.path).path
+        if path == "/pergam":
+            self._publish()
+        elif path == "/import":
+            self._import()
+        else:
             self.send_error(404, "Not Found")
-            return
+
+    def _publish(self) -> None:
         data = self._read_json_object()
         if data is None:
             return
@@ -124,6 +131,29 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             response["note"] = note
         self._send(201, "application/json", json.dumps(response).encode("utf-8"))
 
+    def _import(self) -> None:
+        """201 when any version was written, 200 when every one was already here, 409 on a conflict."""
+        data = self._read_json_object()
+        if data is None:
+            return
+        try:
+            result = self.store.import_pergam(parse_import(data, self.types))
+        except (TransferError, TagError) as exc:
+            self.send_error(400, str(exc))
+            return
+        except ImportConflict as exc:
+            self.send_error(409, str(exc))
+            return
+        pergam_id = data["id"]
+        body = {
+            "id": pergam_id,
+            "imported": result.imported,
+            "skipped": result.skipped,
+            "origin": result.origin.to_json() if result.origin else None,
+            "view_url": self.public.view_url(pergam_id),
+        }
+        self._send_json(body, 201 if result.imported else 200)
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path.strip("/")
@@ -151,6 +181,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
                 return
             if parts[1] == "meta":
                 self._render_meta_json(parts[0])
+                return
+            if parts[1] == "export":
+                self._render_export(parts[0])
                 return
             if parts[1] == "view":
                 self._render_view(parts[0], None)
@@ -260,6 +293,14 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "Pergam not found")
             return
         self._send(200, "application/json", json.dumps(meta.to_json(pergam_id)).encode("utf-8"))
+
+    def _render_export(self, pergam_id: str) -> None:
+        versions = self.store.export(pergam_id)
+        meta = self.store.meta(pergam_id) if versions else None
+        if meta is None:
+            self.send_error(404, "Pergam not found")
+            return
+        self._send_json(export_json(pergam_id, versions, meta, self.public))
 
     def _read_json_object(self) -> dict[str, Any] | None:
         """The request's JSON object body, or None after answering 400/413/415."""

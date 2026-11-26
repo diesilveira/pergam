@@ -44,6 +44,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag; pin what matters, archive what doesn't.
 - 🔎 **Searchable** — `?q=` searches titles and the visible text of every pergam, with highlighted snippets.
 - 📡 **Atom feed** — `/feed.atom` follows new publications, filtered by tag or author.
+- 🚚 **Portable** — `/{id}/export` and `POST /import` move a pergam to another server with its id, versions, dates, tags and notes; the skill promotes one between named servers in one command.
 - 🧩 **JSON API** — `/api/pergams` lists, filters, pages and counts like the index; `/api/pergams/{id}` returns one pergam with its versions.
 - 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
 - ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.
@@ -114,7 +115,7 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 ```
 
 - **One Python process**, no framework — just `http.server` + `psycopg`.
-- **Four Postgres tables**: immutable `pergams (id, version, …)` with a composite key, `pergam_meta (id, tags, archived, pinned)` for what can change without a new version, `pergam_text` with each version's extracted text and full-text search document, and `pergam_note` with the optional note of each version. Latest version per `id` resolved on read through the `pergams_latest` view.
+- **Four Postgres tables**: immutable `pergams (id, version, …)` with a composite key, `pergam_meta (id, tags, archived, pinned, origin)` for what belongs to the id rather than to a version, `pergam_text` with each version's extracted text and full-text search document, and `pergam_note` with the optional note of each version. Latest version per `id` resolved on read through the `pergams_latest` view.
 - **Strict CSP per response**: sandboxed iframe, `frame-ancestors` allowlist, no inline scripts on the viewer chrome.
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 

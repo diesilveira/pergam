@@ -11,7 +11,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `POST`   | `/pergam`             | Body `{title, html, type, author, id?, tags?, note?}`. Returns `{id, version, view_url, title, type, author}`, plus `tags` and `note` when the request sent them. Omit `id` for a new pergam; include it to bump the version of an existing one. `tags` are merged into the id's tags (see [Tags and metadata](#tags-and-metadata)); `note` describes this version (see [Version notes](#version-notes)). |
 | `GET`    | `/`                   | HTML index, 100 pergams per page. Filters, combinable: `?type=<type>`, `?author=<email>`, `?tag=<tag>`, `?q=<search>` (title or text), `?archived=1`. See [Index](#index) and [Search](#search). |
 | `GET`    | `/api/pergams`        | JSON index: the same filters, order, pages and counts as `/`. See [JSON API](#json-api). |
-| `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags and every version of one pergam. **404** for an unknown id. |
+| `GET`    | `/api/pergams/{id}`   | JSON: metadata, tags, `origin` and every version of one pergam. **404** for an unknown id. |
 | `GET`    | `/{id}/view`          | View page of the latest version: a bar with title, type, tags, author and versions, and the document in a frame. See [View](#view). |
 | `GET`    | `/{id}/v{n}/view`     | View page of a specific version; tells when a newer one exists.      |
 | `GET`    | `/{id}/v{n}/content`  | The HTML exactly as posted (`text/html`), what the view page frames. Version-pinned only. |
@@ -23,6 +23,8 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at, note}, …]`, newest first; `note` is `null` when the version has none. |
 | `GET`    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`. **404** for an unknown id.     |
 | `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
+| `GET`    | `/{id}/export`        | JSON document with every version of one pergam, its HTML and its metadata. See [Export and import](#export-and-import). **404** for an unknown id. |
+| `POST`   | `/import`             | Body: an export document. Recreates the versions this server lacks, keeping id, version numbers and `created_at`. Returns `{id, imported, skipped, origin, view_url}`. **409** when a version already here differs. See [Export and import](#export-and-import). |
 | `GET`    | `/feed.atom`          | Atom 1.0 feed of the 50 most recent publications; `?tag=<tag>`, `?author=<email>`. See [Feed](#feed). |
 | `GET`    | `/healthz`            | Liveness probe.                                                      |
 | `HEAD`   | any `GET` route       | Same status and headers as `GET`, without the body.                  |
@@ -51,7 +53,7 @@ Pergams cannot be deleted. To "supersede" a pergam, post a new version with the 
 
 `/{id}/view` and `/{id}/v{n}/view` are pergam's own page around the document, which is never altered:
 
-- **A slim bar** with the version's title, type, the id's tags, the author, `v3 of 5`, a version selector (every version, newest first, with its date and [note](#version-notes)) and links to the index, the version's `raw` HTML and its `text`.
+- **A slim bar** with the version's title, type, the id's tags, the author, the server it was [imported](#export-and-import) from when it was, `v3 of 5`, a version selector (every version, newest first, with its date and [note](#version-notes)) and links to the index, the version's `raw` HTML and its `text`.
 - **A notice** on any version that is not the latest, linking to the current one (`/{id}/view`).
 - **The document** in a full-height iframe loaded from `/{id}/v{n}/content`, always version-pinned, so the browser caches it for good. `/content` and `/raw` return the bytes that were posted, nothing added; `/raw` as `text/plain`.
 - **Anchors**: in-document links (`#section`) work inside the frame, and a fragment on the view URL (`/{id}/view#costs`) is forwarded into the frame, also when it changes later.
@@ -68,6 +70,35 @@ The bar links to the version's changes (`/{id}/diff/v{n-1}..v{n}`) and the notic
 - The header shows both versions with their [notes](#version-notes) and links to each one's view page.
 
 The range is `v{a}..v{b}`, the newer side on the right; `a` may be larger than `b` (read backwards) or equal (no differences). A range that is not `v{a}..v{b}` with positive numbers without leading zeros is **400**; an unknown id or version is **404**.
+
+## Export and import
+
+`GET /{id}/export` returns one pergam whole, as one JSON document, to recreate it on another server:
+
+```json
+{
+  "format_version": 1,
+  "id": "abc12345",
+  "server": "http://localhost:1111",
+  "meta": {"tags": ["q3"], "archived": false, "pinned": false},
+  "versions": [
+    {"version": 1, "title": "Plan", "html": "<!doctype html>…", "type": "plan", "author": "you@example.com",
+     "note": null, "bytes": 5120, "created_at": "2025-03-04T05:06:07.123456+00:00"}
+  ]
+}
+```
+
+- `versions` holds every version, oldest first, with the HTML exactly as posted (what `/{id}/v{n}/raw` returns). `server` is this server's `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`).
+- `POST /import` takes that document, or the same document with only some of its versions, and writes, in one transaction:
+  - every version this server does not have yet, with its version number, `created_at`, note and text (searchable at once);
+  - nothing for a version it already has with the same `title`, `html`, `type`, `author` and `note` (`created_at` and `bytes` are not compared): it is listed as skipped. Importing the same document twice is a no-op;
+  - **409** and nothing at all when any version it already has differs, or when the result would leave a version number missing (a document with v3 only, for an id this server does not have);
+  - for an id new to this server, its `tags`, `archived` and `pinned` from `meta`, and `origin`: the document's `server` and `id`. For an id it already has, `meta.tags` are merged into its tags as with `POST /pergam`, and `archived`, `pinned` and `origin` stay as they are.
+- The response is **201** when anything was written, **200** when every version was skipped: `{"id": "abc12345", "imported": [4, 5], "skipped": [1, 2, 3], "origin": {"url": "http://localhost:1111", "id": "abc12345"}, "view_url": "…"}`.
+- Validation is that of `POST /pergam`, per version: `html`, `title`, `author` and `type` non-empty strings, `type` one of this server's [types](#pergam-types), a valid [note](#version-notes); plus `format_version` 1, a valid id, distinct positive version numbers, `created_at` in ISO 8601 with a UTC offset, `server` (optional) an absolute `http(s)` URL without credentials, query or fragment. Anything else is **400** and writes nothing. `bytes` is recomputed from the HTML and unknown fields are ignored.
+- The body may be as large as `PERGAM_MAX_BODY_MB` (see [Configuration](#configuration)).
+
+`origin` is shown in the view page's bar ("imported from localhost:1111/abc12345", linking to the original) and returned by `GET /api/pergams/{id}` (`null` when the pergam was not imported). It cannot be edited.
 
 ## Tags and metadata
 
@@ -121,7 +152,7 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 - `matching` counts every pergam that matches the filters, across pages. `next_cursor` is `null` on the last page; otherwise pass it back as `?cursor=` with the same filters. A malformed cursor is **400**.
 - `counts` and `stats` are the index's pills and cards: counts cover every visible pergam, stats the whole instance.
 
-`GET /api/pergams/{id}` returns one pergam: the latest version's `version`, `title`, `type`, `author`, `created_at`, `bytes`, `note`, `view_url` and `text_url`, the id's `tags`, `archived` and `pinned`, and `versions`, newest first, each with `version`, `title`, `type`, `author`, `bytes`, `created_at`, `note` and its pinned `view_url` and `text_url` (`/{id}/v{n}/view`, `/{id}/v{n}/text`). An unknown id is **404**.
+`GET /api/pergams/{id}` returns one pergam: the latest version's `version`, `title`, `type`, `author`, `created_at`, `bytes`, `note`, `view_url` and `text_url`, the id's `tags`, `archived`, `pinned` and `origin` (`{url, id}` of the server it was [imported](#export-and-import) from, else `null`), and `versions`, newest first, each with `version`, `title`, `type`, `author`, `bytes`, `created_at`, `note` and its pinned `view_url` and `text_url` (`/{id}/v{n}/view`, `/{id}/v{n}/text`). An unknown id is **404**.
 
 Both are `Cache-Control: no-store`.
 
@@ -204,7 +235,7 @@ The schema lives in numbered files, `db/migrations/NNN_description.sql`, shipped
 - Each migration runs in its own transaction: a failure rolls it back completely, the server logs `migrations failed` and exits non-zero.
 - A Postgres advisory lock serializes servers that start at the same time against one database.
 
-Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. `004_pergam_text_extractor.sql` adds `pergam_text.extractor` (existing rows read as version 1) so the backfill can re-extract text written by an older extractor; it rewrites no rows. `005_pergam_note.sql` adds `pergam_note (id, version, note)`, one row per version posted with a note; it writes no rows, so versions published before it have no note. To add a change, create the next number and restart the server.
+Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. `004_pergam_text_extractor.sql` adds `pergam_text.extractor` (existing rows read as version 1) so the backfill can re-extract text written by an older extractor; it rewrites no rows. `005_pergam_note.sql` adds `pergam_note (id, version, note)`, one row per version posted with a note; it writes no rows, so versions published before it have no note. `006_pergam_origin.sql` adds `pergam_meta.origin_url` and `origin_id` (both nullable, existing rows read as no origin); it rewrites no rows. To add a change, create the next number and restart the server.
 
 ### Database privileges
 
@@ -215,7 +246,7 @@ The `DATABASE_URL` role needs:
 | Fresh (no `pergams` yet) | `CREATE` on the schema: the role creates and owns the tables. The bundled compose user owns its database, so nothing to do there. |
 | Initialised by the old `schema.sql`, role not the owner | `SELECT, INSERT` on `pergams`, `SELECT` on `pergams_latest`, plus either `CREATE` on the schema (to create `schema_migrations` once) or a `schema_migrations` table created by the owner with `SELECT, INSERT` granted to the role. |
 
-A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT, UPDATE`. `004_pergam_text_extractor.sql` alters `pergam_text`, so it needs ownership of that table (the role owns it when it ran `003` itself); alternatively the owner runs that file once too, and the migration then runs no DDL. `005_pergam_note.sql` creates `pergam_note` like `002` and `003` do, so it needs `CREATE` on the schema, or the owner runs it once and grants `SELECT, INSERT` on `pergam_note` to the role.
+A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT, UPDATE`. `004_pergam_text_extractor.sql` alters `pergam_text`, so it needs ownership of that table (the role owns it when it ran `003` itself); alternatively the owner runs that file once too, and the migration then runs no DDL. `005_pergam_note.sql` creates `pergam_note` like `002` and `003` do, so it needs `CREATE` on the schema, or the owner runs it once and grants `SELECT, INSERT` on `pergam_note` to the role. `006_pergam_origin.sql` alters `pergam_meta` like `004` alters `pergam_text`: it needs ownership of that table (the role owns it when it ran `002` itself), or the owner runs that file once and the migration then runs no DDL.
 
 ## Project layout
 
@@ -237,6 +268,8 @@ pergam/
 │   ├── taxonomy.py          accepted types and badge colours
 │   ├── tags.py              tag normalisation and limits
 │   ├── meta.py              per-id metadata and PATCH validation
+│   ├── transfer.py          export document and import validation
+│   ├── ids.py               shape of a pergam id
 │   ├── text.py              visible text of a pergam as Markdown (search and /text)
 │   ├── search.py            full-text search SQL and snippets
 │   ├── backfill.py          text of versions without text or with stale text

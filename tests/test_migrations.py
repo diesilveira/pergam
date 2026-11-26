@@ -237,6 +237,7 @@ OWNER_PRECREATED = [
     MIGRATIONS_DIR / "003_pergam_text.sql",
     MIGRATIONS_DIR / "004_pergam_text_extractor.sql",
     MIGRATIONS_DIR / "005_pergam_note.sql",
+    MIGRATIONS_DIR / "006_pergam_origin.sql",
 ]
 
 
@@ -301,3 +302,33 @@ def test_note_migration_adds_no_rows_and_legacy_versions_have_no_note(databases:
         assert conn.execute("SELECT count(*) FROM pergam_note").fetchone() == (0,)
         assert conn.execute(FINGERPRINT).fetchone() == fingerprint
     assert [v["note"] for v in client.get("/aaaa0001/versions").json()] == [None, None]
+
+
+META_FINGERPRINT = (
+    "SELECT count(*), md5(string_agg(concat_ws(',', id, tags::text, archived, pinned), '|' ORDER BY id))"
+    " FROM pergam_meta"
+)
+
+
+def test_origin_migration_keeps_every_row_of_a_populated_database(databases: DatabaseFactory, tmp_path: Path) -> None:
+    previous = write_migrations(
+        tmp_path / "previous",
+        {m.path.name: m.path.read_text() for m in discover(MIGRATIONS_DIR) if m.version < 6},
+    )
+    url = databases.create()
+    with connect(url) as conn:
+        apply_migrations(conn, previous)
+        seed_legacy_rows(conn)
+        conn.execute(
+            "INSERT INTO pergam_meta (id, tags, archived, pinned)"
+            " VALUES ('aaaa0001', '{ops,q3}', true, false), ('bbbb0002', '{}', false, true)"
+        )
+        conn.execute("INSERT INTO pergam_note (id, version, note) VALUES ('aaaa0001', 2, 'second')")
+        before = [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)]
+
+        assert [m.name for m in apply_migrations(conn, MIGRATIONS_DIR)] == ["006_pergam_origin"]
+
+        assert [conn.execute(query).fetchone() for query in (FINGERPRINT, META_FINGERPRINT)] == before
+        assert before[0][0] == len(LEGACY_ROWS)
+        assert conn.execute("SELECT count(*) FROM pergam_meta WHERE origin_url IS NOT NULL OR origin_id IS NOT NULL").fetchone() == (0,)
+        assert apply_migrations(conn, MIGRATIONS_DIR) == []

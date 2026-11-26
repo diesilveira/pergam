@@ -181,7 +181,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | POST   | `/pergam`             | Body `{title, html, type, author, id?, tags?, note?}`. Returns `{id, version, view_url, title, type, author}` (+ `tags`, `note` when sent). |
 | GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=words`; `q` searches titles and visible text (`"quoted phrase"` for exact order); `?archived=1` includes archived ones. |
 | GET    | `/api/pergams`        | JSON index with the same filters as `/` (`type`, `author`, `tag`, `q`, `archived`, `cursor`): `{pergams, matching, next_cursor, counts, stats}`. Use it to find or count pergams instead of scraping `/`. |
-| GET    | `/api/pergams/{id}`   | JSON: latest title/type/author, `tags`, `archived`, `pinned` and `versions` (newest first). |
+| GET    | `/api/pergams/{id}`   | JSON: latest title/type/author, `tags`, `archived`, `pinned`, `origin` (server it was imported from, or `null`) and `versions` (newest first). |
 | GET    | `/{id}/view`          | View page of the latest version: bar with title, type, tags, author, `v3 of 5` and a version selector, document in a frame. |
 | GET    | `/{id}/v{n}/view`     | View page of a specific version; says so when a newer one exists.    |
 | GET    | `/{id}/v{n}/content`  | The posted HTML as `text/html`, nothing added (what the view frames). |
@@ -193,6 +193,8 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 | GET    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at, note}, …]`. |
 | GET    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`.                                |
 | PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |
+| GET    | `/{id}/export`        | JSON: every version with its HTML, plus `meta`, to move the pergam to another server. |
+| POST   | `/import`             | Body: an export document. Adds the versions this server lacks (same id, numbers, dates); **409** if one it has differs. |
 | GET    | `/feed.atom`          | Atom feed of recent publications, `?tag=`/`?author=` to filter. Point the user here when they want to follow new pergams. |
 | GET    | `/healthz`            | `{"ok":true}`.                                                       |
 | HEAD   | any GET route         | Same status and headers as GET, no body (cheap existence check).     |
