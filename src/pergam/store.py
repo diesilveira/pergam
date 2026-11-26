@@ -234,7 +234,9 @@ class PergamStore:
 
         Posts to an explicit id take a transaction-scoped advisory lock on that id
         before reading `MAX(version)`, so concurrent posts get consecutive versions
-        instead of colliding on the primary key. New random ids retry on collision.
+        instead of colliding on the primary key. Their `created_at` is the clock
+        after the lock, never earlier than the id's latest version, so dates follow
+        version order (the transaction's start, the column default, does not). New random ids retry on collision.
         A tag merge that fails (`TagError`) rolls the version back with it. The note,
         when given, is written in the same transaction as its version.
         """
@@ -243,8 +245,9 @@ class PergamStore:
             if existing_id:
                 lock_id(conn, existing_id)
                 row = conn.execute(
-                    "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
-                    " SELECT %s, COALESCE(MAX(version), 0) + 1, %s, %s, %s, %s, %s FROM pergams WHERE id = %s"
+                    "INSERT INTO pergams (id, version, title, html, type, author, bytes, created_at)"
+                    " SELECT %s, COALESCE(MAX(version), 0) + 1, %s, %s, %s, %s, %s,"
+                    " GREATEST(clock_timestamp(), MAX(created_at)) FROM pergams WHERE id = %s"
                     " RETURNING version",
                     (existing_id, *values, existing_id),
                 ).fetchone()

@@ -40,7 +40,7 @@ Every pergam has a logical `id` (random 8-hex) and a monotonically increasing `v
 - `GET /{id}/view` → latest version
 - `GET /{id}/v3/view` → version 3 specifically
 
-Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails.
+Version numbers are assigned atomically: concurrent posts to the same `id` are serialized and receive consecutive versions, none of them fails. Each version's `created_at` is taken once its post holds the id, and is never earlier than the previous version's, so dates follow version order.
 
 Caching: a version-pinned content route (`/{id}/v{n}/content`, `/{id}/v{n}/raw`) never changes, so it is sent with `Cache-Control: public, max-age=31536000, immutable`. `/{id}/v{n}/text` is derived from that version by the text extractor, which can improve with an upgrade, so it is cached for five minutes only (`public, max-age=300`), and so is `/{id}/diff/v{a}..v{b}`, built from the same extraction. Everything else (both view pages, which count the versions, latest `/{id}/raw` and `/{id}/text`, the index, JSON routes, the feed) is `no-store`.
 
