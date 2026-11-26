@@ -222,3 +222,19 @@ def test_refusals_keep_stored_names_out_of_the_status_line(
     assert (resp.status, resp.reason) == (403, "Forbidden")
     assert resp.getheader("Set-Cookie") is None
     assert html.escape(owner, quote=False) in body
+
+
+def test_versions_an_import_only_compares_are_exempt_from_the_authorship_rule(trusting: Client, owned: str) -> None:
+    owner = trusting.as_user(OWNER)
+    assert set_collaborators(owner, owned, [COLLABORATOR, STRANGER]).status == 200
+    trusting.as_user(STRANGER).publish(id=owned, html="<p>v2 by a former collaborator</p>")
+    assert set_collaborators(owner, owned, [COLLABORATOR]).status == 200
+    present = trusting.get(f"/{owned}/export").json()
+    added = {**present["versions"][0], "version": 3, "html": "<p>v3</p>", "author": COLLABORATOR,
+             "created_at": datetime.now(timezone.utc).isoformat()}
+
+    resp = trusting.as_user(COLLABORATOR).post_json({**present, "versions": [*present["versions"], added]}, "/import")
+
+    assert present["versions"][1]["author"] == STRANGER
+    assert resp.status == 201
+    assert (resp.json()["imported"], resp.json()["skipped"]) == ([3], [1, 2])
