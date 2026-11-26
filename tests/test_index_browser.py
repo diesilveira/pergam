@@ -308,3 +308,117 @@ def test_the_index_keeps_the_full_search_field_on_a_phone(browser, site) -> None
 
     assert page.evaluate("document.querySelector('[data-search]').getBoundingClientRect().width") > 200
     context.close()
+
+
+DESKTOP = {"width": 1280, "height": 800}
+ROW_SCROLL = "document.querySelector('[data-pins]').scrollLeft"
+BUTTONS_SETTLED = """(() => {
+  const row = document.querySelector('[data-pins]');
+  const atStart = row.scrollLeft <= 1, atEnd = row.scrollLeft + row.clientWidth >= row.scrollWidth - 1;
+  return document.querySelector('[data-pins-prev]').disabled === atStart
+    && document.querySelector('[data-pins-next]').disabled === atEnd;
+})()"""
+FULLY_VISIBLE = """() => {
+  const row = document.querySelector('[data-pins]').getBoundingClientRect();
+  const cards = Array.from(document.querySelectorAll('.pin')).map((card) => card.getBoundingClientRect());
+  return {
+    full: cards.filter((c) => c.left >= row.left - 1 && c.right <= row.right + 1).length,
+    partial: cards.filter((c) => c.left < row.right - 1 && c.right > row.right + 1).length,
+  };
+}"""
+
+
+@pytest.fixture
+def pinned_row(client: Client) -> str:
+    """Twelve pinned pergams, the default cap, with long titles and tags."""
+    for n in range(12):
+        pid = client.publish(title=f"Pinned board number {n} with a long title", tags=["costs", f"area-{n}"],
+                             html=f"<p>Monthly spend by service, board {n}.</p>")["id"]
+        patch_meta(client, pid, {"pinned": True})
+    client.publish(title="Listed")
+    return f"http://127.0.0.1:{client.port}/"
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, PHONE], ids=["desktop", "phone"])
+@pytest.mark.parametrize("scheme", SCHEMES)
+def test_pinned_row_buttons_move_it_and_stop_at_the_ends(browser, pinned_row: str, scheme: str, viewport: dict) -> None:
+    context, page = open_page(browser, scheme, viewport=viewport, reduced_motion="reduce")
+    page.goto(pinned_row)
+    previous = page.get_by_role("button", name="Previous pinned pergams")
+    following = page.get_by_role("button", name="Next pinned pergams")
+
+    assert page.locator(".pins__count").inner_text() == "12 of 12 pinned"
+    assert previous.is_visible() and previous.is_disabled() and following.is_enabled()
+    for _ in range(12):
+        if following.is_disabled():
+            break
+        before = page.evaluate(ROW_SCROLL)
+        following.click()
+        page.wait_for_function(f"{ROW_SCROLL} > {before} && {BUTTONS_SETTLED}")
+    assert following.is_disabled() and previous.is_enabled()
+    for _ in range(12):
+        if previous.is_disabled():
+            break
+        previous.click()
+        page.wait_for_function(BUTTONS_SETTLED)
+    assert page.evaluate(ROW_SCROLL) == 0
+    assert page.evaluate("document.documentElement.scrollWidth") <= viewport["width"]
+    context.close()
+
+
+@pytest.mark.parametrize(("viewport", "full"), [(DESKTOP, {3, 4}), (PHONE, {1})], ids=["desktop", "phone"])
+def test_cards_keep_a_width_that_shows_more_exist(browser, pinned_row: str, viewport: dict, full: set[int]) -> None:
+    context, page = open_page(browser, viewport=viewport)
+    page.goto(pinned_row)
+
+    visible = page.evaluate(FULLY_VISIBLE)
+
+    assert visible["full"] in full
+    assert visible["partial"] == 1
+    context.close()
+
+
+@pytest.mark.parametrize("scheme", SCHEMES)
+def test_focus_reveals_a_card_that_was_off_screen(browser, pinned_row: str, scheme: str) -> None:
+    context, page = open_page(browser, scheme, viewport=PHONE, reduced_motion="reduce")
+    page.goto(pinned_row)
+    last = page.locator(".pin__title").last
+
+    for _ in range(120):
+        page.keyboard.press("Tab")
+        if page.evaluate("document.activeElement === document.querySelectorAll('.pin__title')[11]"):
+            break
+    else:
+        pytest.fail("the last pinned card is not reachable with Tab")
+
+    page.wait_for_function(
+        "(() => { const r = document.querySelector('[data-pins]').getBoundingClientRect();"
+        " const c = document.querySelectorAll('.pin')[11].getBoundingClientRect();"
+        " return c.left >= r.left - 1 && c.right <= r.right + 1; })()"
+    )
+    assert page.evaluate("getComputedStyle(document.querySelectorAll('.pin')[11]).outlineStyle") == "solid"
+    assert last.is_visible()
+    context.close()
+
+
+def test_pinned_row_without_script_scrolls_natively(browser, pinned_row: str) -> None:
+    context, page = open_page(browser, java_script_enabled=False, viewport=PHONE)
+    page.goto(pinned_row)
+
+    assert page.locator("[data-pins-prev]").is_hidden() and page.locator("[data-pins-next]").is_hidden()
+    assert page.evaluate("(() => { const r = document.querySelector('[data-pins]'); return r.scrollWidth > r.clientWidth; })()")
+    assert page.evaluate("getComputedStyle(document.querySelector('[data-pins]')).scrollSnapType") == "x mandatory"
+    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
+    context.close()
+
+
+@pytest.mark.parametrize(("motion", "behavior"), [("reduce", "auto"), ("no-preference", "smooth")])
+def test_pinned_row_respects_reduced_motion(browser, pinned_row: str, motion: str, behavior: str) -> None:
+    context, page = open_page(browser, reduced_motion=motion)
+    page.goto(pinned_row)
+
+    page.get_by_role("button", name="Next pinned pergams").click()
+
+    assert page.evaluate("getComputedStyle(document.querySelector('[data-pins]')).scrollBehavior") == behavior
+    page.wait_for_function(f"{ROW_SCROLL} > 0")
+    context.close()

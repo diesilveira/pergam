@@ -43,16 +43,27 @@
                   font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); }
   .group__title::after { content:""; flex:1; height:1px; background:var(--border); }
 
-  .pins__grid { list-style:none; margin:0; padding:0; display:grid; gap:.7rem;
-                grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); }
+  .pins__head { display:flex; align-items:center; gap:.5rem; margin:1.2rem 0 .45rem; }
+  .pins__head .group__title { flex:1; margin:0; }
+  .pins__count { color:var(--muted); font-size:.78rem; white-space:nowrap; }
+  .pins__nav { width:28px; height:28px; border:1px solid var(--border); }
+  .pins__nav:disabled { opacity:.4; cursor:default; }
+  .pins__nav:disabled:hover { background:transparent; color:var(--soft); }
+  .pins__row { list-style:none; margin:0; padding:4px 2px; display:grid; grid-auto-flow:column;
+               grid-auto-columns:min(280px, 82%); gap:.7rem; overflow-x:auto; overscroll-behavior-x:contain;
+               scroll-snap-type:x mandatory; scroll-padding-inline:2px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .pins__row { scroll-behavior:smooth; }
+  }
   .pin { position:relative; display:flex; flex-direction:column; gap:.45rem; padding:.8rem .9rem;
-         background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); min-width:0; }
+         background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); min-width:0;
+         scroll-snap-align:start; }
   .pin:hover { border-color:var(--border-strong); background:var(--raised); }
   .pin:focus-within { border-color:var(--accent); }
   .pin__title { font-weight:650; line-height:1.3; overflow-wrap:anywhere; }
   .pin__title::after { content:""; position:absolute; inset:0; border-radius:var(--radius); }
   .pin__title:focus-visible { outline:none; }
-  .pin:has(.pin__title:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; }
+  .pin:has(.pin__title:focus-visible) { outline:2px solid var(--accent); outline-offset:-2px; }
   .pin__summary { margin:0; color:var(--muted); font-size:.82rem; display:-webkit-box; -webkit-line-clamp:2;
                   -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; }
   .pin__summary > span { white-space:normal; }

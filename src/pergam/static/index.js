@@ -3,9 +3,11 @@
  * density and a collapsed filter column are on <html> before first paint.
  * - [data-density-toggle] switches compact rows and remembers the choice;
  * - below 860px the filter column (details.filters) starts collapsed;
- * - "Load more" ([data-load-more]) appends the next page instead of leaving this one.
- * Without script the column stays open, rows keep their size and "Load more" is a
- * plain link to the next page.
+ * - "Load more" ([data-load-more]) appends the next page instead of leaving this one;
+ * - the pinned row ([data-pins]) gets previous/next buttons that scroll it by one
+ *   view of cards and are disabled at the ends, and a focused card scrolls into view.
+ * Without script the column stays open, rows keep their size, "Load more" is a
+ * plain link to the next page and the pinned row scrolls natively.
  */
 (() => {
   const KEY = 'pergam-density';
@@ -99,9 +101,34 @@
     });
   };
 
+  const pins = () => {
+    const row = document.querySelector('[data-pins]');
+    const previous = document.querySelector('[data-pins-prev]');
+    const next = document.querySelector('[data-pins-next]');
+    if (!row || !previous || !next) return;
+    const still = matchMedia('(prefers-reduced-motion: reduce)');
+    const behavior = () => (still.matches ? 'auto' : 'smooth');
+    const sync = () => {
+      const overflows = row.scrollWidth > row.clientWidth + 1;
+      previous.hidden = next.hidden = !overflows;
+      previous.disabled = row.scrollLeft <= 1;
+      next.disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 1;
+    };
+    previous.addEventListener('click', () => row.scrollBy({ left: -row.clientWidth, behavior: behavior() }));
+    next.addEventListener('click', () => row.scrollBy({ left: row.clientWidth, behavior: behavior() }));
+    row.addEventListener('scroll', sync, { passive: true });
+    row.addEventListener('focusin', (event) => {
+      const card = event.target.closest('.pin');
+      if (card) card.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: behavior() });
+    });
+    new ResizeObserver(sync).observe(row);
+    sync();
+  };
+
   document.addEventListener('DOMContentLoaded', () => {
     density();
     filters();
     loadMore();
+    pins();
   });
 })();
