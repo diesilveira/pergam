@@ -9,7 +9,11 @@ paragraph stand out.
 
 The route is public, and `difflib` can take time quadratic or worse in the
 input, so the work is bounded in units of `find_longest_match` scanning. Common
-leading and trailing elements are matched for free. In what remains, an
+leading and trailing elements are matched for free. In what remains, elements
+that occur exactly once on each side are anchors, kept in order on both sides
+(the longest increasing run, as in patience diff, O(n log n) and unmetered), so
+scattered edits leave many small gaps instead of one long, lopsided recursion.
+Only the gaps go through `difflib`, metered against one budget; in a gap, an
 element seen more than `POPULAR` times on the new side is junk (it extends
 matches but never anchors one, like `autojunk` but independent of length). A
 replaced pair whose words overrun `PAIR_BUDGET`, or every pair once a request
@@ -20,11 +24,12 @@ Documents over `MAX_HTML_BYTES` or `MAX_LINES`, or whose lines overrun
 
 from __future__ import annotations
 
+import bisect
 import difflib
 import re
 from collections import Counter
-from itertools import accumulate
 from collections.abc import Hashable, Sequence
+from itertools import accumulate
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -150,8 +155,57 @@ class _BoundedMatcher(difflib.SequenceMatcher):
         return super().find_longest_match(alo, ahi, blo, bhi)
 
 
+def anchors(a: Sequence[Hashable], b: Sequence[Hashable]) -> list[tuple[int, int]]:
+    """Positions `(i, j)` of elements unique on both sides, the longest run increasing on both."""
+    in_a, in_b = Counter(a), Counter(b)
+    where_b = {item: j for j, item in enumerate(b) if in_b[item] == 1}
+    pairs = [(i, where_b[item]) for i, item in enumerate(a) if in_a[item] == 1 and item in where_b]
+    tails: list[int] = []
+    tail_pair: list[int] = []
+    previous = [-1] * len(pairs)
+    for k, (_, j) in enumerate(pairs):
+        slot = bisect.bisect_left(tails, j)
+        if slot == len(tails):
+            tails.append(j)
+            tail_pair.append(k)
+        else:
+            tails[slot] = j
+            tail_pair[slot] = k
+        previous[k] = tail_pair[slot - 1] if slot else -1
+    run: list[tuple[int, int]] = []
+    k = tail_pair[-1] if tail_pair else -1
+    while k >= 0:
+        run.append(pairs[k])
+        k = previous[k]
+    return run[::-1]
+
+
+def _gap_opcodes(a: Sequence[Hashable], b: Sequence[Hashable], budget: Budget) -> list[Opcode]:
+    """Opcodes of `a` against `b` between anchors; raises `_OverBudget`."""
+    found: list[Opcode] = []
+    i = j = 0
+    for anchor_i, anchor_j in [*anchors(a, b), (len(a), len(b))]:
+        if anchor_i > i or anchor_j > j:
+            gap = _BoundedMatcher(a[i:anchor_i], b[j:anchor_j], budget).get_opcodes()
+            found.extend((tag, i1 + i, i2 + i, j1 + j, j2 + j) for tag, i1, i2, j1, j2 in gap)
+        if anchor_i < len(a):
+            found.append(("equal", anchor_i, anchor_i + 1, anchor_j, anchor_j + 1))
+        i, j = anchor_i + 1, anchor_j + 1
+    return found
+
+
+def _merged(opcodes: list[Opcode]) -> list[Opcode]:
+    out: list[Opcode] = []
+    for opcode in opcodes:
+        if out and opcode[0] == "equal" and out[-1][0] == "equal":
+            out[-1] = ("equal", out[-1][1], opcode[2], out[-1][3], opcode[4])
+        else:
+            out.append(opcode)
+    return out
+
+
 def bounded_opcodes(a: Sequence[Hashable], b: Sequence[Hashable], budget: Budget) -> list[Opcode] | None:
-    """`SequenceMatcher` opcodes, or None when matching between the common ends overruns `budget`."""
+    """Opcodes of `a` against `b`, or None when matching the gaps between anchors overruns `budget`."""
     end = min(len(a), len(b))
     head = 0
     while head < end and a[head] == b[head]:
@@ -160,14 +214,14 @@ def bounded_opcodes(a: Sequence[Hashable], b: Sequence[Hashable], budget: Budget
     while tail < end - head and a[len(a) - 1 - tail] == b[len(b) - 1 - tail]:
         tail += 1
     try:
-        middle = _BoundedMatcher(a[head : len(a) - tail], b[head : len(b) - tail], budget).get_opcodes()
+        middle = _gap_opcodes(a[head : len(a) - tail], b[head : len(b) - tail], budget)
     except _OverBudget:
         return None
     opcodes: list[Opcode] = [("equal", 0, head, 0, head)] if head else []
     opcodes.extend((tag, i1 + head, i2 + head, j1 + head, j2 + head) for tag, i1, i2, j1, j2 in middle)
     if tail:
         opcodes.append(("equal", len(a) - tail, len(a), len(b) - tail, len(b)))
-    return opcodes
+    return _merged(opcodes)
 
 
 def _marked(tokens: list[str], changed: bool) -> list[Segment]:
