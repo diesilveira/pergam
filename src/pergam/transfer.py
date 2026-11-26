@@ -134,8 +134,14 @@ def _created_at(entry: dict[str, Any], label: str, now: datetime) -> datetime:
         created_at = created_at.astimezone(timezone.utc)
     except OverflowError:
         created_at = None
-    if created_at is None or not EARLIEST_CREATED_AT <= created_at <= now + CLOCK_SKEW:
+    if created_at is None or created_at < EARLIEST_CREATED_AT:
         raise TransferError(f"{label}: created_at must be between 1970-01-01 and now (UTC)")
+    if created_at > now + CLOCK_SKEW:
+        minutes = int(CLOCK_SKEW.total_seconds() // 60)
+        raise TransferError(
+            f"{label}: created_at {created_at.isoformat()} is more than {minutes} minutes ahead of this server's clock"
+            f" ({now.isoformat(timespec='seconds')}); check for clock skew between the two servers"
+        )
     return created_at
 
 

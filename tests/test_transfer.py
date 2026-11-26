@@ -340,7 +340,7 @@ def test_parse_import_window_is_relative_to_now() -> None:
     doc["versions"][0]["created_at"] = "2025-01-01T00:06:00+00:00"
     now = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
-    with pytest.raises(TransferError, match="between 1970-01-01 and now"):
+    with pytest.raises(TransferError, match="more than 5 minutes ahead of this server's clock.*clock skew"):
         parse_import(doc, TYPES, now=now)
     assert parse_import(doc, TYPES, now=now + timedelta(minutes=1)).versions[0].created_at.tzinfo == timezone.utc
 
@@ -443,3 +443,13 @@ def test_export_carries_the_html_as_posted_not_the_framed_content(client: Client
     assert exported == client.get(f"/{pid}/v1/raw").text == "<h1>as posted</h1>"
     assert BRIDGE_TAG not in exported
     assert client.get(f"/{pid}/v1/content").text == framed(exported)
+
+
+def test_future_date_error_names_clock_skew(target: Client) -> None:
+    doc = document()
+    doc["versions"][1]["created_at"] = "2999-01-01T00:00:00+00:00"
+
+    resp = target.post_json(doc, "/import")
+
+    assert resp.status == 400
+    assert b"clock skew" in resp.body
