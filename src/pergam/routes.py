@@ -20,6 +20,7 @@ from pergam.feed import render_feed
 from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, proxy_user
 from pergam.ids import ID_RE
 from pergam.index_page import render_index
+from pergam.lint import lint_html
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
 from pergam.meta import MetaError, parse_meta_change
 from pergam.notes import NoteError, parse_note
@@ -86,6 +87,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             self._publish()
         elif path == "/import":
             self._import()
+        elif path == "/lint":
+            self._lint()
         else:
             self.send_error(404, "Not Found")
 
@@ -153,6 +156,17 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if note:
             response["note"] = note
         self._send(201, "application/json", json.dumps(response).encode("utf-8"))
+
+    def _lint(self) -> None:
+        """Findings for the body's `html`; other fields are ignored, so a publish payload can be linted as is."""
+        data = self._read_json_object()
+        if data is None:
+            return
+        html = data.get("html")
+        if not isinstance(html, str) or not html.strip():
+            self.send_error(400, "Missing html")
+            return
+        self._send_json(lint_html(html).to_json())
 
     def _import(self) -> None:
         """201 when any version was written, 200 when every one was already here, 409 on a conflict."""

@@ -42,6 +42,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
 - 🪞 **Built-in viewer** — on [pergam.dev](https://pergam.dev), a sandboxed iframe with strict CSP: Mermaid + jsDelivr allowed, everything else blocked. A self-hosted server frames each version under its version bar the same way: sandboxed in an opaque origin, with the hosted viewer's CSP, so a published script cannot reach the API.
 - 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag; pin what matters, archive what doesn't.
+- 🧹 **Lint before publishing** — `POST /lint` reports external resources, broken TOC anchors and malformed Mermaid blocks with their line and column, and stores nothing; the skill runs it before every self-hosted publish.
 - 🔎 **Searchable** — `?q=` searches titles and the visible text of every pergam, with highlighted snippets.
 - 📡 **Atom feed** — `/feed.atom` follows new publications, filtered by tag or author.
 - 🚚 **Portable** — `/{id}/export` and `POST /import` move a pergam to another server with its id, versions, dates, tags and notes; the skill promotes one between named servers in one command.

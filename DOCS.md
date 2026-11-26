@@ -25,6 +25,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
 | `GET`    | `/{id}/collaborators` | JSON: `{id, owner, collaborators}`; `owner` is the author of v1. **404** for an unknown id. See [Ownership](#ownership). |
 | `PUT`    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list and returns `{id, owner, collaborators}`. Only the owner, when identity is trusted. See [Ownership](#ownership). |
+| `POST`   | `/lint`               | Body `{html}`. Returns the problems that would break the document once published, each with its line and column; stores nothing. See [Lint](#lint). |
 | `GET`    | `/{id}/export`        | JSON document with every version of one pergam, its HTML and its metadata. See [Export and import](#export-and-import). **404** for an unknown id. |
 | `POST`   | `/import`             | Body: an export document. Recreates the versions this server lacks, keeping id, version numbers and `created_at`. Returns `{id, imported, skipped, origin, view_url}`. **409** when a version already here differs. See [Export and import](#export-and-import). |
 | `GET`    | `/feed.atom`          | Atom 1.0 feed of the 50 most recent publications; `?tag=<tag>`, `?author=<email>`. See [Feed](#feed). |
@@ -125,13 +126,36 @@ A published document never runs with the server's privileges, framed or opened o
 - The rest of that CSP is the hosted viewer's: `default-src 'none'`; scripts inline, from this server and from `https://cdn.jsdelivr.net`; styles inline and from jsDelivr; images only `data:`; fonts `data:` and jsDelivr; `connect-src` only jsDelivr; `form-action 'none'`, `base-uri 'none'`; framed only by this server (`frame-ancestors`). "This server" is `'self'` plus its public origin by name (from `PUBLIC_URL`, or `PUBLIC_HOST`/`PUBLIC_PORT`), for browsers that do not match `'self'` from an opaque origin. `/content` also sends `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`; `/raw` is `text/plain` with `nosniff`, so it never renders.
 - So a script inside a pergam cannot read the index, post a version, patch metadata, submit a form, beacon or embed a frame against the API: the browser blocks the request before it leaves.
 - What still works: inline scripts and styles, [Mermaid](#mermaid) from `/static/` or jsDelivr, in-page anchors, links that leave the document (on a click), links that open a new tab (as an ordinary page outside the sandbox), printing, `data:` images.
-- What a document loses: images, fonts, scripts and styles from anywhere else, `fetch` and XHR except to jsDelivr, forms, nested frames, `localStorage`/`sessionStorage`/cookies, and navigating the whole window without a click. The skill keeps documents within these limits.
+- What a document loses: images, fonts, scripts and styles from anywhere else, `fetch` and XHR except to jsDelivr, forms, nested frames, `localStorage`/`sessionStorage`/cookies, and navigating the whole window without a click. The skill keeps documents within these limits and [`POST /lint`](#lint) reports what would break.
 
 `/content` is cached for five minutes (`public, max-age=300`), not for good like `/raw`, because the bridge tag and these headers are the server's and may change with an upgrade.
 
 ### Mermaid
 
 The server ships Mermaid 11.17.2 (`dist/mermaid.min.js` of the npm package, unchanged, MIT, with its licence at `/static/mermaid/11.17.2/LICENSE`) and serves it at `/static/mermaid/11.17.2/mermaid.min.js`, cached for good since the path names the version. A pergam that loads it from there renders its diagrams with no external request, and the skill's template does so on a self-hosted server. Pergams published earlier load Mermaid from `https://cdn.jsdelivr.net`, which the sandbox's CSP still allows, as the hosted viewer does, so they keep rendering. Published documents name that versioned path, so an upgrade adds the new version next to it and keeps shipping the old one.
+
+## Lint
+
+`POST /lint` checks a document before it is published and writes nothing: no version, no metadata, no text. The body is `{"html": "…"}`; other fields are ignored, so the payload of a `POST /pergam` can be linted as is. A missing or blank `html` is **400**; the body follows the same size and `Content-Type` rules as a publish. It needs no `X-Forwarded-User`, even with `TRUST_PROXY_USER` on.
+
+```bash
+curl -sS -X POST http://localhost:1111/lint -H 'Content-Type: application/json' \
+     -d '{"html":"<a href=\"#costs\">costs</a><img src=\"https://img.example.com/a.png\">"}'
+# → {"findings": [
+#      {"rule": "missing-anchor", "severity": "error", "line": 1, "column": 1, "message": "link to #costs has no element with id 'costs'"},
+#      {"rule": "external-resource", "severity": "error", "line": 1, "column": 27, "message": "<img> loads https://img.example.com/a.png from another server; the sandbox blocks it"}
+#    ], "errors": 2, "warnings": 0, "truncated": false}
+```
+
+Findings come in document order, at most 500 (`truncated` says when there were more); `line` and `column` (both from 1) point at the tag concerned. The checks are static, on the markup alone:
+
+| Rule | Severity | Reported when |
+| ---- | -------- | ------------- |
+| `external-resource` | error | A tag loads from another server: `<script src>`, a loading `<link>` (stylesheet, icon, preload, …), `<img src/srcset>`, `<source>`, `<video>`/`<audio>`/`<track>`, `<iframe>`, `<embed>`, `<object>`, SVG `<image>`/`<use>`, or `url(…)`/`@import` in a `<style>` or `style` attribute. The [sandbox](#sandbox) blocks it. |
+| `external-resource` | warning | A `<script>` or `<link>` from `cdn.jsdelivr.net`, which the sandbox allows for older pergams; prefer the server's [Mermaid](#mermaid). |
+| `missing-anchor` | error | `<a href="#name">` with no element whose `id` is `name` (or `<a name="name">`); `#` and `#top` are fine. |
+| `mermaid-empty` | error | A `class="mermaid"` element with no diagram text (comments, directives and front matter do not count). |
+| `mermaid-unknown-diagram` | error | Its first statement is not a diagram type Mermaid knows (`flowchart`, `graph`, `sequenceDiagram`, `stateDiagram-v2`, `erDiagram`, `gantt`, `pie`, …). |
 
 ## Diff
 
@@ -355,6 +379,7 @@ pergam/
 │   ├── static_files.py      the files served under /static/
 │   ├── identity.py          the writer, from X-Forwarded-User when trusted
 │   ├── access.py            owners, collaborators and the 403 rules
+│   ├── lint.py              static checks of a document for POST /lint
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── limits.py            largest request body (PERGAM_MAX_BODY_MB)
 │   ├── taxonomy.py          accepted types and badge colours

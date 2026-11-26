@@ -19,6 +19,7 @@ Modules
   identity.py    the writer, from X-Forwarded-User when trusted
   access.py      owners, collaborators and who may change a pergam
   static_files.py files served under /static/ (bridge, vendored Mermaid)
+  lint.py        static checks of a document for POST /lint
   taxonomy.py    accepted types and type badge colours
   migrate.py     numbered migrations applied at startup
   text.py        visible text of a pergam as Markdown

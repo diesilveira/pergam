@@ -132,7 +132,15 @@ Use when the resolved server is a self-hosted instance (typically `http://localh
    PY
    ```
 
-6. **POST to `/pergam`:**
+6. **Lint before publishing** — `POST /lint` checks the same payload without storing anything:
+   ```bash
+   curl -sS ${PERGAM_CA:+--cacert "$PERGAM_CA"} -X POST "$PERGAM_URL/lint" \
+        -H "Content-Type: application/json" \
+        --data-binary @/tmp/pergam.payload.json
+   ```
+   Response: `{"findings": [{"rule", "severity", "line", "column", "message"}, …], "errors": n, "warnings": n, "truncated": false}`. Fix every `error` in the HTML and lint again before posting: `external-resource` (something loaded from another server, which the sandbox blocks: inline it or use a `data:` URI), `missing-anchor` (a `#link` with no matching `id`: fix the TOC), `mermaid-empty` / `mermaid-unknown-diagram` (a diagram block that will not render). A `warning` (Mermaid from jsDelivr) is allowed, but switch it to the server's `/static/` path. A server older than `/lint` answers 404: skip this step there.
+
+7. **POST to `/pergam`:**
    ```bash
    curl -sS ${PERGAM_CA:+--cacert "$PERGAM_CA"} -X POST "$PERGAM_URL/pergam" \
         -H "Content-Type: application/json" \
@@ -140,7 +148,7 @@ Use when the resolved server is a self-hosted instance (typically `http://localh
    ```
    Response: `{"id":"abc12345", "version": 2, "view_url":"http://localhost:1111/abc12345/view", "title":"...", "type":"...", "author":"..."}`
 
-7. **Report the `view_url` AND `version`** to the user. Mention "v{n}" if not v1, and the `tags` if you sent any.
+8. **Report the `view_url` AND `version`** to the user. Mention "v{n}" if not v1, and the `tags` if you sent any.
    The `view_url` is built by the server from its `PUBLIC_URL` (or `PUBLIC_HOST`/`PUBLIC_PORT`); report it as returned instead of rebuilding it from `$PERGAM_URL`. It always shows the latest version; when the link must keep showing exactly this version, replace its trailing `/view` with `/v{n}/view` (that page keeps showing v{n} and says when a newer version exists).
 
 ### Versioning (Flow B)
@@ -254,6 +262,7 @@ python3 <skill-dir>/pergam_promote.py abc12345 --from local --to team
 | PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |
 | GET    | `/{id}/collaborators` | JSON: `{id, owner, collaborators}`; `owner` is the author of v1. |
 | PUT    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list. Only the owner, on a server that trusts its proxy. |
+| POST   | `/lint`               | Body `{html}` (other fields ignored). Returns `{findings, errors, warnings, truncated}`; stores nothing. Call it before every publish. |
 | GET    | `/{id}/export`        | JSON: every version with its HTML, plus `meta`, to move the pergam to another server. |
 | POST   | `/import`             | Body: an export document. Adds the versions this server lacks (same id, numbers, dates); **409** if one it has differs. |
 | GET    | `/feed.atom`          | Atom feed of recent publications, `?tag=`/`?author=` to filter. Point the user here when they want to follow new pergams. |
