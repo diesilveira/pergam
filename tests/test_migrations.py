@@ -232,7 +232,11 @@ APP_GRANTS = [
 ]
 
 
-OWNER_PRECREATED = [MIGRATIONS_DIR / "002_pergam_meta.sql", MIGRATIONS_DIR / "003_pergam_text.sql"]
+OWNER_PRECREATED = [
+    MIGRATIONS_DIR / "002_pergam_meta.sql",
+    MIGRATIONS_DIR / "003_pergam_text.sql",
+    MIGRATIONS_DIR / "004_pergam_text_extractor.sql",
+]
 
 
 @pytest.mark.parametrize(
@@ -245,7 +249,7 @@ OWNER_PRECREATED = [MIGRATIONS_DIR / "002_pergam_meta.sql", MIGRATIONS_DIR / "00
                 " applied_at timestamptz NOT NULL DEFAULT now())",
                 "GRANT SELECT, INSERT ON schema_migrations TO {role}",
                 "GRANT SELECT, INSERT, UPDATE ON pergam_meta TO {role}",
-                "GRANT SELECT, INSERT ON pergam_text TO {role}",
+                "GRANT SELECT, INSERT, UPDATE ON pergam_text TO {role}",
             ],
             True,
         ),

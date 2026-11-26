@@ -16,7 +16,7 @@ Modules
   migrate.py     numbered migrations applied at startup
   text.py        visible text of a pergam as Markdown
   search.py      full-text search SQL and snippets
-  backfill.py    text of versions published before search existed
+  backfill.py    text of versions without text or with stale text
 
 Env (12-factor)
 ---------------

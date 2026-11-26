@@ -131,7 +131,7 @@ curl -sS http://localhost:1111/abc12345/text
 - **Order and paging** are the same as without `q` (pinned, newest, id), so the cursor works unchanged.
 - Only the first 100,000 characters of a version's text are indexed; the rest is still served by `/{id}/text`.
 
-Versions published before search existed are indexed by the server itself: after applying migrations it backfills them in the background, in batches of 50, each committed on its own. The server answers requests meanwhile, and until a version is indexed `q` still finds it by title. Stopping the server mid-way is safe: the next start resumes with what is missing. The backfill only reads `pergams`; the log says `text backfill: filled N versions` when it did any work.
+Versions published before search existed are indexed by the server itself: after applying migrations it backfills them in the background, in batches of 50, each committed on its own. Every text row records the extractor version that wrote it, and the same backfill re-extracts rows written by an older extractor, so an upgrade that improves extraction also refreshes text that is already stored. The server answers requests meanwhile, and until a version is indexed `q` still finds it by title. Stopping the server mid-way is safe: the next start resumes with what is missing or stale. A document the extractor fails on is logged (`text extraction failed for <id> v<n>`) and stored with empty text, so it is still found by title and never stops the run or its publish. The backfill only reads `pergams`; the log says `text backfill: filled N versions` when it did any work.
 
 ## Pergam types
 
@@ -174,7 +174,7 @@ The schema lives in numbered files, `db/migrations/NNN_description.sql`, shipped
 - Each migration runs in its own transaction: a failure rolls it back completely, the server logs `migrations failed` and exits non-zero.
 - A Postgres advisory lock serializes servers that start at the same time against one database.
 
-Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. To add a change, create the next number and restart the server.
+Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. `004_pergam_text_extractor.sql` adds `pergam_text.extractor` (existing rows read as version 1) so the backfill can re-extract text written by an older extractor; it rewrites no rows. To add a change, create the next number and restart the server.
 
 ### Database privileges
 
@@ -185,7 +185,7 @@ The `DATABASE_URL` role needs:
 | Fresh (no `pergams` yet) | `CREATE` on the schema: the role creates and owns the tables. The bundled compose user owns its database, so nothing to do there. |
 | Initialised by the old `schema.sql`, role not the owner | `SELECT, INSERT` on `pergams`, `SELECT` on `pergams_latest`, plus either `CREATE` on the schema (to create `schema_migrations` once) or a `schema_migrations` table created by the owner with `SELECT, INSERT` granted to the role. |
 
-A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT`.
+A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT, UPDATE`. `004_pergam_text_extractor.sql` alters `pergam_text`, so it needs ownership of that table (the role owns it when it ran `003` itself); alternatively the owner runs that file once too, and the migration then runs no DDL.
 
 ## Project layout
 
@@ -205,7 +205,7 @@ pergam/
 │   ├── meta.py              per-id metadata and PATCH validation
 │   ├── text.py              visible text of a pergam as Markdown (search and /text)
 │   ├── search.py            full-text search SQL and snippets
-│   ├── backfill.py          text of versions published before search existed
+│   ├── backfill.py          text of versions without text or with stale text
 │   ├── cursor.py            keyset cursor for index pagination
 │   └── migrate.py           numbered migrations runner
 ├── db/

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import shutil
 import time
+from pathlib import Path
 from urllib.parse import quote
 
 import psycopg
 import pytest
 from psycopg_pool import ConnectionPool
 
+from pergam import store
 from pergam.backfill import backfill_text
 from pergam.migrate import apply_migrations
+from pergam.text import EXTRACTOR_VERSION
 from support import (
     FINGERPRINT,
     LEGACY_ROWS,
@@ -153,8 +157,77 @@ def test_backfill_fills_every_version_in_batches_and_is_idempotent(legacy_pool: 
 def test_backfill_resumes_with_what_is_missing(legacy_pool: ConnectionPool) -> None:
     with legacy_pool.connection() as conn:
         conn.execute(
-            "INSERT INTO pergam_text (id, version, body, document) VALUES ('aaaa0001', 2, 'kept', ''::tsvector)"
+            "INSERT INTO pergam_text (id, version, body, document, extractor) VALUES ('aaaa0001', 2, 'kept', '', %s)",
+            (EXTRACTOR_VERSION,),
         )
 
     assert backfill_text(legacy_pool, batch_size=1) == len(LEGACY_ROWS) - 1
     assert ("aaaa0001", 2, "kept") in text_rows(legacy_pool)
+
+
+def test_backfill_re_extracts_rows_from_an_older_extractor(legacy_pool: ConnectionPool) -> None:
+    with legacy_pool.connection() as conn:
+        conn.execute(
+            "INSERT INTO pergam_text (id, version, body, document, extractor) VALUES"
+            " ('aaaa0001', 1, 'stale', '', 1), ('aaaa0001', 2, 'newer', '', %s)",
+            (EXTRACTOR_VERSION + 1,),
+        )
+
+    assert backfill_text(legacy_pool) == len(LEGACY_ROWS) - 1
+    assert backfill_text(legacy_pool) == 0
+
+    assert text_rows(legacy_pool) == [("aaaa0001", 1, "plan v1"), ("aaaa0001", 2, "newer"), ("bbbb0002", 1, "ñ")]
+    with legacy_pool.connection() as conn:
+        assert conn.execute("SELECT DISTINCT extractor FROM pergam_text ORDER BY 1").fetchall() == [
+            (EXTRACTOR_VERSION,),
+            (EXTRACTOR_VERSION + 1,),
+        ]
+
+
+def test_backfill_logs_and_skips_a_document_the_extractor_fails_on(
+    legacy_pool: ConnectionPool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    real_extract = store.extract_text
+
+    def failing_on_v1(html: str):
+        if "plan v1" in html:
+            raise RuntimeError("extractor bug")
+        return real_extract(html)
+
+    monkeypatch.setattr(store, "extract_text", failing_on_v1)
+
+    assert backfill_text(legacy_pool, batch_size=1) == len(LEGACY_ROWS)
+
+    assert text_rows(legacy_pool) == [("aaaa0001", 1, ""), ("aaaa0001", 2, "plan v2"), ("bbbb0002", 1, "ñ")]
+    assert "text extraction failed for aaaa0001 v1: RuntimeError('extractor bug')" in capsys.readouterr().err
+
+
+def test_upgraded_instance_re_extracts_text_from_the_first_extractor(
+    databases: DatabaseFactory, start_server, tmp_path: Path
+) -> None:
+    url = databases.create()
+    first_release = tmp_path / "migrations"
+    first_release.mkdir()
+    for migration in sorted(MIGRATIONS_DIR.glob("00[1-3]_*.sql")):
+        shutil.copy(migration, first_release)
+    with psycopg.connect(url, autocommit=True) as conn:
+        apply_migrations(conn, first_release)
+        conn.execute(
+            "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
+            " VALUES ('cccc0003', 1, 'Headless', '<head><title>T</title><body><p>omitted head end tag</p>', 'otro',"
+            " 'you@example.com', 60)"
+        )
+        conn.execute("INSERT INTO pergam_text (id, version, body, document) VALUES ('cccc0003', 1, '', '')")
+        fingerprint = conn.execute(FINGERPRINT).fetchone()
+
+    client = start_server(url)
+    deadline = time.monotonic() + 10
+    with psycopg.connect(url, autocommit=True) as conn:
+        while conn.execute("SELECT extractor FROM pergam_text").fetchone() != (EXTRACTOR_VERSION,):
+            assert time.monotonic() < deadline, "stale text was not re-extracted"
+            time.sleep(0.1)
+        assert conn.execute("SELECT body FROM pergam_text").fetchone() == ("omitted head end tag",)
+        assert conn.execute(FINGERPRINT).fetchone() == fingerprint
+
+    assert listed_ids(client.get("/?q=omitted").text, "cccc0003") == {"cccc0003"}
+    assert client.get("/cccc0003/text").text == "omitted head end tag\n"

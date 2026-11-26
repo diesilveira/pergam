@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,7 +15,7 @@ from pergam.cursor import IndexCursor
 from pergam.meta import Meta, MetaChange
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
 from pergam.tags import merge_tags
-from pergam.text import extract_text
+from pergam.text import EXTRACTOR_VERSION, PageText, extract_text
 
 
 @dataclass(frozen=True)
@@ -149,12 +150,36 @@ def add_tags(conn: psycopg.Connection, pergam_id: str, tags: list[str]) -> list[
     return merged
 
 
+def extract_or_empty(pergam_id: str, version: int, html: str) -> PageText:
+    """The extracted text, or empty text after logging when the extractor fails on this HTML.
+
+    One bad document must neither fail its publish nor stop the backfill; its row
+    is stored empty (still found by title) and retried when the extractor version changes.
+    """
+    try:
+        return extract_text(html)
+    except Exception as exc:
+        print(f"ERROR: text extraction failed for {pergam_id} v{version}: {exc!r}", file=sys.stderr, flush=True)
+        return PageText(markdown="", plain="")
+
+
 def save_text(conn: psycopg.Connection, versions: list[tuple[str, int, str]]) -> None:
-    """Store the plain extracted text and search document of each `(id, version, html)`; existing rows win."""
+    """Store the plain extracted text and search document of each `(id, version, html)`.
+
+    An existing row is replaced only when it was written by an older extractor.
+    """
     with conn.cursor() as cur:
         cur.executemany(
             INSERT_TEXT,
-            [{"id": pergam_id, "version": version, "body": extract_text(html).plain} for pergam_id, version, html in versions],
+            [
+                {
+                    "id": pergam_id,
+                    "version": version,
+                    "body": extract_or_empty(pergam_id, version, html).plain,
+                    "extractor": EXTRACTOR_VERSION,
+                }
+                for pergam_id, version, html in versions
+            ],
         )
 
 

@@ -27,10 +27,12 @@ DOCUMENT_SQL = (
 )
 
 INSERT_TEXT = f"""
-    INSERT INTO pergam_text (id, version, body, document)
-    SELECT p.id, p.version, %(body)s, {DOCUMENT_SQL}
+    INSERT INTO pergam_text (id, version, body, document, extractor)
+    SELECT p.id, p.version, %(body)s, {DOCUMENT_SQL}, %(extractor)s
     FROM pergams p WHERE p.id = %(id)s AND p.version = %(version)s
-    ON CONFLICT (id, version) DO NOTHING
+    ON CONFLICT (id, version) DO UPDATE
+        SET body = EXCLUDED.body, document = EXCLUDED.document, extractor = EXCLUDED.extractor
+        WHERE pergam_text.extractor < EXCLUDED.extractor
 """
 
 MATCHES_SQL = "(l.title ILIKE %(q_like)s OR t.document @@ websearch_to_tsquery('simple', %(q)s))"

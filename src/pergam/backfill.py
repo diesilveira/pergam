@@ -1,11 +1,12 @@
-"""Fill `pergam_text` for versions published before it existed.
+"""Fill `pergam_text` for versions that have no text, or text from an older extractor.
 
 The server runs this in a background thread after migrating, so it answers
 requests meanwhile; until a version is filled, `?q=` still finds it by title.
-Each batch is its own transaction and inserts with `ON CONFLICT DO NOTHING`, so
-stopping the server at any point loses at most one batch, a restart resumes
-with what is still missing, and concurrent servers or publishes never clash.
-`pergams` is only read.
+Each batch is its own transaction and its upsert only replaces rows written by
+an older extractor, so stopping the server at any point loses at most one
+batch, a restart resumes with what is still missing or stale, and concurrent
+servers or publishes never clash. A document the extractor fails on is logged
+and stored empty instead of stopping the run. `pergams` is only read.
 """
 
 from __future__ import annotations
@@ -16,25 +17,30 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from pergam.store import save_text
+from pergam.text import EXTRACTOR_VERSION
 
 BATCH_SIZE = 50
 
-_MISSING = """
+_PENDING = """
     SELECT p.id, p.version, p.html FROM pergams p
-    WHERE (p.id, p.version) > (%s, %s)
-      AND NOT EXISTS (SELECT 1 FROM pergam_text t WHERE t.id = p.id AND t.version = p.version)
+    WHERE (p.id, p.version) > (%(after_id)s, %(after_version)s)
+      AND NOT EXISTS (
+          SELECT 1 FROM pergam_text t
+          WHERE t.id = p.id AND t.version = p.version AND t.extractor >= %(extractor)s
+      )
     ORDER BY p.id, p.version
-    LIMIT %s
+    LIMIT %(limit)s
 """
 
 
 def backfill_text(pool: ConnectionPool, batch_size: int = BATCH_SIZE) -> int:
-    """Extract and store the text of every version that has none; return how many were filled."""
+    """Extract and store the text of every version that has none or a stale one; return how many were filled."""
     filled = 0
     after: tuple[str, int] = ("", 0)
     while True:
         with pool.connection() as conn, conn.transaction():
-            rows = conn.execute(_MISSING, (*after, batch_size)).fetchall()
+            params = {"after_id": after[0], "after_version": after[1], "extractor": EXTRACTOR_VERSION, "limit": batch_size}
+            rows = conn.execute(_PENDING, params).fetchall()
             if not rows:
                 return filled
             save_text(conn, rows)
