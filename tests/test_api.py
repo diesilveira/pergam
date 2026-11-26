@@ -6,6 +6,7 @@ from typing import Any
 import psycopg
 import pytest
 
+from pergam.store import save_text
 from support import Client, crawl, listed_order, patch_meta, seed
 
 
@@ -150,3 +151,27 @@ def test_api_pergam_reports_archived_and_pinned(client: Client, catalogue: dict[
 @pytest.mark.parametrize("path", ["/api/pergams/abcdef99", "/api/pergams/NOT-AN-ID", "/api/pergams/x/y"])
 def test_api_pergam_unknown_is_404(client: Client, path: str) -> None:
     assert client.get(path).status == 404
+
+
+@pytest.mark.parametrize("query", ["?q=needle", "?q=needle&archived=1"])
+def test_search_results_page_like_the_index(client: Client, db: psycopg.Connection, query: str) -> None:
+    flags = seed(db)
+    ids = sorted(flags)
+    save_text(db, [(pid, 1, "<p>a needle here</p>" if i % 7 else "<p>only hay</p>") for i, pid in enumerate(ids)])
+    rows = db.execute(
+        "SELECT l.id FROM pergams_latest l LEFT JOIN pergam_meta m USING (id)"
+        " ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC"
+    ).fetchall()
+    with_needle = {pid for i, pid in enumerate(ids) if i % 7}
+    expected = [
+        pid
+        for (pid,) in rows
+        if pid in with_needle
+        and ("archived=1" in query or not flags[pid][1])
+    ]
+
+    visited = crawl(client, f"/{query}")
+
+    assert len(expected) > 100
+    assert visited == expected
+    assert api_crawl(client, query) == expected
