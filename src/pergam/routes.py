@@ -6,6 +6,7 @@ import http.server
 import json
 import re
 import sys
+import threading
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -20,7 +21,7 @@ from pergam.feed import render_feed
 from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, single_proxy_user
 from pergam.ids import ID_RE
 from pergam.index_page import render_index
-from pergam.lint import LINT_MAX_BODY_BYTES, lint_html
+from pergam.lint import LINT_CONCURRENCY, LINT_MAX_BODY_BYTES, lint_html
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
 from pergam.meta import MetaError, parse_meta_change
 from pergam.notes import NoteError, parse_note
@@ -85,6 +86,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     max_body_bytes: int = DEFAULT_MAX_BODY_MB * MIB
     trust_proxy_user: bool = False
     frame: FramePolicy = FRAME_POLICY
+    lint_slots = threading.BoundedSemaphore(LINT_CONCURRENCY)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         line = escape_log(format % args)
@@ -181,7 +183,20 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self._send(201, "application/json", json.dumps(response).encode("utf-8"))
 
     def _lint(self) -> None:
-        """Findings for the body's `html`; other fields are ignored, so a publish payload can be linted as is."""
+        """Findings for the body's `html`; other fields are ignored, so a publish payload can be linted as is.
+
+        Parsing takes many times the body in memory, and `/lint` is anonymous, so at
+        most `LINT_CONCURRENCY` run at once; a request beyond that is 429 at once.
+        """
+        if not self.lint_slots.acquire(blocking=False):
+            self.send_error(429, "Too many lints at once, retry in a moment")
+            return
+        try:
+            self._lint_body()
+        finally:
+            self.lint_slots.release()
+
+    def _lint_body(self) -> None:
         data = self._read_json_object(LINT_MAX_BODY_BYTES)
         if data is None:
             return

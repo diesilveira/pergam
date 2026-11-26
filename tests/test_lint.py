@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import time
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import psycopg
 import pytest
 
 import pergam
-from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, MAX_MERMAID_TEXT, MERMAID_DIAGRAMS, _Linter, authorities, lint_html
+from pergam.lint import LINT_CONCURRENCY, LINT_MAX_BODY_BYTES, MAX_FINDINGS, MAX_MERMAID_TEXT, MERMAID_DIAGRAMS, _Linter, authorities, lint_html
 from pergam.static_files import MERMAID_VERSION
 from support import Client
 
@@ -280,3 +281,27 @@ def test_a_short_unknown_block_past_a_long_body_is_still_reported() -> None:
     assert found('<pre class="mermaid">grahp TD\n' + "A-->B\n" * MAX_MERMAID_TEXT + "</pre>") == [
         ("mermaid-unknown-diagram", "error", 1, 1)
     ]
+
+
+def held_lint(port: int) -> socket.socket:
+    """A `/lint` request whose body never finishes arriving, so it holds its slot."""
+    held = socket.create_connection(("127.0.0.1", port), timeout=10)
+    held.sendall(b"POST /lint HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{")
+    return held
+
+
+def test_lints_beyond_the_concurrency_cap_get_429(client: Client) -> None:
+    held = [held_lint(client.port) for _ in range(LINT_CONCURRENCY)]
+    try:
+        deadline = time.monotonic() + 5
+        while (status := client.post_json({"html": "<p>x</p>"}, "/lint").status) != 429 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert status == 429
+    finally:
+        for connection in held:
+            connection.close()
+
+    deadline = time.monotonic() + 5
+    while (status := client.post_json({"html": "<p>x</p>"}, "/lint").status) != 200 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert status == 200

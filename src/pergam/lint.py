@@ -27,6 +27,7 @@ from urllib.parse import unquote, urlparse
 
 MAX_FINDINGS = 500
 LINT_MAX_BODY_BYTES = 2 * 1024 * 1024
+LINT_CONCURRENCY = 2
 ALLOWED_CDN_HOST = "cdn.jsdelivr.net"
 MERMAID_DIAGRAMS = (
     "C4Context", "C4Container", "C4Component", "C4Dynamic", "C4Deployment", "architecture", "block", "classDiagram",

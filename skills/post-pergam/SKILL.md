@@ -138,7 +138,7 @@ Use when the resolved server is a self-hosted instance (typically `http://localh
         -H "Content-Type: application/json" \
         --data-binary @/tmp/pergam.payload.json
    ```
-   Response: `{"findings": [{"rule", "severity", "line", "column", "message"}, …], "errors": n, "warnings": n, "truncated": false}`. Fix every `error` in the HTML and lint again before posting: `external-resource` (something loaded from another server, which the sandbox blocks: inline it or use a `data:` URI), `missing-anchor` (a `#link` with no matching `id`: fix the TOC), `mermaid-empty` / `mermaid-unknown-diagram` (a diagram block that will not render). A `warning` (Mermaid from jsDelivr) is allowed, but switch it to the server's `/static/` path. A server older than `/lint` answers 404, and a payload above 2 MB gets 413: skip this step in both cases.
+   Response: `{"findings": [{"rule", "severity", "line", "column", "message"}, …], "errors": n, "warnings": n, "truncated": false}`. Fix every `error` in the HTML and lint again before posting: `external-resource` (something loaded from another server, which the sandbox blocks: inline it or use a `data:` URI), `missing-anchor` (a `#link` with no matching `id`: fix the TOC), `mermaid-empty` / `mermaid-unknown-diagram` (a diagram block that will not render). A `warning` (Mermaid from jsDelivr) is allowed, but switch it to the server's `/static/` path. A server older than `/lint` answers 404, and a payload above 2 MB gets 413: skip this step in both cases. A 429 means other lints are running: retry once after a second, then skip.
 
 7. **POST to `/pergam`:**
    ```bash
