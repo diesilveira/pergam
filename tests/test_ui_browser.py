@@ -281,3 +281,22 @@ def test_error_page_has_no_scripted_content_beyond_the_theme_script(browser, sit
 
     assert len(sources) == 1 and sources[0].startswith("/static/theme.js?v=")
     context.close()
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+@pytest.mark.parametrize("path", ["/", "/abcdef12/view"])
+def test_search_field_shows_a_focus_outline_from_the_keyboard(browser, site, path: str, scheme: str) -> None:
+    context, page = page_in(browser, scheme)
+    page.goto(site["base"] + path)
+    field = page.get_by_role("searchbox")
+
+    for _ in range(30):
+        page.keyboard.press("Tab")
+        if page.evaluate("document.activeElement.type === 'search'"):
+            break
+    else:
+        pytest.fail("the search field is not reachable with Tab")
+
+    assert field.evaluate("(el) => getComputedStyle(el).outlineStyle") == "solid"
+    assert field.evaluate("(el) => parseFloat(getComputedStyle(el).outlineWidth)") >= 2
+    context.close()

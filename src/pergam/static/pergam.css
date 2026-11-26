@@ -138,7 +138,7 @@ a.tag:hover { color: var(--accent); border-color: var(--accent); }
   padding: .4rem .7rem; font-size: .84rem;
 }
 .input::placeholder { color: var(--muted); }
-.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* ── surfaces ───────────────────────────────────────────────────────── */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
