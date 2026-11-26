@@ -1,6 +1,7 @@
 """The view page and the frame bridge in a real browser, with and without the sandbox planned in #28.
 
-Needs Playwright and a Chrome or Chromium it can launch; skipped when either is missing.
+Needs Playwright and a Chrome or Chromium it can launch. Without them the tests are
+skipped, except when `CI` is set: there they fail, so a broken setup cannot pass unnoticed.
 """
 
 from __future__ import annotations
@@ -9,9 +10,14 @@ from collections.abc import Iterator
 
 import pytest
 
-from support import Client
+from support import Client, in_ci, unavailable
 
-sync_api = pytest.importorskip("playwright.sync_api")
+try:
+    from playwright import sync_api
+except ImportError:
+    if in_ci():
+        raise
+    pytest.skip("Playwright is not installed", allow_module_level=True)
 
 SANDBOX = "allow-scripts allow-top-navigation-by-user-activation allow-modals allow-popups"
 DOCUMENT = """<!doctype html><html><head><title>Inner  title</title></head><body>
@@ -32,7 +38,7 @@ def browser() -> Iterator[object]:
             except sync_api.Error:
                 continue
         else:
-            pytest.skip("no Chrome or Chromium for Playwright")
+            unavailable("no Chrome or Chromium that Playwright can launch")
         yield launched
         launched.close()
 
