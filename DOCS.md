@@ -22,7 +22,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/diff/v{a}..v{b}` | HTML page comparing the text of two versions, section by section. See [Diff](#diff). |
 | `GET`    | `/{id}/versions`      | JSON: `[{version, title, type, author, bytes, created_at, note}, …]`, newest first; `note` is `null` when the version has none. |
 | `GET`    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`. **404** for an unknown id.     |
-| `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
+| `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body, **409** a pin the server refuses (see [Pinning](#pinning)). |
 | `GET`    | `/{id}/collaborators` | JSON: `{id, owner, collaborators}`; `owner` is the author of v1. **404** for an unknown id. See [Ownership](#ownership). |
 | `PUT`    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list and returns `{id, owner, collaborators}`. Only the owner, and only with `TRUST_PROXY_USER` on (**409** otherwise). See [Ownership](#ownership). |
 | `POST`   | `/lint`               | Body `{html}`. Returns the problems that would break the document once published, each with its line and column; stores nothing. See [Lint](#lint). |
@@ -187,7 +187,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
   "format_version": 1,
   "id": "abc12345",
   "server": "http://localhost:1111",
-  "meta": {"tags": ["q3"], "archived": false, "pinned": false},
+  "meta": {"tags": ["q3"], "archived": false, "pinned": false, "pinned_at": null},
   "versions": [
     {"version": 1, "title": "Plan", "html": "<!doctype html>…", "type": "plan", "author": "you@example.com",
      "note": null, "bytes": 5120, "created_at": "2025-03-04T05:06:07.123456+00:00"}
@@ -200,7 +200,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
   - every version this server does not have yet, with its version number, `created_at`, note and text (searchable at once);
   - nothing for a version it already has with the same `title`, `html`, `type`, `author` and `note` (`created_at` and `bytes` are not compared): it is listed as skipped. Importing the same document twice is a no-op;
   - **409** and nothing at all when any version it already has differs, or when the result would leave a version number missing (a document with v3 only, for an id this server does not have);
-  - for an id new to this server, its `tags`, `archived` and `pinned` from `meta`, and `origin`: the document's `server` and `id`. For an id it already has, `meta.tags` are merged into its tags as with `POST /pergam`, and `archived`, `pinned` and `origin` stay as they are.
+  - for an id new to this server, its `tags`, `archived` and `pinned` from `meta`, and `origin`: the document's `server` and `id`. A pin follows the [pinning](#pinning) rules without failing the import: an archived pergam, or one past this server's cap, arrives unpinned. `meta.pinned_at` (optional, `null` or ISO 8601 with a UTC offset, in the same range as `created_at`) keeps the card's place; an export without it, from an older server, is pinned as of the import. For an id it already has, `meta.tags` are merged into its tags as with `POST /pergam`, and `archived`, `pinned` and `origin` stay as they are.
 - The response is **201** when anything was written, **200** when every version was skipped: `{"id": "abc12345", "imported": [4, 5], "skipped": [1, 2, 3], "origin": {"url": "http://localhost:1111", "id": "abc12345"}, "view_url": "…"}`.
 - Validation follows `POST /pergam` for `type` (trimmed, lowercased, one of this server's [types](#pergam-types)), `author` (trimmed, non-empty) and `note` (see [Version notes](#version-notes)), and is stricter elsewhere, since an export always carries every field:
   - `title` and `html` must be non-empty strings and are stored exactly as sent: `title` is not trimmed and has no `"Pergam"` default;
@@ -223,7 +223,16 @@ Tags, `archived` and `pinned` belong to the logical `id`, not to a version, and 
 - At most 20 tags per id, each at most 40 characters after normalisation, with no control characters (tabs and newlines are separators and become `-`); otherwise the request gets **400** and nothing is written.
 - `POST /pergam` with `tags` **merges** them into the id's existing tags; posting without `tags` (or `"tags": null`) leaves them as they are.
 - A new version never changes `archived` or `pinned`: posting to an archived id keeps it archived (and out of the index).
-- `PATCH /{id}/meta` edits metadata of an id that already has versions. Fields it omits keep their value; `tags` **replaces** the whole set (`[]` clears it); `archived` and `pinned` must be JSON booleans. Unknown fields, an empty object or a wrong type are **400**.
+- `PATCH /{id}/meta` edits metadata of an id that already has versions. Fields it omits keep their value; `tags` **replaces** the whole set (`[]` clears it); `archived` and `pinned` must be JSON booleans. Unknown fields, an empty object or a wrong type are **400**, and so is `{"archived": true, "pinned": true}`. The response is always the resulting state.
+
+### Pinning
+
+Pinned pergams are the cards above the index list, so an instance keeps few of them:
+
+- **Cap**: at most `PERGAM_MAX_PINNED` pergams (default 12) are pinned at once; `0` turns pinning off. Pinning one more is **409**, with the reason in the body (the status line is always the standard `Conflict`), and the whole `PATCH` changes nothing, tags included. Re-sending `pinned: true` for a pinned pergam, unpinning and every other change always work. Every new pin is counted under one instance-wide lock, so concurrent pins never pass the cap. An instance that already holds more pins than the cap (from before it, or a lowered cap) keeps them; it cannot pin more until it is back under.
+- **Archiving unpins**: archiving a pinned pergam also unpins it, in the same update, keeping its tags; unarchiving does not pin it again. Pinning an archived pergam is **409** (`unarchive it first`). A row left both archived and pinned by an earlier build is never a card and never counts toward the cap; the next write to it unpins it.
+- **Order**: the cards show the most recently pinned first, from `pinned_at`, set when a pergam goes from unpinned to pinned, cleared when it is unpinned, and untouched when a pinned pergam is patched or gets a new version. Pergams pinned before `pinned_at` existed have none and follow the dated ones, newest version first. The list below and the API's order and pages do not change with it.
+- `GET /api/pergams` reports `stats.pinned` (the pins that count) and `stats.max_pinned`, and the index shows "n of max pinned" next to the cards.
 
 ```bash
 curl -sS -X PATCH http://localhost:1111/abc12345/meta \
@@ -240,7 +249,7 @@ curl -sS -X PATCH http://localhost:1111/abc12345/meta \
 - **Filters** combine with AND: `type`, `author`, `tag` (normalised like stored tags, so `?tag=Q3` matches `q3`) and `q` (title or text, see [Search](#search)). Clicking a type, author or tag in the column, a row or a card sets that filter and keeps the others; clicking the active one clears it. An active value that nothing matches stays listed, at zero, so it can be cleared.
 - **Archived** pergams are left out unless `?archived=1`, which lists them alongside the rest, marked `archived`. They stay reachable by URL either way. Archiving belongs to the id, so a new version of an archived pergam stays archived and hidden, and the `201` does not say so; un-archive it with `PATCH /{id}/meta` `{"archived": false}`.
 - **Order**: `?sort=recent` (the default): pinned first, then by the latest version's `created_at` (newest first), then by id. `?sort=title`: by title, case-insensitive (Postgres `lower(title)` in the database's collation), then by id. Both orders are total, so paging is stable. Any other `sort` is **400**. Filter, sort and clear links keep the sort and start again from the first page.
-- **Pinned cards**: on the first page, up to 100 pinned pergams that match the filters (search included) show as cards above the list, in the page's order, with their summary; the list leaves them out on every page, so each pergam shows once. Pinned pergams past those 100 stay in the list, marked `pinned`.
+- **Pinned cards**: on the first page, the pinned pergams that match the filters (search included, archived ones never) show as one row of cards above the list, most recently pinned first (see [Pinning](#pinning)), with their summary and "n of max pinned" next to the heading; the list leaves them out on every page, so each pergam shows once. The row scrolls sideways natively, with snap points, by touch, trackpad or Tab (a focused card scrolls into view); script adds previous and next buttons that move it by one view of cards and are disabled at the ends, never advancing on their own. Cards keep a fixed width, so the next one peeks in at the edge: three or four show at 1280 px, one and a peek at 360 px. It is a plain labelled list, not a carousel widget, and scrolls instantly under `prefers-reduced-motion`. At most 100 cards are shown; pins past those, possible only on an instance over the cap, stay in the list, marked `pinned`.
 - **Date groups**: sorted by recent, the list is grouped under Today, This week, This month and Earlier, from the latest version's `created_at` in UTC: the same day, the same ISO week (Monday first), the same calendar month, anything before. Sorted by title, it is one list.
 - **Summary**: the start of the latest version's extracted text (see [Search](#search)): lines that only repeat the title are skipped, the rest joined into one line and cut at the first sentence end at least 20 characters in (so `Dr.` or `Version 2.` near the start do not end it), or at a word before 160 characters with `…`. It is plain text, escaped like everything else on the page. A version whose text is not extracted yet, or is empty, has no summary rather than a wrong one.
 - **Pages** hold 100 pergams. "Load more" carries an opaque `cursor` (the sort key of the last row) plus the active filters and sort; with script it appends the next page in place (and moves the focus to its first row), without it it is a link to that page, which then offers "← first page". While the data does not change, following the links visits every matching pergam exactly once, in either order. A pergam that gets a new version or is pinned, unpinned, archived or retagged mid-crawl changes its sort key or match, so it can move to a page already seen (skipped) or one still ahead (seen twice). A cursor is tied to its order: a malformed one, or one issued by the other order, is **400**.
@@ -301,7 +310,7 @@ A request that prefers `text/html` (a browser: `Accept: text/html,…`) and is a
   "pergams": [
     {"id": "abc12345", "version": 2, "title": "Release notes", "type": "plan", "author": "you@example.com",
      "created_at": "2025-03-04T05:06:07+00:00", "bytes": 5120, "versions": 2, "tags": ["q3"],
-     "archived": false, "pinned": false, "view_url": "http://localhost:1111/abc12345/view",
+     "archived": false, "pinned": false, "pinned_at": null, "view_url": "http://localhost:1111/abc12345/view",
      "text_url": "http://localhost:1111/abc12345/text", "snippet": null,
      "summary": "What ships in this release and what moves to the next one."}
   ],
@@ -311,16 +320,18 @@ A request that prefers `text/html` (a browser: `Accept: text/html,…`) and is a
   "archived_count": 0,
   "counts": {"types": [{"type": "plan", "count": 1}], "authors": [{"author": "you@example.com", "count": 1}],
              "tags": [{"tag": "q3", "count": 1}]},
-  "stats": {"pergams": 1, "authors": 1, "versions": 2, "bytes": 9000, "new_pergams_7d": 1, "new_versions_7d": 2}
+  "stats": {"pergams": 1, "authors": 1, "versions": 2, "bytes": 9000, "new_pergams_7d": 1, "new_versions_7d": 2,
+            "pinned": 0, "max_pinned": 12}
 }
 ```
 
 - Each row describes the latest version; `versions` is how many the id has. `snippet` is the matching text fragment (plain text) when `q` matched the body, else `null`. `summary` is the row's one-line summary (plain text, see [Index](#index)); it is left out, not `null`, while the version's text is not extracted yet or when it is empty.
+- `pinned_at` is when the pergam was pinned (ISO 8601), `null` when it is not pinned or was pinned before the server recorded it.
 - `sort` is the order used, `recent` or `title` (any other `?sort=` is **400**).
 - `matching` counts every pergam that matches the filters, across pages. `next_cursor` is `null` on the last page; otherwise pass it back as `?cursor=` with the same filters and sort. A malformed cursor, or one from the other sort, is **400**.
 - `counts` and `archived_count` are the index's facet counts: each applies `q` and every other filter but not its own (see [Index](#index)); `stats` covers the whole instance.
 
-`GET /api/pergams/{id}` returns one pergam: the latest version's `version`, `title`, `type`, `author`, `created_at`, `bytes`, `note`, `view_url` and `text_url`, the id's `tags`, `archived`, `pinned` and `origin` (`{url, id}` of the server it was [imported](#export-and-import) from, else `null`), and `versions`, newest first, each with `version`, `title`, `type`, `author`, `bytes`, `created_at`, `note` and its pinned `view_url` and `text_url` (`/{id}/v{n}/view`, `/{id}/v{n}/text`). An unknown id is **404**.
+`GET /api/pergams/{id}` returns one pergam: the latest version's `version`, `title`, `type`, `author`, `created_at`, `bytes`, `note`, `view_url` and `text_url`, the id's `tags`, `archived`, `pinned`, `pinned_at` and `origin` (`{url, id}` of the server it was [imported](#export-and-import) from, else `null`), and `versions`, newest first, each with `version`, `title`, `type`, `author`, `bytes`, `created_at`, `note` and its pinned `view_url` and `text_url` (`/{id}/v{n}/view`, `/{id}/v{n}/text`). An unknown id is **404**.
 
 Both are `Cache-Control: no-store`.
 
@@ -389,13 +400,14 @@ App env vars follow 12-factor conventions; only the pergam-specific knobs carry 
 | `PUBLIC_HOST`       | `localhost`            | Host used in returned `view_url`s when `PUBLIC_URL` is unset. |
 | `PUBLIC_PORT`       | `PORT`                 | Port used in returned `view_url`s when `PUBLIC_URL` is unset; `443` means `https`, `80`/`443` are omitted from the URL. |
 | `PERGAM_TYPES`      | `plan,investigacion,informe,reporte,otro` | Accepted `type` values, comma separated (see [Pergam types](#pergam-types)). |
+| `PERGAM_MAX_PINNED` | `12`                 | Most pergams pinned at once; `0` turns pinning off (see [Pinning](#pinning)). |
 | `PERGAM_MAX_BODY_MB` | `256`                | Largest request body, in MB, for `POST` and `PATCH`. A larger declared `Content-Length` is **413** and nothing is read; a `Content-Length` that is not a number is **400**. The default leaves room for a multi-version `POST /import`. |
 | `TRUST_PROXY_USER`  | off                    | `1` takes the author of every write from `X-Forwarded-User`, set by an authenticating reverse proxy (see [Identity](#identity)). |
 | `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
 | `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
 
-See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, when `PERGAM_MAX_BODY_MB` is not a positive integer, or when `TRUST_PROXY_USER` is not a recognised on/off value.
+See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, when `PERGAM_MAX_BODY_MB` is not a positive integer, when `PERGAM_MAX_PINNED` is not a whole number of 0 or more, or when `TRUST_PROXY_USER` is not a recognised on/off value.
 
 ## Schema migrations
 
@@ -405,7 +417,7 @@ The schema lives in numbered files, `db/migrations/NNN_description.sql`, shipped
 - Each migration runs in its own transaction: a failure rolls it back completely, the server logs `migrations failed` and exits non-zero.
 - A Postgres advisory lock serializes servers that start at the same time against one database.
 
-Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. `004_pergam_text_extractor.sql` adds `pergam_text.extractor` (existing rows read as version 1) so the backfill can re-extract text written by an older extractor; it rewrites no rows. `005_pergam_note.sql` adds `pergam_note (id, version, note)`, one row per version posted with a note; it writes no rows, so versions published before it have no note. `006_pergam_origin.sql` adds `pergam_meta.origin_url` and `origin_id` (both nullable, existing rows read as no origin); it rewrites no rows. `007_pergam_collaborators.sql` adds `pergam_meta.collaborators` (nullable, existing rows read as no collaborators); it rewrites no rows. To add a change, create the next number and restart the server.
+Migrations are additive and safe on a populated database: they never drop or rewrite existing rows, and any backfill is idempotent. `001_initial_schema.sql` is the schema the bundled compose used to load through `docker-entrypoint-initdb.d`. When `pergams` already exists it runs no DDL at all, so existing instances upgrade in place with every row, index and view untouched and only `schema_migrations` gains a row. `002_pergam_meta.sql` adds the `pergam_meta (id, tags, archived, pinned)` table and writes no rows. `003_pergam_text.sql` adds `pergam_text (id, version, body, document)`: the extracted text and the `tsvector` (with a GIN index) of every version, filled on publish and, for older versions, by the server's background backfill (see [Search](#search)); `pergams` keeps its schema and rows. `004_pergam_text_extractor.sql` adds `pergam_text.extractor` (existing rows read as version 1) so the backfill can re-extract text written by an older extractor; it rewrites no rows. `005_pergam_note.sql` adds `pergam_note (id, version, note)`, one row per version posted with a note; it writes no rows, so versions published before it have no note. `006_pergam_origin.sql` adds `pergam_meta.origin_url` and `origin_id` (both nullable, existing rows read as no origin); it rewrites no rows. `007_pergam_collaborators.sql` adds `pergam_meta.collaborators` (nullable, existing rows read as no collaborators); it rewrites no rows. `008_pergam_pinned_at.sql` adds `pergam_meta.pinned_at` (nullable, existing pins read as pinned at an unknown time); it rewrites no rows, not even ones left both archived and pinned. To add a change, create the next number and restart the server.
 
 ### Database privileges
 
@@ -416,7 +428,7 @@ The `DATABASE_URL` role needs:
 | Fresh (no `pergams` yet) | `CREATE` on the schema: the role creates and owns the tables. The bundled compose user owns its database, so nothing to do there. |
 | Initialised by the old `schema.sql`, role not the owner | `SELECT, INSERT` on `pergams`, `SELECT` on `pergams_latest`, plus either `CREATE` on the schema (to create `schema_migrations` once) or a `schema_migrations` table created by the owner with `SELECT, INSERT` granted to the role. |
 
-A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT, UPDATE`. `004_pergam_text_extractor.sql` alters `pergam_text`, so it needs ownership of that table (the role owns it when it ran `003` itself); alternatively the owner runs that file once too, and the migration then runs no DDL. `005_pergam_note.sql` creates `pergam_note` like `002` and `003` do, so it needs `CREATE` on the schema, or the owner runs it once and grants `SELECT, INSERT` on `pergam_note` to the role. `006_pergam_origin.sql` alters `pergam_meta` like `004` alters `pergam_text`: it needs ownership of that table (the role owns it when it ran `002` itself), or the owner runs that file once and the migration then runs no DDL. `007_pergam_collaborators.sql` alters `pergam_meta` the same way, with the same privileges.
+A later migration that changes the schema needs the privileges that change requires (usually ownership of the table), and says so in its file. `002_pergam_meta.sql` creates `pergam_meta`, so it needs `CREATE` on the schema; alternatively the owner runs that file once and grants `SELECT, INSERT, UPDATE` on `pergam_meta` to the role, and the migration then runs no DDL. `003_pergam_text.sql` works the same way with `pergam_text`, for which the role needs `SELECT, INSERT, UPDATE`. `004_pergam_text_extractor.sql` alters `pergam_text`, so it needs ownership of that table (the role owns it when it ran `003` itself); alternatively the owner runs that file once too, and the migration then runs no DDL. `005_pergam_note.sql` creates `pergam_note` like `002` and `003` do, so it needs `CREATE` on the schema, or the owner runs it once and grants `SELECT, INSERT` on `pergam_note` to the role. `006_pergam_origin.sql` alters `pergam_meta` like `004` alters `pergam_text`: it needs ownership of that table (the role owns it when it ran `002` itself), or the owner runs that file once and the migration then runs no DDL. `007_pergam_collaborators.sql` and `008_pergam_pinned_at.sql` alter `pergam_meta` the same way, with the same privileges.
 
 ## Project layout
 
@@ -442,6 +454,7 @@ pergam/
 │   ├── lint.py              static checks of a document for POST /lint
 │   ├── public_url.py        host/URL used in view_url and on the index
 │   ├── limits.py            largest request body (PERGAM_MAX_BODY_MB)
+│   ├── pins.py              cap on pinned pergams (PERGAM_MAX_PINNED)
 │   ├── taxonomy.py          accepted types and badge colours
 │   ├── tags.py              tag normalisation and limits
 │   ├── meta.py              per-id metadata and PATCH validation
@@ -501,7 +514,7 @@ make test
 
 That creates `.venv`, installs `requirements-dev.txt` and runs `pytest`. The suite boots the real server (`python3 src/pergam/server.py`) against a throwaway Postgres: by default it starts a `postgres:15-alpine` container named `pergam-test-*` on a random local port with no volume, and removes it at the end. Set `TEST_DATABASE_URL` to an admin connection string to use an existing server instead (CI does this with a `services: postgres` container). Either way every run works in its own `pergam_test_*` database, dropped afterwards; the bundled compose database is never touched.
 
-`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. `tests/test_ui_browser.py` does the same for the themes: both colour schemes, the toggle and its remembered choice (applied before first paint), keyboard use, phone width and the legibility of every type badge colour; `tests/test_index_browser.py` for the index and search: the shortcuts, searching from a view or diff page, filter counts on a search, density, the collapsing filter column, "Load more" in both orders, keyboard focus, the compact search around a document and phone width in both themes. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
+`tests/test_frame_bridge.py` drives the view page and its frame bridge in a real browser through Playwright (a test-only dependency), with the installed Google Chrome or a Playwright Chromium, with the frame sandboxed as served, including that a published script cannot read or write through the API, framed or opened alone. `tests/test_ui_browser.py` does the same for the themes: both colour schemes, the toggle and its remembered choice (applied before first paint), keyboard use, phone width and the legibility of every type badge colour; `tests/test_index_browser.py` for the index and search: the shortcuts, searching from a view or diff page, filter counts on a search, density, the collapsing filter column, "Load more" in both orders, keyboard focus, the compact search around a document, the pinned row's buttons, focus and reduced motion, and phone width in both themes. Without Playwright or a browser those tests are skipped, except when `CI` is set (GitHub Actions sets it): there they fail.
 
 ## Make targets
 

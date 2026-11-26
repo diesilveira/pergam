@@ -216,7 +216,7 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 ```
 
 - `PATCH` `tags` **replaces** the set: to add a tag, `GET /{id}/meta` first and send the old tags plus the new one. `[]` clears them.
-- `archived: true` hides it from the index (still reachable by URL); `pinned: true` shows it as a card at the top of the index (first in the `recent` order). Send only the fields you change.
+- `archived: true` hides it from the index (still reachable by URL); `pinned: true` shows it as a card at the top of the index (first in the `recent` order). A server pins at most `stats.max_pinned` pergams (`GET /api/pergams`, default 12): pinning one more is **409**; tell the user and offer to unpin another. Archiving unpins, and an archived pergam cannot be pinned (**409**, unarchive it first; sending both `archived: true` and `pinned: true` is **400**). Send only the fields you change.
 - On a server that trusts its proxy for identity, only the owner (the author of v1) and its collaborators may version or `PATCH` a pergam; the owner manages the list:
   ```bash
   curl -sS -X PUT "$PERGAM_URL/abc12345/collaborators" -H "Content-Type: application/json" \
