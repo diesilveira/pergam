@@ -8,7 +8,9 @@
 dates, tags and notes, and the target records where it came from. When the
 target already has the id, only the versions it lacks are uploaded; a version it
 has with different content stops the promote before anything is uploaded, and
-the server refuses such an import anyway. Running it again is a no-op.
+the server refuses such an import anyway. Running it again is a no-op. Long
+histories go in imports of `BATCH_SIZE` versions, oldest first, well below the
+server's limit per import; a promote stopped midway resumes where it stopped.
 
 Exit status: 0 promoted or nothing to do, 1 refused or failed, 2 bad arguments or profiles.
 """
@@ -31,6 +33,7 @@ from pergam_profiles import HOSTED_URL, ProfileError, Server, resolve
 
 COMPARED = ("title", "html", "type", "author", "note")
 TIMEOUT = 120
+BATCH_SIZE = 1000
 
 
 class PromoteError(RuntimeError):
@@ -113,8 +116,11 @@ def promote(pergam_id: str, source: Server, target: Server) -> Promoted:
     if not missing:
         described = _get(target, f"/api/pergams/{quote(pergam_id, safe='')}")
         return Promoted([], already_there, described["view_url"] if described else f"{target.url}/{pergam_id}/view")
-    answer = _post(target, "/import", {**exported, "versions": missing})
-    return Promoted(answer["imported"], already_there, answer["view_url"])
+    uploaded: list[int] = []
+    for start in range(0, len(missing), BATCH_SIZE):
+        answer = _post(target, "/import", {**exported, "versions": missing[start : start + BATCH_SIZE]})
+        uploaded += answer["imported"]
+    return Promoted(uploaded, already_there, answer["view_url"])
 
 
 def main(argv: list[str]) -> int:

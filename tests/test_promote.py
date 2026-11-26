@@ -13,6 +13,8 @@ from pathlib import Path
 import psycopg
 import pytest
 
+import pergam_promote
+from pergam_profiles import Server
 from pergam_promote import PromoteError, missing_versions
 from support import REPO_ROOT, Client
 from test_transfer import STATE
@@ -220,3 +222,14 @@ def test_a_private_ca_from_the_profile_verifies_tls(tmp_path: Path, target: Clie
     assert "CERTIFICATE_VERIFY_FAILED" in refused.stderr
     assert accepted.returncode == 0, accepted.stderr
     assert target.get("/abcd1234/raw").text == "<p>tls</p>"
+
+
+def test_long_histories_are_uploaded_in_batches(client: Client, target: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    pid = five_versions(client)
+    monkeypatch.setattr(pergam_promote, "BATCH_SIZE", 2)
+    source, team = Server("local", f"http://127.0.0.1:{client.port}"), Server("team", f"http://127.0.0.1:{target.port}")
+
+    result = pergam_promote.promote(pid, source, team)
+
+    assert result.uploaded == [1, 2, 3, 4, 5]
+    assert [v["version"] for v in target.get(f"/{pid}/versions").json()] == [5, 4, 3, 2, 1]
