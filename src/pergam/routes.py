@@ -526,7 +526,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         filters = self._filters(query)
         if filters is None:
             return
-        page = render_index(self.store.index(filters), filters, self.public.display)
+        page = render_index(self.store.index(filters, cards=True), filters, self.public.display)
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
 
     def _render_index_json(self, query: dict[str, list[str]]) -> None:

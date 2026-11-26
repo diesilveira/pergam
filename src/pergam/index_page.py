@@ -248,13 +248,16 @@ def _time(row: IndexRow, now: datetime) -> str:
 
 
 def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
-    """One list row. The title link covers the row; tags, type and author stay their own links above it."""
+    """One list row. The title link covers the row; tags, type and author stay their own links above it.
+
+    `data-href` names the pergam the row opens, for scripts and tests that look rows up by it.
+    """
     flags = ('<span class="flag flag--pinned">pinned</span>' if row.pinned else "") + (
         '<span class="flag flag--archived">archived</span>' if row.archived else ""
     )
     author_href = esc(index_link(replace(filters, author=row.author, cursor=None)))
     return (
-        f'<li class="row{" row--archived" if row.archived else ""}">'
+        f'<li class="row{" row--archived" if row.archived else ""}" data-href="/{row.id}/view">'
         f'<div class="row__main">'
         f'<div class="row__head">{flags}<a class="row__title" href="/{row.id}/view">{esc(row.title)}</a></div>'
         f'<div class="row__line">{_tag_links(row, filters)}{_line(row)}</div>'
@@ -272,7 +275,7 @@ def render_card(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
     line = _line(row)
     summary = f'<p class="pin__summary">{line}</p>' if line else ""
     return (
-        f'<li class="pin{" pin--archived" if row.archived else ""}">'
+        f'<li class="pin{" pin--archived" if row.archived else ""}" data-href="/{row.id}/view">'
         f'<a class="pin__title" href="/{row.id}/view">{esc(row.title)}</a>{summary}'
         f'<div class="pin__meta">{_badge(row, filters)}{_tag_links(row, filters)}'
         f'<span class="pin__when">{_version(row)} · {_time(row, now)}</span></div>'
@@ -367,7 +370,7 @@ def showing_note(data: IndexData, filters: IndexFilters) -> str:
     if filters.q:
         return f"for “{esc(filters.q)}” · the filters count these results only"
     stats = data.stats
-    hidden = 0 if filters.archived else data.archived_count
+    hidden = 0 if filters.archived else stats.total_archived
     visible = stats.total_pergams - hidden
     if filters.active and data.matching != visible:
         return f"showing {data.matching} of {visible}"
@@ -424,8 +427,7 @@ def top_actions(filters: IndexFilters) -> str:
 
 def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> str:
     now = datetime.now(timezone.utc)
-    carded = {row.id for row in data.pinned}
-    listed = [row for row in data.rows if row.id not in carded]
+    listed = [row for row in data.rows if row.id not in data.pinned_ids]
     cards = pinned_cards(data, filters, now)
     groups = list_groups(listed, filters, now)
     return _PAGE.substitute(
@@ -440,6 +442,6 @@ def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> s
         stats_line=stats_line(data),
         controls=controls(filters),
         pinned=cards,
-        groups=groups if groups or cards else empty_state(filters),
+        groups=groups if groups or cards or filters.cursor else empty_state(filters),
         pager=pager(filters, data),
     )

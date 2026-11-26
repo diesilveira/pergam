@@ -156,9 +156,9 @@ def test_rows_show_tags_and_flags(client: Client, tagged: dict[str, str]) -> Non
     resp = client.get("/?archived=1")
 
     assert '<a class="tag" href="/?tag=q3&amp;archived=1"' in resp.text
-    assert f'<li class="pin"><a class="pin__title" href="/{tagged["q3_plan"]}/view">' in resp.text
+    assert f'<li class="pin" data-href="/{tagged["q3_plan"]}/view"><a class="pin__title" href="/{tagged["q3_plan"]}/view">' in resp.text
     assert re.search(
-        rf'<li class="row row--archived">.*?<span class="flag flag--archived">archived</span>'
+        rf'<li class="row row--archived" data-href="/{tagged["archived"]}/view">.*?<span class="flag flag--archived">archived</span>'
         rf'<a class="row__title" href="/{tagged["archived"]}/view">',
         resp.text,
     )

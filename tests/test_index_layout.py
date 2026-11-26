@@ -6,12 +6,18 @@ import html as html_lib
 import re
 from datetime import datetime, timezone
 
+from collections.abc import Iterator
+from urllib.parse import parse_qsl, urlencode
+
 import psycopg
 import pytest
+from psycopg_pool import ConnectionPool
 
 from pergam.cursor import IndexCursor, TitleCursor
 from pergam.index_page import TAGS_SHOWN, date_group
-from pergam.summary import SUMMARY_CHARS, summarise
+from pergam.search import HEADLINE_SQL, MATCHES_SQL, search_params
+from pergam.store import SEARCHED, IndexFilters, PergamStore, page_query, save_text
+from pergam.summary import SUMMARY_CHARS, SOURCE_CHARS, summarise
 from support import Client, crawl, listed_order, patch_meta, seed
 
 
@@ -205,13 +211,40 @@ def results(client: Client) -> dict[str, str]:
     return ids
 
 
-@pytest.mark.parametrize("query", ["?q=needle", "?q=needle&type=plan", "?q=needle&archived=1", "?q=needle&tag=ops"])
-def test_filter_counts_on_a_search_add_up_to_the_results(client: Client, results: dict[str, str], query: str) -> None:
-    body = client.get(f"/api/pergams{query}").json()
+def matching(client: Client, params: dict[str, str]) -> int:
+    return client.get(f"/api/pergams?{urlencode(params)}").json()["matching"]
 
-    assert sum(item["count"] for item in body["counts"]["types"]) == body["matching"]
-    assert sum(item["count"] for item in body["counts"]["authors"]) == body["matching"]
-    assert body["matching"] == len(body["pergams"]) > 0
+
+FACETS = (("types", "type"), ("authors", "author"), ("tags", "tag"))
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["", "q=needle", "q=needle&type=plan", "q=needle&archived=1", "q=needle&tag=ops", "type=plan", "type=plan&author=bo@example.com&tag=ops", "author=ana@example.com&archived=1"],
+)
+def test_each_facet_counts_what_choosing_it_would_give(client: Client, results: dict[str, str], query: str) -> None:
+    """Standard faceting: a facet applies `q` and every other filter, never its own."""
+    params = dict(parse_qsl(query))
+    body = client.get(f"/api/pergams?{query}").json()
+
+    for key, name in FACETS:
+        others = {k: v for k, v in params.items() if k != name}
+        for item in body["counts"][key]:
+            assert item["count"] == matching(client, {**others, name: item[name]}), (key, item)
+        if key != "tags":
+            assert sum(item["count"] for item in body["counts"][key]) == matching(client, others)
+    with_archived = matching(client, {**params, "archived": "1"})
+    without = matching(client, {k: v for k, v in params.items() if k != "archived"})
+    assert body["archived_count"] == with_archived - without
+
+
+def test_other_values_of_a_facet_stay_listed_within_a_search(client: Client, results: dict[str, str]) -> None:
+    page = client.get("/?q=needle&type=plan").text
+
+    assert '<a class="facet" href="/?type=reporte&amp;q=needle"><span class="type-dot"' in page
+    assert re.search(r'>reporte<span class="facet__count">1</span>', page)
+    assert re.search(r'>All<span class="facet__count">3</span>', page)
+    assert "<h1>2 results</h1>" in page
 
 
 def test_search_counts_cover_the_results_and_archived_matches(client: Client, results: dict[str, str]) -> None:
@@ -226,11 +259,14 @@ def test_search_counts_cover_the_results_and_archived_matches(client: Client, re
     assert "for “needle” · the filters count these results only" in page
 
 
-def test_counts_without_a_search_still_cover_every_visible_pergam(client: Client, results: dict[str, str]) -> None:
+def test_facets_apply_the_other_filters_without_a_search(client: Client, results: dict[str, str]) -> None:
     body = client.get("/api/pergams?type=reporte").json()
+    page = client.get("/?type=reporte").text
 
-    assert {item["type"] for item in body["counts"]["types"]} == {"plan", "reporte", "informe"}
-    assert body["archived_count"] == 1
+    assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "informe", "count": 1}, {"type": "reporte", "count": 1}]
+    assert body["counts"]["authors"] == [{"author": "bo@example.com", "count": 1}]
+    assert body["archived_count"] == 0
+    assert "showing 1 of 4" in page
 
 
 def test_an_empty_search_says_what_was_searched_and_offers_to_widen_it(client: Client, results: dict[str, str]) -> None:
@@ -324,3 +360,97 @@ def test_the_index_search_field_shows_the_query_and_keeps_the_filters(client: Cl
         ("archived", "1"),
         ("sort", "title"),
     ]
+
+
+def test_rows_and_cards_name_the_pergam_they_open(client: Client) -> None:
+    listed = client.publish(title="Listed")["id"]
+    pinned = client.publish(title="Pinned")["id"]
+    patch_meta(client, pinned, {"pinned": True})
+
+    page = client.get("/").text
+
+    assert f'<li class="row" data-href="/{listed}/view">' in page
+    assert f'<li class="pin" data-href="/{pinned}/view">' in page
+
+
+def insert(db: psycopg.Connection, rows: list[tuple[str, str, bool]]) -> None:
+    with db.cursor() as cur:
+        for pid, title, pinned in rows:
+            cur.execute(
+                "INSERT INTO pergams (id, version, title, html, type, author, bytes) VALUES (%s, 1, %s, '<p>x</p>', 'otro', 'you@example.com', 8)",
+                (pid, title),
+            )
+            if pinned:
+                cur.execute("INSERT INTO pergam_meta (id, pinned) VALUES (%s, true)", (pid,))
+
+
+def test_a_later_page_of_carded_rows_shows_no_empty_state(client: Client, db: psycopg.Connection) -> None:
+    insert(db, [(f"a{n:07x}", f"a {n:03d}", False) for n in range(100)])
+    insert(db, [(f"b{n:07x}", f"b {n:03d}", True) for n in range(100)])
+    insert(db, [("c0000000", "c", False)])
+
+    first = client.get("/?sort=title").text
+    second_path = html_lib.unescape(re.search(r'<a class="pager__next" href="([^"]+)"', first).group(1))
+    second = client.get(second_path).text
+
+    assert listed_order(second) == []
+    assert 'class="empty"' not in second
+    assert 'class="pager__next"' in second
+    assert crawl(client, "/?sort=title")[-1] == "c0000000"
+
+
+@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&archived=1"])
+def test_title_ties_across_page_boundaries_are_broken_by_id(client: Client, db: psycopg.Connection, query: str) -> None:
+    titles = ["Same", "same", "SAME", "Other"]
+    insert(db, [(f"{n:08x}", titles[n % 4], n % 9 == 0) for n in range(230)])
+    expected = [pid for (pid,) in db.execute("SELECT id FROM pergams_latest ORDER BY lower(title), id").fetchall()]
+
+    from_api = api_crawl(client, query)
+    from_page = crawl(client, f"/{query}")
+
+    assert from_api == expected
+    assert sorted(from_page) == sorted(expected) and len(from_page) == len(set(from_page))
+
+
+@pytest.fixture
+def store(session_database: str, db: psycopg.Connection) -> Iterator[PergamStore]:
+    with ConnectionPool(session_database, min_size=1, max_size=2, kwargs={"autocommit": True}) as pool:
+        yield PergamStore(pool)
+
+
+def test_pinned_cards_are_fetched_only_for_the_page_and_only_as_ids_later(store: PergamStore, db: psycopg.Connection) -> None:
+    flags = seed(db)
+    pinned = {pid for pid, (is_pinned, archived, _) in flags.items() if is_pinned and not archived}
+
+    api = store.index(IndexFilters())
+    first = store.index(IndexFilters(), cards=True)
+    later = store.index(IndexFilters(cursor=first.next_cursor), cards=True)
+
+    assert (api.pinned, api.pinned_ids) == ([], frozenset())
+    assert {row.id for row in first.pinned} == first.pinned_ids == pinned
+    assert (later.pinned, later.pinned_ids) == ([], pinned)
+
+
+def plan_outputs(node: dict) -> list[str]:
+    return [*node.get("Output", []), *(text for child in node.get("Plans", []) for text in plan_outputs(child))]
+
+
+def find_limit(node: dict) -> dict | None:
+    if node["Node Type"] == "Limit":
+        return node
+    return next((found for child in node.get("Plans", []) if (found := find_limit(child))), None)
+
+
+@pytest.mark.parametrize("sort", ["recent", "title"])
+def test_text_and_headline_are_computed_for_the_page_rows_only(db: psycopg.Connection, sort: str) -> None:
+    flags = seed(db)
+    save_text(db, [(pid, 1, "<p>a needle here</p>") for pid in flags])
+    sql = page_query(SEARCHED, f"WHERE {MATCHES_SQL}", sort, HEADLINE_SQL, "%(limit)s")
+    params = {**search_params("needle"), "source_chars": SOURCE_CHARS, "limit": 101}
+
+    (plan,) = db.execute(f"EXPLAIN (VERBOSE, FORMAT JSON) {sql}", params).fetchone()[0]
+    below_limit = " ".join(plan_outputs(find_limit(plan["Plan"])))
+    above_limit = " ".join(plan["Plan"]["Output"])
+
+    assert '"left"(t.body' not in below_limit and "@@" not in below_limit
+    assert '"left"(t.body' in above_limit and "@@" in above_limit
