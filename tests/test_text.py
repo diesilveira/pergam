@@ -76,3 +76,54 @@ def test_plain_rendering_has_the_same_blocks_without_markdown_syntax() -> None:
     )
 
     assert extract_text(html).plain == "Status\neast\nwest\nRegion State\neast done\nx = 1"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ("<head><title>T</title><body><h1>Hello</h1>", "# Hello\n"),
+        ("<html><head><meta charset=utf-8><title>T</title><h1>No body tag</h1><p>para</p>", "# No body tag\n\npara\n"),
+        ("<head><style>a{}</style>Loose text<p>p</p>", "Loose text\n\np\n"),
+        ("<html><body><p>x</p><head>late</head>", "x\n\nlate\n"),
+    ],
+    ids=["no-head-end-tag", "no-body-tag", "text-in-head", "head-after-body"],
+)
+def test_head_ends_implicitly(html: str, expected: str) -> None:
+    assert extract_markdown(html) == expected
+
+
+def test_closed_noscript_and_template_are_dropped() -> None:
+    html = "<noscript>hidden<p>also hidden</p></noscript><template><template>x</template><p>tpl</p></template><p>shown</p>"
+
+    assert extract_markdown(html) == "shown\n"
+
+
+def test_unclosed_noscript_is_replayed_as_content() -> None:
+    assert extract_markdown("<p>before</p><noscript>enable js<p>Body text</p>") == "before\n\nenable js\n\nBody text\n"
+
+
+def test_block_element_ends_an_unclosed_pre() -> None:
+    html = "<pre>code\n  x<p>after pre</p><h2>Next</h2>"
+
+    assert extract_markdown(html) == "```\ncode\n  x\n```\n\nafter pre\n\n## Next\n"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ("<p># not a heading</p>", "\\# not a heading\n"),
+        ("<p>1. not a list</p>", "1\\. not a list\n"),
+        ("<p>2) neither</p>", "2\\) neither\n"),
+        ("<p>- dash</p>", "\\- dash\n"),
+        ("<p>&gt; quote</p>", "\\> quote\n"),
+        ("<p>```fence</p>", "\\```fence\n"),
+        ("<ul><li>* star</li></ul>", "- \\* star\n"),
+        ("<p>10 items</p>", "10 items\n"),
+    ],
+)
+def test_leading_markdown_markers_are_escaped(html: str, expected: str) -> None:
+    assert extract_markdown(html) == expected
+
+
+def test_plain_rendering_is_not_escaped() -> None:
+    assert extract_text("<p># tag</p>").plain == "# tag"
