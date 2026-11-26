@@ -7,6 +7,7 @@ import ssl
 import subprocess
 import sys
 import threading
+import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -275,3 +276,23 @@ def test_batches_are_bounded_by_count_and_bytes() -> None:
 
     assert [[v["version"] for v in run] for run in batches(versions, 2, 10_000)] == [[1, 2], [3, 4], [5]]
     assert [[v["version"] for v in run] for run in batches(versions, 10, 3 * size)] == [[1, 2, 3], [4], [5]]
+
+
+def test_a_target_that_trusts_its_proxy_explains_a_refused_import(
+    client: Client, target_database: str, target_db: psycopg.Connection, start_server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trusting = start_server(target_database, TRUST_PROXY_USER="1")
+    pid = client.publish(author="ana@example.com")["id"]
+
+    def post_as_signed_in_user(server: Server, path: str, body: dict) -> dict:
+        headers = {"Content-Type": "application/json", "X-Forwarded-User": "eve@example.com"}
+        return pergam_promote._send(server, urllib.request.Request(f"{server.url}{path}", json.dumps(body).encode(), headers))
+
+    monkeypatch.setattr(pergam_promote, "_post", post_as_signed_in_user)
+    with pytest.raises(PromoteError) as refused:
+        pergam_promote.promote(pid, Server("local", f"http://127.0.0.1:{client.port}"), Server("team", f"http://127.0.0.1:{trusting.port}"))
+
+    assert "answered 403" in str(refused.value)
+    assert f"v1 of {pid} is by ana@example.com" in str(refused.value)
+    assert "Ask the owner there to add you" in str(refused.value)
+    assert target_db.execute("SELECT count(*) FROM pergams").fetchone() == (0,)

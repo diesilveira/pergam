@@ -11,7 +11,7 @@ from typing import Any
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from pergam.access import Access, Forbidden, require_editor, require_owner
+from pergam.access import Access, require_editor, require_import_authors, require_owner
 from pergam.cursor import IndexCursor
 from pergam.meta import Meta, MetaChange, Origin
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
@@ -378,20 +378,19 @@ class PergamStore:
         `pinned` and `origin` are set only when the id is new to this server.
 
         A trusted `editor` follows the rules of a publish: an id already here needs
-        its owner or a collaborator, and an import that creates the id needs v1 by
-        `editor`, who becomes its owner (`Forbidden` otherwise, nothing written).
+        its owner or a collaborator, and every version written must be by `editor`
+        or, for an id already here, by its owner or a collaborator (`Forbidden`
+        otherwise, nothing written).
         """
         with self.pool.connection() as conn, conn.transaction():
             lock_id(conn, doc.id)
             present = {v.version: v for v in exported_versions(conn, doc.id)}
             if editor is not None:
-                if present:
-                    check_editor(conn, doc.id, editor)
-                elif doc.versions[0].version == 1 and doc.versions[0].author != editor:
-                    raise Forbidden(
-                        f"v1 of {doc.id} is by {doc.versions[0].author}, not {editor}:"
-                        " an import that creates an id needs v1 by the signed-in user"
-                    )
+                access = read_access(conn, doc.id) if present else None
+                if access is not None:
+                    require_editor(access, editor, doc.id)
+                written = [(v.version, v.author) for v in doc.versions if v.version not in present]
+                require_import_authors(doc.id, written, editor, access)
             conflict = import_conflict(doc, present)
             if conflict:
                 raise ImportConflict(conflict)

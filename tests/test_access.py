@@ -148,25 +148,40 @@ def test_malformed_collaborators_body_is_400(trusting: Client, owned: str) -> No
     assert resp.status == 400
 
 
-def test_import_creating_an_id_needs_v1_by_the_user(trusting: Client, db: psycopg.Connection) -> None:
-    doc = export_document("0123abcd", OWNER, COLLABORATOR)
-
-    refused = trusting.as_user(STRANGER).post_json(doc, "/import")
+def test_import_creating_an_id_writes_only_versions_by_the_user(trusting: Client, db: psycopg.Connection) -> None:
+    refused = trusting.as_user(STRANGER).post_json(export_document("0123abcd", OWNER), "/import")
+    mixed = trusting.as_user(OWNER).post_json(export_document("0123abcd", OWNER, COLLABORATOR), "/import")
 
     assert refused.status == 403
-    assert f"v1 of 0123abcd is by {OWNER}, not {STRANGER}" in refused.text
+    assert f"v1 of 0123abcd is by {OWNER}: an import writes only versions by the signed-in user ({STRANGER})" in refused.text
+    assert mixed.status == 403
+    assert f"v2 of 0123abcd is by {COLLABORATOR}" in mixed.text
     assert version_count(db, "0123abcd") == 0
-    assert trusting.as_user(OWNER).post_json(doc, "/import").status == 201
+    assert trusting.as_user(OWNER).post_json(export_document("0123abcd", OWNER, OWNER), "/import").status == 201
     assert trusting.get("/0123abcd/collaborators").json()["owner"] == OWNER
 
 
-def test_import_into_an_existing_id_follows_the_publish_rule(trusting: Client, owned: str) -> None:
-    present = trusting.get(f"/{owned}/export").json()
-    extra = {**present["versions"][0], "version": 2, "html": "<p>v2</p>", "created_at": datetime.now(timezone.utc).isoformat()}
-    doc = {**present, "versions": [*present["versions"], extra]}
+def with_version(trusting: Client, pergam_id: str, author: str) -> dict:
+    present = trusting.get(f"/{pergam_id}/export").json()
+    added = {**present["versions"][0], "version": 2, "html": "<p>v2</p>", "author": author,
+             "created_at": datetime.now(timezone.utc).isoformat()}
+    return {**present, "versions": [*present["versions"], added]}
 
-    assert trusting.as_user(STRANGER).post_json(doc, "/import").status == 403
-    assert trusting.as_user(COLLABORATOR).post_json(doc, "/import").json()["imported"] == [2]
+
+def test_import_into_an_existing_id_needs_an_editor(trusting: Client, owned: str) -> None:
+    assert trusting.as_user(STRANGER).post_json(with_version(trusting, owned, STRANGER), "/import").status == 403
+    assert trusting.as_user(COLLABORATOR).post_json(with_version(trusting, owned, COLLABORATOR), "/import").json()["imported"] == [2]
+
+
+@pytest.mark.parametrize(("author", "status"), [(COLLABORATOR, 201), (OWNER, 201), (STRANGER, 403)])
+def test_import_into_an_existing_id_writes_only_versions_by_its_editors(
+    trusting: Client, owned: str, author: str, status: int
+) -> None:
+    resp = trusting.as_user(OWNER).post_json(with_version(trusting, owned, author), "/import")
+
+    assert resp.status == status
+    if status == 403:
+        assert f"v2 of {owned} is by {STRANGER}: an import writes only versions by the signed-in user, the owner or a collaborator" in resp.text
 
 
 def test_without_trusted_identity_nothing_is_enforced(client: Client) -> None:

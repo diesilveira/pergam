@@ -74,11 +74,11 @@ With `TRUST_PROXY_USER` on, each pergam has an **owner**, the author of its v1, 
 | `POST /pergam` with the `id` of an existing pergam (a new version) | the owner or a collaborator |
 | `PATCH /{id}/meta` | the owner or a collaborator |
 | `PUT /{id}/collaborators` | the owner |
-| `POST /import` into an id this server already has | the owner or a collaborator |
-| `POST /import` that creates the id | anyone whose name is the `author` of the imported v1, who becomes the owner |
+| `POST /import` into an id this server already has | the owner or a collaborator, writing only versions whose `author` is themselves, the owner or a collaborator |
+| `POST /import` that creates the id | anyone, writing only versions whose `author` is themselves; they become the owner |
 | `POST /pergam` without `id`, or with an id this server does not have | anyone; they become the owner |
 
-Anyone else gets **403** and nothing is written; the HTML body's message (never the status line, which always carries the standard reason) names the rule that failed (`eve@example.com is neither the owner of abc12345 (ana@example.com) nor one of its collaborators`, `v1 of abc12345 is by ana@example.com, not eve@example.com: an import that creates an id needs v1 by the signed-in user`). The check runs under the same per-id lock as the write, so a collaborator removed meanwhile cannot slip a version in.
+Anyone else gets **403** and nothing is written; the HTML body's message (never the status line, which always carries the standard reason) names the rule that failed (`eve@example.com is neither the owner of abc12345 (ana@example.com) nor one of its collaborators`, `v2 of abc12345 is by bo@example.com: an import writes only versions by the signed-in user (eve@example.com)`). The check runs under the same per-id lock as the write, so a collaborator removed meanwhile cannot slip a version in.
 
 ```bash
 curl -sS https://pergam.example.com/abc12345/collaborators
@@ -89,7 +89,7 @@ curl -sS -X PUT https://pergam.example.com/abc12345/collaborators \
 ```
 
 - `PUT` replaces the whole list; `[]` empties it. Each collaborator is a user as the proxy names them (compared exactly), trimmed, deduplicated and sorted, at most 320 characters without control characters, at most 100 per pergam; any other body, or a field other than `collaborators`, is **400**.
-- Imported versions keep the `author` they had on the server they came from: the import rule above checks v1 only, so the versions after it may name other people. They are history copied from that server, not claims by whoever imported them.
+- An import checks the `author` of every version it writes, not only v1, so nobody can record versions under the name of someone with no say over the pergam. Versions this server already has are only compared, not written, so they are not checked. To promote a history with several authors, the owner on the target first adds the others as collaborators.
 - The owner of a pergam published before the flag was turned on is whatever `author` its v1 was posted with; when that is not the name the proxy now sends, nobody can add versions to it until the owner name and the proxy agree. Plan the switch so authors already match the proxy's names (usually the email).
 - With the flag off nothing is enforced: anyone may version, patch and import. The list cannot be edited then (`PUT` is **409**), since there is no owner to check and a list seeded before the flag is turned on would take effect with it; `GET` still answers.
 - A build of this server from before that rule accepted `PUT` with the flag off. On an instance that ran one, turning the flag on should start from empty lists: `UPDATE pergam_meta SET collaborators = NULL;` first.

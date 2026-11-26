@@ -38,6 +38,13 @@ BATCH_SIZE = 1000
 BATCH_BYTES = 32 * 1024 * 1024
 
 
+FORBIDDEN_HINT = (
+    "The target takes identity from its proxy: it writes only versions by you or, for a pergam it already has,"
+    " by its owner or collaborators. Ask the owner there to add you (or the other authors) as collaborators"
+    " (PUT /{id}/collaborators); nothing was uploaded by the refused request"
+)
+
+
 class PromoteError(RuntimeError):
     def __init__(self, message: str, too_large: bool = False) -> None:
         super().__init__(message)
@@ -159,7 +166,12 @@ def promote(pergam_id: str, source: Server, target: Server) -> Promoted:
     if not missing:
         described = _get(target, f"/api/pergams/{quote(pergam_id, safe='')}")
         return Promoted([], already_there, described["view_url"] if described else f"{target.url}/{pergam_id}/view")
-    answers = [answer for run in batches(missing, BATCH_SIZE, BATCH_BYTES) for answer in _upload(target, exported, run)]
+    try:
+        answers = [answer for run in batches(missing, BATCH_SIZE, BATCH_BYTES) for answer in _upload(target, exported, run)]
+    except PromoteError as exc:
+        if isinstance(exc.__cause__, urllib.error.HTTPError) and exc.__cause__.code == 403:
+            raise PromoteError(f"{exc}. {FORBIDDEN_HINT}") from exc
+        raise
     return Promoted([n for answer in answers for n in answer["imported"]], already_there, answers[-1]["view_url"])
 
 

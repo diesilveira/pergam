@@ -45,6 +45,21 @@ def require_owner(access: Access, user: str, pergam_id: str) -> None:
         raise Forbidden(f"only the owner of {pergam_id} ({access.owner}) edits its collaborators, not {user}")
 
 
+def require_import_authors(pergam_id: str, written: list[tuple[int, str]], user: str, access: Access | None) -> None:
+    """Every `(version, author)` an import writes must be by `user`, or by the owner or a collaborator of an id already here.
+
+    A trusted user may not record versions under the name of someone with no say
+    over the pergam, as with `POST /pergam`; versions already here are not written,
+    so they are not checked.
+    """
+    allowed = {user} if access is None else {user, access.owner, *access.collaborators}
+    stranger = next(((version, author) for version, author in written if author not in allowed), None)
+    if stranger is None:
+        return
+    who = "the signed-in user" if access is None else "the signed-in user, the owner or a collaborator"
+    raise Forbidden(f"v{stranger[0]} of {pergam_id} is by {stranger[1]}: an import writes only versions by {who} ({user})")
+
+
 def parse_collaborators(data: dict[str, Any]) -> list[str]:
     """The `collaborators` of a `PUT /{id}/collaborators` body, trimmed, deduplicated and sorted.
 
