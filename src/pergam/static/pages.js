@@ -5,7 +5,8 @@
  * on <html data-panel="open|closed"> before first paint. On a wide screen the
  * reader's last choice is remembered under pergam-history-panel; on a narrow
  * one the panel starts closed and opens over the document. Dropdowns (<details
- * class="dropdown">) close on Escape and on a click elsewhere.
+ * class="dropdown">) close on Escape and on a click elsewhere. On the diff page, a
+ * section link opens the collapsed section it points to.
  *
  * The pin, archive and tag controls, rendered hidden only when the server offers
  * them, call PATCH /{id}/meta with a JSON body (which a cross-site form cannot send)
@@ -198,9 +199,20 @@
     controls.hidden = false;
   };
 
+  const setUpSectionLinks = () => {
+    if (!document.querySelector('.toc')) return;
+    const reveal = () => {
+      const target = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (target instanceof HTMLDetailsElement) target.open = true;
+    };
+    addEventListener('hashchange', reveal);
+    reveal();
+  };
+
   document.addEventListener('DOMContentLoaded', () => {
     setUpPanel();
     setUpDropdowns();
     setUpMetaControls();
+    setUpSectionLinks();
   });
 })();

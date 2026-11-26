@@ -3,18 +3,24 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${page_title}</title>
 ${head_assets}
+<script src="${pages_script}"></script>
 <style>
 ${css}</style></head><body>
 
 ${top_bar}
 
-<main class="wrap">
-  <div class="compare">
-    <a class="compare__side compare__side--old" href="${old_href}"><span class="ver">v${old}</span>${old_note}</a>
-    <span class="arrow" aria-hidden="true">→</span>
-    <a class="compare__side compare__side--new" href="${new_href}"><span class="ver">v${new}</span>${new_note}</a>
-  </div>
-  <p class="summary">${summary}</p>
-  ${sections}
-</main>
+<div class="dwrap">
+  <nav class="toc" aria-labelledby="toc-title">
+    <h2 class="toc__title" id="toc-title">Sections</h2>
+    ${toc}
+  </nav>
+  <main class="dmain">
+    <div class="compare">
+      <a class="compare__side compare__side--old" href="${old_href}"><span class="ver">v${old}</span>${old_note}</a>
+      <span class="arrow" aria-hidden="true">→</span>
+      <a class="compare__side compare__side--new" href="${new_href}"><span class="ver">v${new}</span>${new_note}</a>
+    </div>
+    ${sections}
+  </main>
+</div>
 </body></html>

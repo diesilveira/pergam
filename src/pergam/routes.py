@@ -441,12 +441,14 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if not match:
             self.send_error(400, "Range must look like v2..v5")
             return
-        by_number = {info.version: info for info in self.store.versions(pergam_id)}
+        versions = self.store.versions(pergam_id)
+        by_number = {info.version: info for info in versions}
         old, new = (by_number.get(int(number)) for number in match.groups())
         if old is None or new is None:
             self.send_error(404, "Pergam or version not found")
             return
-        page = render_diff(pergam_id, old, new, self._diff(pergam_id, old.version, new.version, old.bytes, new.bytes))
+        sections = self._diff(pergam_id, old.version, new.version, old.bytes, new.bytes)
+        page = render_diff(pergam_id, old, new, sections, versions)
         self._send(200, "text/html; charset=utf-8", page.encode("utf-8"), cache_control=DERIVED)
 
     def _diff(self, pergam_id: str, old: int, new: int, *html_bytes: int) -> list[Section] | TooLargeToDiff:

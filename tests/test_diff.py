@@ -90,7 +90,7 @@ def test_diff_page_highlights_changes_per_section(client: Client) -> None:
     assert "<del>10</del>" in page
     assert "<ins>12</ins>" in page
     assert re.search(r'<div class="line line--added">.*?<ins>A new risk\.</ins>', page)
-    assert '<details class="sec sec--same"><summary><span class="sec__name">Plan</span>' in page
+    assert '<details class="sec sec--same" id="sec-2"><summary><span class="sec__name">Plan</span>' in page
 
 
 def test_diff_escapes_document_text(client: Client) -> None:
