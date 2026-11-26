@@ -98,7 +98,7 @@ The range is `v{a}..v{b}`, the newer side on the right; `a` may be larger than `
 - Validation is that of `POST /pergam`, per version: `html`, `title`, `author` and `type` non-empty strings, `type` one of this server's [types](#pergam-types), a valid [note](#version-notes); plus `format_version` 1, a valid id, distinct positive version numbers, `created_at` in ISO 8601 with a UTC offset, `server` (optional) an absolute `http(s)` URL without credentials, query or fragment. Anything else is **400** and writes nothing. `bytes` is recomputed from the HTML and unknown fields are ignored.
 - The body may be as large as `PERGAM_MAX_BODY_MB` (see [Configuration](#configuration)).
 
-`origin` is shown in the view page's bar ("imported from localhost:1111/abc12345", linking to the original) and returned by `GET /api/pergams/{id}` (`null` when the pergam was not imported). It cannot be edited.
+`origin` is shown in the view page's bar ("imported from localhost:1111/abc12345", linking to the original) and returned by `GET /api/pergams/{id}` (`null` when the pergam was not imported). It cannot be edited. The skill's [promote helper](skills/post-pergam/SKILL.md#promoting-a-pergam-to-another-server-flow-b), `skills/post-pergam/pergam_promote.py` (stdlib only), combines both in one command between two named servers and uploads only the versions the target lacks: `python3 skills/post-pergam/pergam_promote.py abc12345 --from local --to team`.
 
 ## Tags and metadata
 
@@ -280,7 +280,7 @@ pergam/
 ├── tests/                   pytest suite (real server + throwaway Postgres)
 ├── scripts/
 │   └── migrate_from_fs.py   import legacy ./data/*.html files
-├── skills/post-pergam/      Claude Code skill (see below)
+├── skills/post-pergam/      Claude Code skill, server profiles and promote helper (see below)
 ├── web/                     public landing + example hosted worker (Cloudflare)
 ├── .github/workflows/       CI: test suite + image build on every pull request
 ├── Dockerfile               python:3.14-slim, runs as uid 10001

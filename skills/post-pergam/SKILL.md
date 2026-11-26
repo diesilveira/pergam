@@ -211,6 +211,22 @@ curl -sS -X PATCH "$PERGAM_URL/abc12345/meta" \
 - `archived: true` hides it from the index (still reachable by URL); `pinned: true` lists it first. Send only the fields you change.
 - Archiving and pinning belong to the id: a **new version of an archived pergam stays archived** and hidden from the index, and the POST response doesn't say so. When the user iterates on a pergam they archived, check `GET /{id}/meta` and, if it is archived, either tell them or `PATCH` `{"archived": false}` when they clearly want it visible again.
 
+### Promoting a pergam to another server (Flow B)
+
+"Pasalo al team", "promote abc12345 to team", "copy it to the team server": move a pergam with its **whole history** (same id, version numbers, dates, tags and notes) from one self-hosted server to another in one command, with the helper shipped next to this file:
+
+```bash
+python3 <skill-dir>/pergam_promote.py abc12345 --from local --to team
+# -> promoted abc12345 from local to team: uploaded v1, v2, v3, v4, v5
+#    https://pergam.example.com/abc12345/view
+```
+
+- `--from` and `--to` are server names from [§ Choosing the server](#choosing-the-server) (each with its `ca`, so no `-k`) or plain URLs. When the user names only the target, the source is the server the pergam was published on in this conversation, usually `local`.
+- It exports from the source (`GET /{id}/export`) and, when the target already has the id, uploads **only the versions it lacks** (`POST /import`). Running it again prints `team already has every version of abc12345; nothing to do` and writes nothing.
+- When a version the target already has differs (another pergam with the same id there, or a different history), it stops with exit status 1 and uploads nothing: tell the user, never work around it by posting the HTML as a new pergam.
+- The target records where the pergam came from (`origin`, shown in its view bar). The hosted backend keeps no versions, so promote works only between self-hosted servers.
+- Report the printed `view_url` (the target's) and how many versions were uploaded.
+
 ### Flow B endpoints
 
 | Method | Path                  | Description                                                          |
