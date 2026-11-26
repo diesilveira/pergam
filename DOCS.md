@@ -86,7 +86,7 @@ The range is `v{a}..v{b}`, the newer side on the right; `a` may be larger than `
 
 The work is bounded, so a diff answers in well under a second whatever the input:
 
-- Text both versions share at the start and at the end is matched without cost; lines or words that repeat more than 8 times on the newer side never anchor a match (they still extend one).
+- Text both versions share at the start and at the end is matched without cost. Lines (and words) that occur exactly once in each version anchor the comparison, as in patience diff, so a large document with scattered edits is compared gap by gap. Within a gap, lines or words that repeat more than 8 times on the newer side never anchor a match (they still extend one).
 - Matching is metered. A replaced line whose word comparison would overrun its share, or any once the request has spent its total, is marked as a whole line instead of word by word.
 - A version over 2 MB of HTML or 20,000 lines of text, or line matching that overruns its budget, gets a **too large to diff** page (still `200`) with links to both versions' `/text`.
 
