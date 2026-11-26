@@ -155,7 +155,7 @@ Optional. Send `tags` when the user names topics, a project, a quarter or a team
 
 - The server normalises them (lowercase, hyphens, deduplicated, sorted) and returns the id's resulting `tags`.
 - On a new version, `tags` are **merged** with the ones the id already has; omitting `tags` leaves them untouched. You don't need to resend old tags.
-- Limits: 20 tags per id, 40 characters per tag.
+- Limits: 20 tags per id, 40 characters per tag, no control characters.
 
 **Tagging, pinning or archiving an already-published pergam** ("tagueá el informe de ayer con billing", "archivá ese plan", "pin it"): don't post a new version. `PATCH` its metadata instead; this never creates a version.
 

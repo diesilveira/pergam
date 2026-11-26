@@ -46,7 +46,7 @@ Pergams cannot be deleted. To "supersede" a pergam, post a new version with the 
 Tags, `archived` and `pinned` belong to the logical `id`, not to a version, and live in `pergam_meta`. Changing them never creates a version. An id without a metadata row reads as no tags, not archived, not pinned.
 
 - Tags are free-form and normalised: trimmed, lowercased, runs of whitespace, `_` and `-` collapsed to one `-`, empties dropped, duplicates removed, stored sorted. `" Q3  Review_notes "` → `q3-review-notes`.
-- At most 20 tags per id, each at most 40 characters after normalisation; beyond that the request gets **400** and nothing is written.
+- At most 20 tags per id, each at most 40 characters after normalisation, with no control characters (tabs and newlines are separators and become `-`); otherwise the request gets **400** and nothing is written.
 - `POST /pergam` with `tags` **merges** them into the id's existing tags; posting without `tags` (or `"tags": null`) leaves them as they are.
 - A new version never changes `archived` or `pinned`: posting to an archived id keeps it archived (and out of the index).
 - `PATCH /{id}/meta` edits metadata of an id that already has versions. Fields it omits keep their value; `tags` **replaces** the whole set (`[]` clears it); `archived` and `pinned` must be JSON booleans. Unknown fields, an empty object or a wrong type are **400**.

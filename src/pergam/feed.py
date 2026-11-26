@@ -18,7 +18,7 @@ from pergam.store import FeedEntry
 ATOM_NS = "http://www.w3.org/2005/Atom"
 CONTENT_TYPE = "application/atom+xml; charset=utf-8"
 
-_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
+_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
 
 def _xml_text(value: str) -> str:
@@ -32,7 +32,8 @@ def _timestamp(moment: datetime) -> str:
 
 
 def _add(parent: ET.Element, tag: str, text: str | None = None, **attrs: str) -> ET.Element:
-    element = ET.SubElement(parent, tag, attrs)
+    """A child element; text and attribute values both go through `_xml_text`."""
+    element = ET.SubElement(parent, tag, {name: _xml_text(value) for name, value in attrs.items()})
     if text is not None:
         element.text = _xml_text(text)
     return element

@@ -48,3 +48,13 @@ def test_merge_tags_enforces_the_limit() -> None:
     assert merge_tags(full, ["t00"]) == full
     with pytest.raises(TagError):
         merge_tags(full, ["one-more"])
+
+
+@pytest.mark.parametrize("raw", ["bell\x07", "nul\x00", "esc\x1b[0m", "del\x7f", "c1\x80x", "nonchar\uffff"])
+def test_parse_tags_rejects_control_characters(raw: str) -> None:
+    with pytest.raises(TagError, match="control characters"):
+        parse_tags([raw])
+
+
+def test_parse_tags_keeps_tabs_and_newlines_as_separators() -> None:
+    assert parse_tags(["a\tb\nc"]) == ["a-b-c"]

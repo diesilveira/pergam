@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
 
@@ -141,3 +142,26 @@ def test_index_advertises_the_feed(client: Client) -> None:
 
 def test_empty_feed_is_still_valid(client: Client) -> None:
     assert fetch(client).findall(A + "entry") == []
+
+
+def test_feed_stays_well_formed_with_control_characters_in_stored_tags(client: Client, db) -> None:
+    pid = client.publish()["id"]
+    db.execute("INSERT INTO pergam_meta (id, tags) VALUES (%s, %s)", (pid, ["ok", "bad\x07tag\x1b"]))
+
+    (entry,) = fetch(client).findall(A + "entry")
+
+    assert [c.get("term") for c in entry.findall(A + "category")] == ["otro", "ok", "badtag"]
+
+
+@pytest.mark.parametrize("method", ["POST", "PATCH"])
+def test_control_characters_in_tags_are_rejected(client: Client, method: str) -> None:
+    pid = client.publish()["id"]
+    if method == "POST":
+        resp = client.post_json({"title": "t", "html": "<p>x</p>", "type": "otro", "author": "you@example.com", "tags": ["a\x07"]})
+    else:
+        resp = client.request(
+            "PATCH", f"/{pid}/meta", json.dumps({"tags": ["a\x07"]}).encode(), {"Content-Type": "application/json"}
+        )
+
+    assert resp.status == 400
+    assert "control characters" in resp.text
