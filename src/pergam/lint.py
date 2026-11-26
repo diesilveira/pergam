@@ -70,12 +70,20 @@ class _MermaidBlock:
     open_tags: int = 1
     parts: list[str] = field(default_factory=list)
     size: int = 0
+    truncated: bool = False
 
     def add(self, data: str) -> None:
         """Keep the first `MAX_MERMAID_TEXT` characters: the diagram type is in its first statement."""
-        if self.size < MAX_MERMAID_TEXT:
-            self.parts.append(data[: MAX_MERMAID_TEXT - self.size])
-            self.size += len(self.parts[-1])
+        kept = data[: max(MAX_MERMAID_TEXT - self.size, 0)]
+        self.truncated = self.truncated or len(kept) < len(data)
+        if kept:
+            self.parts.append(kept)
+            self.size += len(kept)
+
+    def inspected(self) -> str:
+        """The kept text, without a last line the cap may have cut in two."""
+        text = "".join(self.parts)
+        return text[: text.rfind("\n") + 1] if self.truncated else text
 
 
 @dataclass(frozen=True)
@@ -255,7 +263,9 @@ class _Linter(HTMLParser):
     def finish_mermaid(self) -> None:
         assert self.mermaid is not None
         block, self.mermaid = self.mermaid, None
-        statement = _first_statement("".join(block.parts))
+        statement = _first_statement(block.inspected())
+        if statement is None and block.truncated:
+            return
         if statement is None:
             self.add("mermaid-empty", "error", "Mermaid block has no diagram", (block.line, block.offset))
         elif not statement.startswith(MERMAID_DIAGRAMS):

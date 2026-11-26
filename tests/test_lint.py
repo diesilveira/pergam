@@ -9,7 +9,7 @@ import psycopg
 import pytest
 
 import pergam
-from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, MERMAID_DIAGRAMS, _Linter, authorities, lint_html
+from pergam.lint import LINT_MAX_BODY_BYTES, MAX_FINDINGS, MAX_MERMAID_TEXT, MERMAID_DIAGRAMS, _Linter, authorities, lint_html
 from pergam.static_files import MERMAID_VERSION
 from support import Client
 
@@ -261,3 +261,22 @@ def test_lint_endpoint_knows_its_own_origin(client: Client) -> None:
     html = f'<script src="http://127.0.0.1:{client.port}/static/frame-bridge.js"></script>'
 
     assert client.post_json({"html": html}, "/lint").json()["findings"] == []
+
+
+@pytest.mark.parametrize(
+    "opening",
+    [
+        "---\n" + "title: long\n" * (MAX_MERMAID_TEXT // 12 + 1) + "---\nflowchart TB\n A-->B",
+        "%%{init: {\n" + "  'x': 1,\n" * (MAX_MERMAID_TEXT // 9 + 1) + "}}%%\nflowchart TB\n A-->B",
+        "%% " + "x" * (MAX_MERMAID_TEXT - 10) + "\nflowchart TB\n A-->B",
+    ],
+    ids=["front-matter", "directive", "comment"],
+)
+def test_a_block_whose_opening_outruns_the_inspected_prefix_is_not_reported(opening: str) -> None:
+    assert found(f'<pre class="mermaid">{opening}</pre>') == []
+
+
+def test_a_short_unknown_block_past_a_long_body_is_still_reported() -> None:
+    assert found('<pre class="mermaid">grahp TD\n' + "A-->B\n" * MAX_MERMAID_TEXT + "</pre>") == [
+        ("mermaid-unknown-diagram", "error", 1, 1)
+    ]
