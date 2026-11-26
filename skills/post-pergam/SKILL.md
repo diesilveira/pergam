@@ -7,16 +7,53 @@ description: Use when the user wants an HTML dashboard, report, comparison board
 
 Publish a self-contained HTML document to a [`pergam`](https://github.com/diesilveira/pergam) backend and return a shareable URL.
 
-There are **two backends** with different capabilities. Pick the right one before posting:
+First pick the **server** ([§ Choosing the server](#choosing-the-server)), then the **backend** it runs. There are two, with different capabilities:
 
-| Signal | Backend | Section |
+| Resolved server URL | Backend | Section |
 | --- | --- | --- |
-| `$PERGAM_URL` unset, OR set to `https://api.pergam.dev` | Hosted Worker | [§ Flow A](#flow-a--hosted-pergamdev) |
-| `$PERGAM_URL` set to a local URL (e.g. `http://localhost:1111`) or any other host | Self-hosted server | [§ Flow B](#flow-b--self-hosted-pergam-server) |
-| User mentions "share this", "quick link", "ephemeral" | Hosted | Flow A |
-| User mentions "my local pergam", "via Docker", "versioning", "iterá sobre v1" | Self-hosted | Flow B |
+| `https://api.pergam.dev` (the built-in `hosted` server) | Hosted Worker | [§ Flow A](#flow-a--hosted-pergamdev) |
+| Any other URL (e.g. `http://localhost:1111`, `https://pergam.example.com`) | Self-hosted server | [§ Flow B](#flow-b--self-hosted-pergam-server) |
+| No server named, and the user mentions "share this", "quick link", "ephemeral" | Hosted | Flow A |
+| No server named, and the user mentions "my local pergam", "via Docker", "versioning", "iterá sobre v1" | Self-hosted (`local` profile or `$PERGAM_URL`) | Flow B |
 
 **When ambiguous, default to Flow A** — zero setup, works out of the box.
+
+---
+
+## Choosing the server
+
+A user may have several pergam servers and name them: "publish it on **team**", "subilo al local". Named servers live in one JSON file, `~/.config/pergam/servers.json` (`$XDG_CONFIG_HOME/pergam/servers.json` when `XDG_CONFIG_HOME` is set; `$PERGAM_CONFIG` overrides the path):
+
+```json
+{
+  "default": "local",
+  "servers": {
+    "local":  {"url": "http://localhost:1111"},
+    "team":   {"url": "https://pergam.example.com", "ca": "~/.config/pergam/team-ca.pem"},
+    "hosted": {"url": "https://api.pergam.dev"}
+  }
+}
+```
+
+- `servers` maps a name to its `url` and an optional `ca`: the PEM bundle of the private CA that signed that server's certificate, passed to curl as `--cacert`. `~` is expanded; a relative `ca` is read from the file's folder.
+- `default` (optional) is the server used when the user names none.
+- `hosted` (`https://api.pergam.dev`) exists even when the file does not list it.
+
+**Resolution order** — the first that applies wins:
+
+1. The server the user named in the request ("on team"), or a URL they gave. An unknown name is an error: list the known ones and ask, never guess.
+2. `$PERGAM_URL`, with `$PERGAM_CA` as its optional CA bundle. Without a config file this is exactly the old behaviour.
+3. The file's `default`.
+4. `hosted`.
+
+Resolve with the helper shipped next to this file (stdlib Python, no install), **in the same shell command** as the curl calls that use it, since each command starts a fresh shell:
+
+```bash
+eval "$(python3 <skill-dir>/pergam_profiles.py env team)" &&   # omit "team" when the user named no server
+curl -sS ${PERGAM_CA:+--cacert "$PERGAM_CA"} "$PERGAM_URL/healthz"
+```
+
+`env` prints `PERGAM_SERVER`, `PERGAM_URL` and `PERGAM_CA` (empty when there is none) as shell assignments; `pergam_profiles.py list` shows every server with the default marked `*`. `<skill-dir>` is this skill's folder (`~/.claude/skills/post-pergam` for a user-level install). Every curl to a server with a CA bundle carries `--cacert "$PERGAM_CA"`; **never** fall back to `curl -k`: if verification fails, tell the user the `ca` is wrong or missing.
 
 ---
 
@@ -64,11 +101,11 @@ Public **1-year** shares served by a Cloudflare Worker. No versioning. Max 1 MB 
 
 ## Flow B — Self-hosted pergam server
 
-Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://localhost:1111` after `docker compose up -d` in the pergam repo). Supports **versioning, immutability, types, authors**, and persistence.
+Use when the resolved server is a self-hosted instance (typically `http://localhost:1111` after `docker compose up -d` in the pergam repo). Below, `$PERGAM_URL` and `$PERGAM_CA` are the values [§ Choosing the server](#choosing-the-server) resolved; add `--cacert "$PERGAM_CA"` to each curl when it is set. Supports **versioning, immutability, types, authors**, and persistence.
 
 1. **Ensure reachable:**
    ```bash
-   curl -sS "$PERGAM_URL/healthz"    # -> {"ok":true}
+   curl -sS ${PERGAM_CA:+--cacert "$PERGAM_CA"} "$PERGAM_URL/healthz"    # -> {"ok":true}
    ```
    If `Connection refused`, ask the user to start it (`docker compose up -d` in their pergam dir) or confirm the URL.
 
@@ -97,7 +134,7 @@ Use when `$PERGAM_URL` points to a self-hosted instance (typically `http://local
 
 6. **POST to `/pergam`:**
    ```bash
-   curl -sS -X POST "$PERGAM_URL/pergam" \
+   curl -sS ${PERGAM_CA:+--cacert "$PERGAM_CA"} -X POST "$PERGAM_URL/pergam" \
         -H "Content-Type: application/json" \
         --data-binary @/tmp/pergam.payload.json
    ```
@@ -236,7 +273,9 @@ Replace ASCII art with Mermaid in long-form content. Only allowed external depen
 
 ### Flow B (self-hosted)
 
-- **`Connection refused` on `/healthz`** → server not reachable. Ask the user to `docker compose up -d` in their pergam dir or confirm `PERGAM_URL`.
+- **`Connection refused` on `/healthz`** → server not reachable. Ask the user to `docker compose up -d` in their pergam dir or confirm the server's URL (`pergam_profiles.py list`).
+- **`SSL certificate problem` / `unable to get local issuer certificate`** → the server uses a private CA: set its `ca` in `~/.config/pergam/servers.json` (or `$PERGAM_CA`). Do not retry with `-k`.
+- **`unknown server 'x'`** from `pergam_profiles.py` → the user named a server the file does not define; show them the list and the file path.
 - **Container restarts in a loop, logs show "could not connect to server"** → the pergam server can't reach its Postgres. If using bundled compose, `docker compose restart` after the db is ready.
 - **400 "type must be one of […]"** → the message lists the types this server accepts (`PERGAM_TYPES`); pick one of those and retry.
 - **400 "Missing author"** → always pass `author`.

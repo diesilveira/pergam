@@ -303,7 +303,7 @@ cp -r skills/post-pergam ~/.claude/skills/
 cp -r skills/post-pergam <your-repo>/.claude/skills/
 ```
 
-The skill reads the user's email from the Claude Code session, picks a `type` from context, and decides whether to publish as a new pergam or a new version of an existing one. See `skills/post-pergam/SKILL.md` for the full contract.
+The skill reads the user's email from the Claude Code session, picks a `type` from context, and decides whether to publish as a new pergam or a new version of an existing one. It talks to named servers (`hosted`, `local`, `team`, …) defined in `~/.config/pergam/servers.json`, each with its URL and an optional CA bundle for a private TLS certificate; with no file, `$PERGAM_URL` works as before. `skills/post-pergam/pergam_profiles.py` (stdlib only) resolves the name the user gave, then `$PERGAM_URL`, then the file's `default`, then the hosted backend. See `skills/post-pergam/SKILL.md` for the full contract.
 
 ## Deployment
 

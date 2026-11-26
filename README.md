@@ -98,10 +98,10 @@ Inside any project, ask Claude:
 
 > _"armá un pergam de X y publicalo"_
 
-The skill **auto-picks the backend** based on `$PERGAM_URL`:
+The skill **auto-picks the server and backend**: a server the user names ("publish it on team") from `~/.config/pergam/servers.json`, else `$PERGAM_URL`, else the file's `default`, else hosted:
 
-- Unset / `https://api.pergam.dev` → hosted (Flow A, 1-year TTL)
-- Local URL like `http://localhost:1111` → self-hosted (Flow B, versioned)
+- `https://api.pergam.dev` → hosted (Flow A, 1-year TTL)
+- Any other URL, like `http://localhost:1111` → self-hosted (Flow B, versioned), with an optional CA bundle per server for private TLS
 
 See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full contract — when to bump a version, the type taxonomy, and the HTML guidelines for what the AI should produce.
 
