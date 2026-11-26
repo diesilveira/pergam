@@ -40,7 +40,7 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 - 🔒 **Immutable** — pergams can't be edited or deleted, only superseded with a new version.
 - 🧭 **Visible versions** — every pergam opens under a slim bar with its title, type, tags, author and `v3 of 5`, a version selector with each version's note, and a notice on older versions linking to the current one. `/{id}/diff/v2..v5` shows what changed between two versions, section by section.
 - 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
-- 🪞 **Built-in viewer** — sandboxed iframe with strict CSP. Mermaid + jsDelivr allowed; everything else blocked.
+- 🪞 **Built-in viewer** — on [pergam.dev](https://pergam.dev), a sandboxed iframe with strict CSP: Mermaid + jsDelivr allowed, everything else blocked. A self-hosted server frames each version under its version bar but does not sandbox it yet: published scripts run on the server's origin.
 - 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by type, author or tag; pin what matters, archive what doesn't.
 - 🔎 **Searchable** — `?q=` searches titles and the visible text of every pergam, with highlighted snippets.
 - 📡 **Atom feed** — `/feed.atom` follows new publications, filtered by tag or author.
@@ -115,7 +115,7 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 
 - **One Python process**, no framework — just `http.server` + `psycopg`.
 - **Four Postgres tables**: immutable `pergams (id, version, …)` with a composite key, `pergam_meta (id, tags, archived, pinned)` for what can change without a new version, `pergam_text` with each version's extracted text and full-text search document, and `pergam_note` with the optional note of each version. Latest version per `id` resolved on read through the `pergams_latest` view.
-- **Strict CSP per response**: sandboxed iframe, `frame-ancestors` allowlist, no inline scripts on the viewer chrome.
+- **Framed documents**: the view page loads each version in an iframe from `/{id}/v{n}/content` and talks to it only through a `postMessage` bridge, so the frame can be sandboxed later without changing the page. It is not sandboxed yet; the hosted viewer is (sandboxed iframe, strict CSP, `frame-ancestors` allowlist).
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 
 Full schema, request flow, and config knobs → [DOCS.md](DOCS.md).
