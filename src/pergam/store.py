@@ -333,18 +333,14 @@ class PergamStore:
         with self.pool.connection() as conn:
             return read_access(conn, pergam_id)
 
-    def set_collaborators(self, pergam_id: str, collaborators: list[str], editor: str | None = None) -> Access | None:
-        """Replace the collaborators of an id; None when it has no versions.
-
-        A trusted `editor` must be the owner (`Forbidden` otherwise).
-        """
+    def set_collaborators(self, pergam_id: str, collaborators: list[str], editor: str) -> Access | None:
+        """Replace the collaborators of an id; None when it has no versions. `editor` must be the owner (`Forbidden` otherwise)."""
         with self.pool.connection() as conn, conn.transaction():
             lock_id(conn, pergam_id)
             access = read_access(conn, pergam_id)
             if access is None:
                 return None
-            if editor is not None:
-                require_owner(access, editor, pergam_id)
+            require_owner(access, editor, pergam_id)
             conn.execute(
                 "INSERT INTO pergam_meta (id, collaborators) VALUES (%s, %s)"
                 " ON CONFLICT (id) DO UPDATE SET collaborators = EXCLUDED.collaborators",

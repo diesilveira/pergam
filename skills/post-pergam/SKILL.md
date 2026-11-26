@@ -261,7 +261,7 @@ python3 <skill-dir>/pergam_promote.py abc12345 --from local --to team
 | GET    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`.                                |
 | PATCH  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`. Edits metadata, no new version. |
 | GET    | `/{id}/collaborators` | JSON: `{id, owner, collaborators}`; `owner` is the author of v1. |
-| PUT    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list. Only the owner, on a server that trusts its proxy. |
+| PUT    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list. Only the owner, on a server that trusts its proxy (**409** elsewhere). |
 | POST   | `/lint`               | Body `{html}` (other fields ignored). Returns `{findings, errors, warnings, truncated}`; stores nothing. Call it before every publish. |
 | GET    | `/{id}/export`        | JSON: every version with its HTML, plus `meta`, to move the pergam to another server. |
 | POST   | `/import`             | Body: an export document. Adds the versions this server lacks (same id, numbers, dates); **409** if one it has differs. |

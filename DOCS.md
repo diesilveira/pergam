@@ -24,7 +24,7 @@ For a quick intro and `docker compose up`, see the [README](README.md).
 | `GET`    | `/{id}/meta`          | JSON: `{id, tags, archived, pinned}`. **404** for an unknown id.     |
 | `PATCH`  | `/{id}/meta`          | Body with any of `{tags, archived, pinned}`; returns the resulting `{id, tags, archived, pinned}`. Never creates a version. **404** unknown id, **400** malformed body. |
 | `GET`    | `/{id}/collaborators` | JSON: `{id, owner, collaborators}`; `owner` is the author of v1. **404** for an unknown id. See [Ownership](#ownership). |
-| `PUT`    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list and returns `{id, owner, collaborators}`. Only the owner, when identity is trusted. See [Ownership](#ownership). |
+| `PUT`    | `/{id}/collaborators` | Body `{collaborators: [user, …]}`; replaces the list and returns `{id, owner, collaborators}`. Only the owner, and only with `TRUST_PROXY_USER` on (**409** otherwise). See [Ownership](#ownership). |
 | `POST`   | `/lint`               | Body `{html}`. Returns the problems that would break the document once published, each with its line and column; stores nothing. See [Lint](#lint). |
 | `GET`    | `/{id}/export`        | JSON document with every version of one pergam, its HTML and its metadata. See [Export and import](#export-and-import). **404** for an unknown id. |
 | `POST`   | `/import`             | Body: an export document. Recreates the versions this server lacks, keeping id, version numbers and `created_at`. Returns `{id, imported, skipped, origin, view_url}`. **409** when a version already here differs. See [Export and import](#export-and-import). |
@@ -91,7 +91,8 @@ curl -sS -X PUT https://pergam.example.com/abc12345/collaborators \
 - `PUT` replaces the whole list; `[]` empties it. Each collaborator is a user as the proxy names them (compared exactly), trimmed, deduplicated and sorted, at most 320 characters without control characters, at most 100 per pergam; any other body, or a field other than `collaborators`, is **400**.
 - Imported versions keep the `author` they had on the server they came from: the import rule above checks v1 only, so the versions after it may name other people. They are history copied from that server, not claims by whoever imported them.
 - The owner of a pergam published before the flag was turned on is whatever `author` its v1 was posted with; when that is not the name the proxy now sends, nobody can add versions to it until the owner name and the proxy agree. Plan the switch so authors already match the proxy's names (usually the email).
-- With the flag off nothing is enforced: anyone may version, patch, import and edit the list, which is still validated and stored and takes effect once the flag is turned on.
+- With the flag off nothing is enforced: anyone may version, patch and import. The list cannot be edited then (`PUT` is **409**), since there is no owner to check and a list seeded before the flag is turned on would take effect with it; `GET` still answers.
+- A build of this server from before that rule accepted `PUT` with the flag off. On an instance that ran one, turning the flag on should start from empty lists: `UPDATE pergam_meta SET collaborators = NULL;` first.
 
 ## View
 

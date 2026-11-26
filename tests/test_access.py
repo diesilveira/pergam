@@ -174,9 +174,18 @@ def test_without_trusted_identity_nothing_is_enforced(client: Client) -> None:
 
     assert client.publish(id=pid, author=STRANGER)["version"] == 2
     assert send(client, "PATCH", f"/{pid}/meta", {"archived": True}).status == 200
-    assert set_collaborators(client, pid, [STRANGER]).json() == {"id": pid, "owner": OWNER, "collaborators": [STRANGER]}
-    assert send(client, "PUT", f"/{pid}/collaborators", {"collaborators": [""]}).status == 400
     assert client.post_json(export_document("0123abcd", OWNER), "/import").status == 201
+
+
+def test_without_trusted_identity_collaborators_cannot_be_seeded(client: Client, db: psycopg.Connection) -> None:
+    pid = client.publish(author=OWNER)["id"]
+
+    resp = set_collaborators(client.as_user(OWNER), pid, [STRANGER])
+
+    assert resp.status == 409
+    assert "TRUST_PROXY_USER" in resp.text
+    assert client.get(f"/{pid}/collaborators").json() == {"id": pid, "owner": OWNER, "collaborators": []}
+    assert db.execute("SELECT count(*) FROM pergam_meta WHERE collaborators IS NOT NULL").fetchone() == (0,)
 
 
 @pytest.mark.parametrize("owner", ["ana@example.com\r\nSet-Cookie: injected=1", "日本@example.com"], ids=["crlf", "non-latin-1"])

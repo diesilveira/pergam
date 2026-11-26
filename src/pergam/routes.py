@@ -299,10 +299,17 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         self._send(200, "application/json", json.dumps(meta.to_json(parts[0])).encode("utf-8"))
 
     def do_PUT(self) -> None:
-        """`PUT /{id}/collaborators` replaces the list; only the owner may when identity is trusted."""
+        """`PUT /{id}/collaborators` replaces the list, by the owner only.
+
+        Without trusted identity there is no owner to check, so the list cannot be
+        edited at all (409): otherwise anyone could seed it before the flag is on.
+        """
         parts = urlparse(self.path).path.strip("/").split("/")
         if len(parts) != 2 or parts[1] != "collaborators" or not ID_RE.match(parts[0]):
             self.send_error(404, "Not Found")
+            return
+        if not self.trust_proxy_user:
+            self.send_error(409, "Collaborators can only be edited when the server trusts its proxy (TRUST_PROXY_USER)")
             return
         writer = self._writer()
         if writer is None:
@@ -311,7 +318,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if data is None:
             return
         try:
-            access = self.store.set_collaborators(parts[0], parse_collaborators(data), writer.user)
+            access = self.store.set_collaborators(parts[0], parse_collaborators(data), writer.user or "")
         except CollaboratorError as exc:
             self.send_error(400, str(exc))
             return
