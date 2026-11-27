@@ -263,7 +263,8 @@ def footer(filters: IndexFilters) -> str:
     )
 
 
-def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> str:
+def render_index(data: IndexData, filters: IndexFilters, host_display: str, load_more: bool = False) -> str:
+    """The index page; `load_more` (a request from index.js's "Load more") leaves out the dialog, which it never uses."""
     now = datetime.now(timezone.utc)
     listed = [row for row in data.rows if row.id not in data.pinned_ids]
     cards = pinned_cards(data, filters, now)
@@ -279,7 +280,7 @@ def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> s
         trigger=trigger(filters),
         summary=summary(data.matching, data.stats, filters),
         sort_menu=sort_menu(filters),
-        dialog="" if filters.cursor else dialog_shell(filters),
+        dialog="" if load_more else dialog_shell(filters),
         footer=footer(filters),
         pinned=cards,
         groups=groups if groups or cards or filters.cursor else empty_state(data, filters),

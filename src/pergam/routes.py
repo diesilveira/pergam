@@ -52,6 +52,7 @@ NO_STORE = "no-store"
 IMMUTABLE = "public, max-age=31536000, immutable"
 DERIVED = "public, max-age=300"
 NOSNIFF = (("X-Content-Type-Options", "nosniff"),)
+LOAD_MORE_HEADER = "X-Pergam-Load-More"
 PAGE_HEADERS = (("Content-Security-Policy", "frame-ancestors 'self'"), ("X-Frame-Options", "SAMEORIGIN"))
 
 
@@ -598,7 +599,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         filters = self._filters(query)
         if filters is None:
             return
-        page = render_index(self.store.index(filters, cards=True), filters, self.public.display)
+        load_more = self.headers.get(LOAD_MORE_HEADER) == "1"
+        page = render_index(self.store.index(filters, cards=True), filters, self.public.display, load_more)
         self._send_page(page)
 
     def _render_index_json(self, query: dict[str, list[str]]) -> None:

@@ -264,11 +264,16 @@ def test_the_index_carries_an_empty_dialog_whatever_the_number_of_authors_and_ta
     assert "<svg" not in form.split('<div class="fform__body">')[1]
 
 
-def test_pages_after_the_first_carry_no_dialog(client: Client, wide: None) -> None:
-    first = client.get("/").text
+def test_later_pages_keep_the_empty_dialog_and_load_more_requests_get_none(client: Client, wide: None) -> None:
+    first = client.get("/?sort=title").text
     later = html.unescape(re.search(r'<a class="pager__next" href="([^"]+)"', first).group(1))
 
-    assert "data-filters-dialog" not in client.get(later).text
+    shell = client.get(later).text
+    load_more = client.request("GET", later, headers={"X-Pergam-Load-More": "1"}).text
+
+    assert 'data-filters-dialog data-src="/filters/form?sort=title"></dialog>' in shell
+    assert "data-filters-dialog" not in load_more
+    assert listed_order(load_more) == listed_order(shell)
 
 
 def test_the_dialog_form_keeps_the_query_and_rejects_bad_parameters(client: Client, library: dict[str, str]) -> None:

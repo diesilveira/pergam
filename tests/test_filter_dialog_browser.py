@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from urllib.parse import urlencode
 
 import pytest
 
-from support import Client, in_ci, listed_order, patch_meta, unavailable
+from support import Client, in_ci, listed_order, patch_meta, seed, unavailable
 
 try:
     from playwright import sync_api
@@ -413,3 +414,109 @@ def test_without_script_a_value_with_no_result_can_still_be_ticked(browser, site
 
     assert page.locator("input[name=type][value=informe]").is_checked()
     context.close()
+
+
+def test_tags_outside_the_basic_plane_sort_like_the_server(browser, client: Client) -> None:
+    """JavaScript compares UTF-16 code units, Python code points; the dialog must give the server's URL."""
+    astral, wide_z = "\U0001d538x", "ｚx"
+    client.publish(title="A", tags=[astral])
+    client.publish(title="B", tags=[wide_z])
+    base = f"http://127.0.0.1:{client.port}"
+    context, page = open_page(browser)
+    page.goto(base + "/")
+    open_dialog(page)
+
+    page.locator(".pill", has_text=astral).click()
+    page.locator(".pill", has_text=wide_z).click()
+    wait_for_label(page, "Show 2 pergams")
+    page.locator("[data-filters-apply]").click()
+    page.wait_for_url(re.compile(r"\?tag="))
+
+    server = client.get("/?" + urlencode([("tag", astral), ("tag", wide_z)])).text
+    expected = re.search(r'href="/filters\?([^"]+)"', server).group(1).replace("&amp;", "&")
+    assert page.url == f"{base}/?{expected}"
+    assert expected.index("%EF%BD%9Ax") < expected.index("%F0%9D%94%B8x")
+    context.close()
+
+
+@pytest.mark.parametrize(
+    ("content_type", "body"),
+    [
+        ("text/plain; charset=utf-8", '<form class="fform" data-filters-form></form>'),
+        ("text/html; charset=utf-8", "<p>no form here</p>"),
+    ],
+    ids=["not-html", "no-form"],
+)
+def test_an_answer_without_a_form_is_never_put_in_the_dialog(browser, site, content_type: str, body: str) -> None:
+    context, page = open_page(browser)
+    page.route("**/filters/form*", lambda route: route.fulfill(status=200, content_type=content_type, body=body))
+    page.goto(site["base"] + "/?tag=shared")
+
+    page.locator(".filters-btn").click()
+
+    page.wait_for_url(site["base"] + "/filters?tag=shared")
+    context.close()
+
+
+def test_only_the_fetched_form_is_moved_into_the_dialog(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/")
+    real = page.request.get(site["base"] + "/filters/form").text()
+    extra = '<p id="stray">outside the form</p><img id="stray-img" src="data:,">'
+    page.route(
+        "**/filters/form*",
+        lambda route: route.fulfill(status=200, content_type="text/html; charset=utf-8", body=extra + real + extra),
+    )
+
+    open_dialog(page)
+
+    assert page.locator("#stray, #stray-img").count() == 0
+    assert page.evaluate("document.querySelector('[data-filters-dialog]').children.length") == 1
+    context.close()
+
+
+def test_the_button_is_busy_while_the_form_loads(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/")
+    pending: list = []
+    page.route("**/filters/form*", lambda route: pending.append(route))
+
+    page.locator(".filters-btn").click()
+    page.wait_for_function("document.querySelector('.filters-btn').getAttribute('aria-busy') === 'true'")
+    pending[0].continue_()
+    page.wait_for_function("document.querySelector('[data-filters-dialog]').open")
+
+    assert page.locator(".filters-btn").get_attribute("aria-busy") is None
+    context.close()
+
+
+def test_a_reopen_after_reload_that_fails_leaves_no_dead_history_entry(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/?tag=shared")
+    open_dialog(page)
+    page.route("**/filters/form*", lambda route: route.abort())
+
+    page.reload()
+    page.wait_for_function("!(history.state && history.state.pergamFilters)")
+
+    assert page.url == site["base"] + "/?tag=shared"
+    assert not is_open(page)
+    context.close()
+
+
+def test_the_button_on_a_later_page_opens_the_dialog(browser, crowded_site) -> None:
+    context, page = open_page(browser)
+    page.goto(crowded_site)
+    later = page.locator(".pager__next").get_attribute("href")
+    page.goto(crowded_site.rstrip("/") + later)
+
+    open_dialog(page)
+
+    assert "cursor=" in page.url
+    context.close()
+
+
+@pytest.fixture
+def crowded_site(client: Client, db) -> str:
+    seed(db)
+    return f"http://127.0.0.1:{client.port}/"
