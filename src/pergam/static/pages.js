@@ -5,8 +5,9 @@
  * on <html data-panel="open|closed"> before first paint. On a wide screen the
  * reader's last choice is remembered under pergam-history-panel; on a narrow
  * one the panel starts closed and opens over the document. Dropdowns (<details
- * class="dropdown">) close on Escape and on a click elsewhere. On the diff page, a
- * section link opens the collapsed section it points to.
+ * class="dropdown">) close on Escape and on a click elsewhere, the framed document
+ * included: a click there never reaches this page, but moves focus to the frame.
+ * On the diff page, a section link opens the collapsed section it points to.
  *
  * The pin, archive and tag controls, rendered hidden only when the server offers
  * them, call PATCH /{id}/meta with a JSON body (which a cross-site form cannot send)
@@ -88,6 +89,9 @@
     });
     document.addEventListener('click', (event) => {
       dropdowns.forEach((dropdown) => { if (dropdown.open && !dropdown.contains(event.target)) dropdown.open = false; });
+    });
+    addEventListener('blur', () => {
+      if (document.activeElement instanceof HTMLIFrameElement) dropdowns.forEach((dropdown) => { dropdown.open = false; });
     });
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;

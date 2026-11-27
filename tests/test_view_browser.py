@@ -299,3 +299,16 @@ def test_the_bar_keeps_one_row_on_a_phone(open_page, client: Client, trusting: C
     assert bar["spread"] < 8, bar
     assert bar["height"] < 56, bar
     assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
+
+
+@pytest.mark.parametrize("target", ["more", "versions"])
+def test_a_click_in_the_document_closes_an_open_dropdown(open_page, pergam: str, target: str) -> None:
+    page = open_page(pergam, viewport=WIDE)
+    page.wait_for_selector(".bar__print:not([hidden])")
+    dropdown = page.locator(f"details.{target}")
+
+    dropdown.locator("summary").click()
+    assert dropdown.evaluate("node => node.open")
+    page.frame(url=lambda url: "/content" in url).locator("body").click(position={"x": 20, "y": 400})
+
+    page.wait_for_function(f"!document.querySelector('details.{target}').open")
