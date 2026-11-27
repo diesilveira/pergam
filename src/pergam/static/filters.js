@@ -4,8 +4,11 @@
  *
  * - [data-filters-open] (the Filters button, "+N more", "Edit filters") opens the
  *   dialog instead of following its link, and pushes a history entry, so the back
- *   button closes it. Escape, the close button, a click on the backdrop and back all
- *   discard the draft: the form is put back as the page rendered it.
+ *   button closes it (a reload with the dialog open opens it again, so that entry
+ *   still means something). Escape, the close button, a click on the backdrop and
+ *   back all discard the draft: the form is put back as the server rendered it.
+ * - The page carries an empty dialog: its form comes from `data-src` (/filters/form)
+ *   on first open. If that request fails, the link is followed to the /filters page.
  * - Choices are a draft. Each change asks GET /facets for the draft (debounced) and
  *   updates every count and the apply button in place; values with no result are
  *   dimmed and cannot be ticked, unless already ticked.
@@ -50,8 +53,9 @@
   document.addEventListener('DOMContentLoaded', announceApplied);
   if (!dialog) return;
 
-  const form = dialog.querySelector('[data-filters-form]');
-  const pristine = form.innerHTML;
+  let form = null;
+  let pristine = '';
+  let loading = null;
   const part = (selector) => form.querySelector(selector);
   let opener = null;
   let timer = null;
@@ -64,6 +68,22 @@
       pairs.push([key, value]);
     }
     return new URLSearchParams(pairs).toString();
+  };
+
+  const load = () => {
+    loading =
+      loading ||
+      fetch(dialog.dataset.src, { headers: { Accept: 'text/html' } }).then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        dialog.innerHTML = await response.text();
+        form = dialog.querySelector('[data-filters-form]');
+        if (!form) throw new Error('no form');
+        pristine = form.innerHTML;
+      });
+    return loading.catch((error) => {
+      loading = null;
+      throw error;
+    });
   };
 
   const plural = (count) => `${count} pergam${count === 1 ? '' : 's'}`;
@@ -144,7 +164,7 @@
     clearTimeout(timer);
     if (pending) pending.abort();
     dialog.close();
-    form.innerHTML = pristine;
+    if (form) form.innerHTML = pristine;
     if (opener && opener.isConnected) opener.focus();
   };
 
@@ -159,9 +179,17 @@
     part('input[name="type"]') ||
     part('input');
 
-  const open = (from) => {
+  const open = async (from, push = true) => {
     opener = from.closest('.summary, .empty') ? document.querySelector('.filters-btn') || from : from;
-    history.pushState({ pergamFilters: true }, '');
+    if (dialog.open) return;
+    try {
+      await load();
+    } catch (error) {
+      if (push) window.location.assign(from.href);
+      return;
+    }
+    if (dialog.open) return;
+    if (push) history.pushState({ pergamFilters: true }, '');
     dialog.showModal();
     const first = firstControl();
     if (first) first.focus();
@@ -201,7 +229,11 @@
     open(trigger);
   });
 
-  form.addEventListener('click', (event) => {
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) {
+      dismiss();
+      return;
+    }
     const item = event.target.closest('[data-item]');
     if (item) {
       const input = item.querySelector('input');
@@ -231,21 +263,25 @@
     }
   });
 
-  form.addEventListener('change', (event) => {
+  dialog.addEventListener('change', (event) => {
     if (event.target.matches('[data-find]')) return;
     changed();
   });
-  form.addEventListener('input', (event) => {
+  dialog.addEventListener('input', (event) => {
     if (event.target.matches('[data-find]')) filterList(event.target);
   });
-  form.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || !event.target.matches('[data-find]') || !event.target.value) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.target.value = '';
-    filterList(event.target);
+  dialog.addEventListener('keydown', (event) => {
+    if (!event.target.matches('[data-find]')) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+    } else if (event.key === 'Escape' && event.target.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.target.value = '';
+      filterList(event.target);
+    }
   });
-  form.addEventListener('submit', (event) => {
+  dialog.addEventListener('submit', (event) => {
     event.preventDefault();
     if (part('[data-filters-apply]').disabled) return;
     try {
@@ -261,11 +297,16 @@
     event.preventDefault();
     dismiss();
   });
-  dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) dismiss();
+  const trigger = () => document.querySelector('.filters-btn');
+  window.addEventListener('popstate', () => {
+    if (history.state && history.state.pergamFilters) {
+      if (!dialog.open && trigger()) open(trigger(), false);
+    } else {
+      close();
+    }
   });
-  window.addEventListener('popstate', close);
   window.addEventListener('pageshow', (event) => {
     if (event.persisted) close();
   });
+  if (history.state && history.state.pergamFilters && trigger()) open(trigger(), false);
 })();

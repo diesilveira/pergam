@@ -34,8 +34,11 @@ def trigger(text: str) -> str:
     return re.search(r'<a class="btn filters-btn[^"]*"[^>]*>.*?</a>', text).group(0)
 
 
-def dialog(text: str) -> str:
-    return re.search(r"<dialog class=\"fdialog\".*?</dialog>", text, re.S).group(0)
+def dialog(client: Client, query: str = "") -> str:
+    """The dialog's form, as filters.js fetches it on first open."""
+    resp = client.get(f"/filters/form{query}")
+    assert resp.status == 200, resp.text
+    return resp.text
 
 
 def section(text: str, key: str) -> str:
@@ -92,7 +95,7 @@ def test_more_than_five_chips_show_four_and_a_link_to_all(client: Client, librar
 
 
 def test_the_dialog_lists_every_value_with_counts_and_dims_empty_ones(client: Client, library: dict[str, str]) -> None:
-    form = dialog(page(client, "?type=reporte&tag=infra"))
+    form = dialog(client, "?type=reporte&tag=infra")
     types = section(form, "type")
 
     assert '<h2 class="fform__title" id="filters-title">' in form and 'aria-label="Close filters"' in form
@@ -106,7 +109,7 @@ def test_the_dialog_lists_every_value_with_counts_and_dims_empty_ones(client: Cl
 
 
 def test_a_selected_value_is_never_dimmed_and_comes_first(client: Client, library: dict[str, str]) -> None:
-    form = dialog(page(client, "?tag=nothing-has-this&tag=ops"))
+    form = dialog(client, "?tag=nothing-has-this&tag=ops")
     tags = section(form, "tag")
 
     assert set(re.findall(r'name="tag" value="([\w-]+)"', tags)[:2]) == {"nothing-has-this", "ops"}
@@ -114,7 +117,7 @@ def test_a_selected_value_is_never_dimmed_and_comes_first(client: Client, librar
 
 
 def test_the_status_is_a_three_way_radio_group(client: Client, library: dict[str, str]) -> None:
-    status = section(dialog(page(client, "?state=archived")), "state")
+    status = section(dialog(client, "?state=archived"), "state")
 
     assert re.findall(r'<input type="radio" name="state" value="(\w*)"', status) == ["", "archived", "all"]
     assert '<input type="radio" name="state" value="archived" checked>' in status
@@ -122,7 +125,7 @@ def test_the_status_is_a_three_way_radio_group(client: Client, library: dict[str
 
 
 def test_the_apply_button_says_what_it_shows(client: Client, library: dict[str, str]) -> None:
-    some, one, none = dialog(page(client, "?tag=ops")), dialog(page(client, "?type=otro")), dialog(page(client, "?tag=nope"))
+    some, one, none = dialog(client, "?tag=ops"), dialog(client, "?type=otro"), dialog(client, "?tag=nope")
 
     assert ">Show 2 pergams</button>" in some
     assert ">Show 1 pergam</button>" in one
@@ -130,7 +133,7 @@ def test_the_apply_button_says_what_it_shows(client: Client, library: dict[str, 
 
 
 def test_search_and_sort_ride_along_as_hidden_fields(client: Client, library: dict[str, str]) -> None:
-    form = dialog(page(client, "?q=plan&sort=title"))
+    form = dialog(client, "?q=plan&sort=title")
 
     assert '<input type="hidden" name="q" value="plan"><input type="hidden" name="sort" value="title">' in form
     assert 'method="get" action="/"' in form
@@ -139,7 +142,7 @@ def test_search_and_sort_ride_along_as_hidden_fields(client: Client, library: di
 def test_sections_with_nothing_to_choose_are_left_out(client: Client) -> None:
     client.publish(type="plan", author="ana@example.com")
 
-    form = dialog(page(client))
+    form = dialog(client)
 
     assert section(form, "type") == "" and section(form, "author") == "" and section(form, "tag") == ""
     assert section(form, "state")
@@ -152,7 +155,7 @@ def crowd(client: Client) -> None:
 
 
 def test_long_lists_fold_after_the_most_used_and_get_a_find_field(client: Client, crowd: None) -> None:
-    form = dialog(page(client))
+    form = dialog(client)
     authors, tags = section(form, "author"), section(form, "tag")
 
     assert authors.count("data-extra hidden") == 20 - AUTHORS_SHOWN
@@ -167,7 +170,7 @@ def test_a_list_that_would_hide_three_or_fewer_shows_everything(client: Client) 
     for n in range(AUTHORS_SHOWN + 3):
         client.publish(author=f"p{n}@example.com")
 
-    authors = section(dialog(page(client)), "author")
+    authors = section(dialog(client), "author")
 
     assert "data-extra" not in authors and "data-more" not in authors and "data-find" not in authors
 

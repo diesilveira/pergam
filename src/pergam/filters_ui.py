@@ -43,7 +43,6 @@ _SVG = 'aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"
 FUNNEL = f'<svg class="icon" {_SVG} width="16" height="16" stroke-width="2"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>'
 CROSS = f'<svg class="icon" {_SVG} width="11" height="11" stroke-width="2.5"><path d="M6 6l12 12M18 6L6 18"/></svg>'
 CLOSE = f'<svg class="icon" {_SVG} width="16" height="16" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>'
-CHECK = f'<svg class="pill__check" {_SVG} width="13" height="13" stroke-width="3"><path d="M5 12l5 5 9-10"/></svg>'
 
 
 def filter_count(filters: IndexFilters) -> int:
@@ -177,7 +176,7 @@ def _extra(extra: bool) -> str:
 def pill(name: str, item: Item, extra: bool = False) -> str:
     return (
         f'<label class="pill{" is-zero" if item.unavailable else ""}" data-item data-value="{esc(item.value)}"{_extra(extra)}>'
-        f'{_input(name, item, item.value)}{CHECK}{_label("pill__label", item.value)}{_count(item)}</label>'
+        f'{_input(name, item, item.value)}{_label("pill__label", item.value)}{_count(item)}</label>'
     )
 
 
@@ -276,12 +275,21 @@ def form_body(facets: Facets, filters: IndexFilters, types: tuple[str, ...], dia
     )
 
 
-def dialog(facets: Facets, filters: IndexFilters, types: tuple[str, ...]) -> str:
-    """The modal on the index; closed until filters.js opens it, so without script it is never shown."""
+def dialog_shell(filters: IndexFilters) -> str:
+    """The empty modal on the index; filters.js fills it from `data-src` (`/filters/form`) on first open.
+
+    Keeping the form out of the page keeps the index light however many authors and
+    tags there are; without script the dialog is never shown.
+    """
+    source = esc(index_link(replace(filters, cursor=None), path="/filters/form"))
+    return f'<dialog class="fdialog" aria-labelledby="filters-title" data-filters-dialog data-src="{source}"></dialog>'
+
+
+def dialog_form(facets: Facets, filters: IndexFilters, types: tuple[str, ...]) -> str:
+    """`/filters/form`: the dialog's form, the same partial as the `/filters` page with folding, find fields and live counts."""
     total = facets.total
     apply_label = f"Show {total} pergam{'s' if total != 1 else ''}" if total else "No matches"
     return (
-        '<dialog class="fdialog" aria-labelledby="filters-title" data-filters-dialog>'
         '<form class="fform" method="get" action="/" data-filters-form>'
         '<header class="fform__head"><h2 class="fform__title" id="filters-title">'
         '<span class="fform__title--wide">Filter pergams</span><span class="fform__title--narrow">Filters</span></h2>'
@@ -294,7 +302,7 @@ def dialog(facets: Facets, filters: IndexFilters, types: tuple[str, ...]) -> str
         f'<button type="submit" class="btn btn--primary fform__apply" data-filters-apply{" disabled" if not total else ""}>'
         f"{apply_label}</button>"
         '<p class="sr-only" aria-live="polite" data-filters-live></p>'
-        "</footer></form></dialog>"
+        "</footer></form>"
     )
 
 
