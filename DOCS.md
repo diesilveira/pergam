@@ -449,6 +449,7 @@ App env vars follow 12-factor conventions; only the pergam-specific knobs carry 
 | `TRUST_PROXY_USER`  | off                    | `1` takes the author of every write from `X-Forwarded-User`, set by an authenticating reverse proxy (see [Identity](#identity)). |
 | `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
+| `PERGAM_IMAGE`      | `pergam:latest`        | Image the compose service runs (compose only). Unset builds it from the checkout; set it to run a [published image](#published-image). |
 | `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
 
 See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, when `PERGAM_MAX_BODY_MB` is not a positive integer, when `PERGAM_MAX_PINNED` is not a whole number of 0 or more in plain ASCII digits (no sign), or when `TRUST_PROXY_USER` is not a recognised on/off value.
@@ -522,7 +523,7 @@ pergam/
 │   └── migrate_from_fs.py   import legacy ./data/*.html files
 ├── skills/post-pergam/      Claude Code skill, server profiles and promote helper (see below)
 ├── web/                     public landing + example hosted worker (Cloudflare)
-├── .github/workflows/       CI: test suite + image build on every pull request
+├── .github/workflows/       CI: test suite + image build on every pull request; release-image.yml publishes the image on a version tag
 ├── Dockerfile               python:3.14-slim, runs as uid 10001
 ├── docker-compose.yml       app + bundled postgres + healthchecks
 ├── Makefile                 up / down / restart / logs / ps / health / clean / test
@@ -555,6 +556,39 @@ For a single internal team, the easiest path is:
 3. Optionally put [Caddy](https://caddyserver.com/) in front for TLS and auth — pergam itself has no auth and assumes the network is a trust boundary.
 
 For larger teams, swap `tls internal` for an OIDC sidecar (e.g. `oauth2-proxy`) that sets `X-Forwarded-User`, and start pergam with `TRUST_PROXY_USER=1` so authors come from that header (see [Identity](#identity)). Publish pergam's port only to the proxy, never directly, or anyone could send the header themselves.
+
+### Published image
+
+Every release is published as a multi-arch image (`linux/amd64`, `linux/arm64`) at `ghcr.io/diesilveira/pergam`, built from the repository's `Dockerfile`. Tags for release `2.0.0`: `2.0.0`, `2.0`, `2` and `latest`. Use the exact version in production, or `2` / `2.0` to follow minor and patch releases. The image carries the OCI labels `source`, `version`, `revision` and `licenses`.
+
+With compose, set `PERGAM_IMAGE` (in `.env` or the environment) and start without `--build`:
+
+```bash
+PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2.0.0 docker compose up -d     # pulls the image
+PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2.0.0 docker compose pull && docker compose up -d   # later: move to a newer image
+```
+
+Compose pulls an image it does not have; `--build` (and `make up`) builds from source and tags the result with that name instead. With `PERGAM_IMAGE` unset nothing changes: the service builds `pergam:latest` from the checkout.
+
+Without compose, run the image against any Postgres, with the same environment variables (see [Configuration](#configuration)). The server applies its migrations on start:
+
+```bash
+docker network create pergam
+docker run -d --name pergam-db --network pergam \
+  -e POSTGRES_DB=pergam -e POSTGRES_USER=pergam -e POSTGRES_PASSWORD=CHANGE_ME \
+  -v pergam_db:/var/lib/postgresql/data postgres:15-alpine
+docker run -d --name pergam --network pergam -p 1111:1111 \
+  -e DATABASE_URL=postgresql://pergam:CHANGE_ME@pergam-db:5432/pergam \
+  -e PUBLIC_URL=http://localhost:1111 \
+  ghcr.io/diesilveira/pergam:2.0.0
+curl http://localhost:1111/healthz   # → {"ok":true}
+```
+
+The container runs as uid 10001 and needs nothing else mounted.
+
+### Releasing
+
+The version lives in one place, `__version__` in `src/pergam/__init__.py`; the HTTP `Server` header (`pergam/<version> Python/…`) comes from it. To release: bump `__version__`, add the version to [CHANGELOG.md](CHANGELOG.md), merge, then push the tag `v<version>` (`v2.0.0`). The `release-image` workflow runs on that tag only: it fails unless the tag is `vMAJOR.MINOR.PATCH` and equals `v` + `__version__`, runs the test suite, then builds and pushes the image with the built-in `GITHUB_TOKEN`. It never runs on pull requests; the `docker-build` job in `test.yml` builds the image on every pull request without pushing it.
 
 ## Testing
 

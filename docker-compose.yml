@@ -16,7 +16,7 @@ services:
 
   pergam-local:
     build: .
-    image: pergam:latest
+    image: ${PERGAM_IMAGE:-pergam:latest}
     container_name: pergam-local
     restart: unless-stopped
     ports:

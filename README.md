@@ -96,6 +96,14 @@ curl -sS -X POST http://localhost:1111/pergam \
 
 You'll get a `view_url` back — open it in a browser. That's the whole loop. ✨
 
+Prefer not to build? Run the published multi-arch image (`linux/amd64`, `linux/arm64`) with the same compose file:
+
+```bash
+PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2 docker compose up -d
+```
+
+Tags are `2.0.0` (exact), `2.0`, `2` and `latest`. Pin `2.0.0` in production and upgrade on purpose. Without compose, [`docker run` works too](DOCS.md#published-image).
+
 ### ☁️ Hosted (zero setup, 1-year TTL)
 
 Drag any `.html` onto [pergam.dev](https://pergam.dev) and you get a public link. No account, no key. Same thing via the API:

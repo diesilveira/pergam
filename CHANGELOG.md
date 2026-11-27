@@ -52,6 +52,7 @@ All notable changes to the self-hosted server are recorded here. The format foll
 
 ### Changed
 
+- Each release is published as a multi-arch image (`linux/amd64`, `linux/arm64`) at `ghcr.io/diesilveira/pergam`, tagged `<version>`, `<major>.<minor>`, `<major>` and `latest`. The bundled compose file runs it when `PERGAM_IMAGE` is set, and still builds from source when it is not. See [Published image](DOCS.md#published-image).
 - `GET /{id}/view` and `GET /{id}/v{n}/view` return the view page, with the document in a frame, and no longer the document itself. `/{id}/raw` and `/{id}/v{n}/raw` still return the posted bytes as `text/plain`.
 - The bundled compose service is now `pergam-local` (container `pergam-local`), and the database schema is created by migrations, not loaded from `db/schema.sql`.
 - The image is based on `python:3.14-slim`; `psycopg` is 3.3.
