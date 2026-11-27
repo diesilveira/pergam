@@ -167,7 +167,7 @@ def test_search_results_page_like_the_index(client: Client, db: psycopg.Connecti
     save_text(db, [(pid, 1, "<p>a needle here</p>" if i % 7 else "<p>only hay</p>") for i, pid in enumerate(ids)])
     rows = db.execute(
         "SELECT l.id FROM pergams_latest l LEFT JOIN pergam_meta m USING (id)"
-        " ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC"
+        " ORDER BY COALESCE(m.pinned AND NOT m.archived, false) DESC, l.created_at DESC, l.id DESC"
     ).fetchall()
     with_needle = {pid for i, pid in enumerate(ids) if i % 7}
     expected = [

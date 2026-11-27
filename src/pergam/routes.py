@@ -279,6 +279,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             "origin": result.origin.to_json() if result.origin else None,
             "view_url": self.public.view_url(pergam_id),
         }
+        if result.pin_refused:
+            body["pin_refused"] = result.pin_refused
         self._send_json(body, 201 if result.imported else 200)
 
     def do_GET(self) -> None:

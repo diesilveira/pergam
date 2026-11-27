@@ -6,7 +6,7 @@ import http.client
 import json
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg
@@ -47,7 +47,7 @@ def test_max_pinned_reads_the_environment(env: dict[str, str], expected: int) ->
     assert max_pinned(env) == expected
 
 
-@pytest.mark.parametrize("raw", ["twelve", "-1", "1.5"])
+@pytest.mark.parametrize("raw", ["twelve", "-1", "1.5", "+3", "３", "٣", "1_0", "0x3"])
 def test_max_pinned_rejects_bad_values(raw: str) -> None:
     with pytest.raises(ValueError, match="PERGAM_MAX_PINNED"):
         max_pinned({"PERGAM_MAX_PINNED": raw})
@@ -307,9 +307,45 @@ def test_import_over_the_cap_or_archived_arrives_unpinned(capped: tuple[Client, 
     for n in range(3):
         patch_meta(client, client.publish(title=f"Doc {n}")["id"], {"pinned": True})
 
-    assert client.post_json(export_doc("abc123ef", True), "/import").status == 201
-    assert client.post_json(export_doc("abc123ff", True, archived=True), "/import").status == 201
+    over_cap = client.post_json(export_doc("abc123ef", True), "/import")
+    archived_pin = client.post_json(export_doc("abc123ff", True, archived=True), "/import")
+    unpinned = client.post_json(export_doc("abc12300", False), "/import")
 
+    assert (over_cap.status, archived_pin.status) == (201, 201)
+    assert over_cap.json()["pin_refused"] == "3 pergams are already pinned, the most this server allows (3); unpin one first"
+    assert archived_pin.json()["pin_refused"] == "An archived pergam cannot be pinned; unarchive it first"
+    assert "pin_refused" not in unpinned.json()
     assert client.get("/api/pergams/abc123ef").json()["pinned"] is False
     archived = client.get("/api/pergams/abc123ff").json()
     assert (archived["archived"], archived["pinned"], archived["pinned_at"]) == (True, False, None)
+
+
+def test_a_row_left_archived_and_pinned_reads_as_not_pinned_everywhere(client: Client, db: psycopg.Connection) -> None:
+    old = client.publish(title="Old")["id"]
+    newer = client.publish(title="Newer")["id"]
+    db.execute(
+        "INSERT INTO pergam_meta (id, archived, pinned, pinned_at) VALUES (%s, true, true, now())", (old,)
+    )
+    db.execute("UPDATE pergams SET created_at = created_at - interval '1 day' WHERE id = %s", (old,))
+
+    rows = client.get("/api/pergams?archived=1").json()["pergams"]
+    page = client.get("/?archived=1").text
+
+    assert [row["id"] for row in rows] == [newer, old]
+    assert (rows[1]["pinned"], rows[1]["pinned_at"]) == (False, None)
+    assert client.get(f"/{old}/meta").json() == {"id": old, "tags": [], "archived": True, "pinned": False}
+    one = client.get(f"/api/pergams/{old}").json()
+    assert (one["pinned"], one["pinned_at"]) == (False, None)
+    assert client.get(f"/{old}/export").json()["meta"] == {"tags": [], "archived": True, "pinned": False, "pinned_at": None}
+    assert 'class="flag flag--pinned"' not in page and old not in cards(page)
+
+
+def test_an_imported_pin_time_is_never_later_than_the_import(client: Client) -> None:
+    ahead = (datetime.now(timezone.utc) + timedelta(minutes=4)).isoformat()
+
+    resp = client.post_json(export_doc("abc123ef", True, pinned_at=ahead), "/import")
+    pinned_at = datetime.fromisoformat(client.get("/api/pergams/abc123ef").json()["pinned_at"])
+
+    assert resp.status == 201
+    assert "pin_refused" not in resp.json()
+    assert pinned_at <= datetime.now(timezone.utc)

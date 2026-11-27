@@ -15,6 +15,14 @@ tag is seen, so an unclosed one is replayed as visible content instead of
 swallowing the rest. A block element inside `pre` ends it, so an unclosed `pre`
 does not swallow the following paragraphs.
 
+Elements the author hid are dropped with their content: the `hidden` attribute,
+`aria-hidden="true"`, an inline `display: none` or `visibility: hidden`, and the
+option lists of `select` and `datalist`. Such a region ends at its end tag, at an
+end tag it does not contain (an omitted end tag), or, for elements whose end tag
+is optional (`p`, `li`, `option`, ...), at the start tag that would close it; a
+hidden void element hides nothing else, and one never closed hides the rest, as
+in a browser. Stylesheets and classes are not evaluated.
+
 Bump `EXTRACTOR_VERSION` whenever the output changes: stored text from an older
 version is re-extracted by the backfill.
 """
@@ -25,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
-EXTRACTOR_VERSION = 2
+EXTRACTOR_VERSION = 3
 
 RAW_SKIPPED = frozenset({"script", "style", "title", "iframe", "noembed", "noframes"})
 DEFERRED = frozenset({"noscript", "template"})
@@ -41,6 +49,23 @@ BLOCKS = frozenset(
 CELLS = frozenset({"td", "th"})
 ENDS_PRE = (BLOCKS - {"br"}) | set(HEADINGS) | {"ul", "ol", "li", "table", "pre"}
 
+VOID = frozenset(
+    {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+)
+OPTION_LISTS = frozenset({"select", "datalist"})
+CLOSED_BY = {
+    "p": (BLOCKS - {"br"}) | set(HEADINGS) | {"ul", "ol", "li", "table", "pre", "p", "dl", "menu"},
+    "li": frozenset({"li"}),
+    "dt": frozenset({"dt", "dd"}),
+    "dd": frozenset({"dt", "dd"}),
+    "option": frozenset({"option", "optgroup"}),
+    "optgroup": frozenset({"optgroup"}),
+    "tr": frozenset({"tr"}),
+    "td": frozenset({"td", "th", "tr"}),
+    "th": frozenset({"td", "th", "tr"}),
+}
+_HIDING_STYLE = re.compile(r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\s*(?:!\s*important\s*)?(?:;|$)", re.I)
+
 _WHITESPACE = re.compile(r"\s+")
 _BLOCK_START = re.compile(r"^(?:[#>*+\-]|`{3}|~{3}|(\d+)([.)])(?=\s|$))")
 
@@ -53,6 +78,41 @@ def escape_block_start(text: str) -> str:
     if match.group(1):
         return f"{match.group(1)}\\{match.group(2)}{text[match.end():]}"
     return "\\" + text
+
+
+def hides(tag: str, attrs: list[tuple[str, str | None]]) -> bool:
+    """Whether this start tag hides itself and its content from a reader."""
+    if tag in OPTION_LISTS:
+        return True
+    values = {name: (value or "") for name, value in attrs}
+    return (
+        "hidden" in values
+        or values.get("aria-hidden", "").strip().lower() == "true"
+        or bool(_HIDING_STYLE.search(values.get("style", "")))
+    )
+
+
+@dataclass
+class _Hidden:
+    """An open hidden element and the elements opened inside it, whose events are dropped."""
+
+    tag: str
+    inner: list[str] = field(default_factory=list)
+
+    def starts(self, tag: str) -> bool:
+        """Take a start tag inside the region; False when it closes the region instead (an omitted end tag)."""
+        if not self.inner and tag in CLOSED_BY.get(self.tag, ()):
+            return False
+        if tag not in VOID:
+            self.inner.append(tag)
+        return True
+
+    def ends(self, tag: str) -> bool:
+        """Take an end tag; False when the region is over and the tag still has to be handled outside it."""
+        if tag in self.inner:
+            del self.inner[len(self.inner) - 1 - self.inner[::-1].index(tag):]
+            return True
+        return False
 
 
 def collapse(text: str) -> str:
@@ -145,6 +205,7 @@ class _TextBuilder(HTMLParser):
         self.pre_depth = 0
         self.table: _Table | None = None
         self.table_depth = 0
+        self.hidden: _Hidden | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if self.deferred is not None:
@@ -168,6 +229,13 @@ class _TextBuilder(HTMLParser):
         self.in_head = False
         if tag != "html":
             self.body_started = True
+        if self.hidden is not None:
+            if self.hidden.starts(tag):
+                return
+            self.hidden = None
+        if tag not in VOID and hides(tag, attrs):
+            self.hidden = _Hidden(tag)
+            return
         self._start(tag)
 
     def handle_endtag(self, tag: str) -> None:
@@ -187,6 +255,13 @@ class _TextBuilder(HTMLParser):
         if tag == "head":
             self.in_head = False
             return
+        if self.hidden is not None:
+            if self.hidden.ends(tag):
+                return
+            closes_region = tag == self.hidden.tag
+            self.hidden = None
+            if closes_region:
+                return
         if not self.in_head:
             self._end(tag)
 
@@ -194,7 +269,7 @@ class _TextBuilder(HTMLParser):
         if self.deferred is not None:
             self.deferred.events.append(("data", (data,)))
             return
-        if self.raw_depth:
+        if self.raw_depth or self.hidden is not None:
             return
         if self.in_head:
             if not data.strip():

@@ -189,7 +189,7 @@ def test_paging_visits_every_pergam_once_in_order(client: Client, db: psycopg.Co
     flags = seed(db)
     rows = db.execute(
         "SELECT l.id, l.type FROM pergams_latest l LEFT JOIN pergam_meta m USING (id)"
-        " ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC"
+        " ORDER BY COALESCE(m.pinned AND NOT m.archived, false) DESC, l.created_at DESC, l.id DESC"
     ).fetchall()
     assert db.execute("SELECT count(*) FROM pergams_latest WHERE id NOT IN (SELECT id FROM pergam_meta)").fetchone()[0] > 0
     type_filter = "plan" if "type=plan" in query else None

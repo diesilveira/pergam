@@ -55,6 +55,7 @@ class ImportResult:
     imported: list[int]
     skipped: list[int]
     origin: Origin | None
+    pin_refused: str | None = None
 
 
 class ImportConflict(Exception):
@@ -140,11 +141,13 @@ class FeedEntry:
 
 
 PAGE_SIZE = 100
+PINNED_SQL = "(COALESCE(m.pinned, false) AND NOT COALESCE(m.archived, false))"
+"""Whether a pergam is pinned: an archived one never is, whatever a row written by an older build says."""
 LISTED = "FROM pergams_latest l LEFT JOIN pergam_meta m ON m.id = l.id"
 SEARCHED = LISTED + " LEFT JOIN pergam_text t ON t.id = l.id AND t.version = l.version"
 ORDERS = {
     "recent": (
-        "COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC",
+        f"{PINNED_SQL} DESC, l.created_at DESC, l.id DESC",
         "p.pinned DESC, p.created_at DESC, p.id DESC",
     ),
     "title": ("lower(l.title), l.id", "p.title_key, p.id"),
@@ -300,7 +303,8 @@ def page_query(source: str, condition: str, sort: str, headline: str, limit: str
         FROM (
             SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
                    COALESCE(m.tags, '{{}}') AS tags, COALESCE(m.archived, false) AS archived,
-                   COALESCE(m.pinned, false) AS pinned, lower(l.title) AS title_key, m.pinned_at
+                   {PINNED_SQL} AS pinned, lower(l.title) AS title_key,
+                   CASE WHEN {PINNED_SQL} THEN m.pinned_at END AS pinned_at
             {source} {condition} ORDER BY {order} LIMIT {limit}
         ) p
         LEFT JOIN pergam_text t ON t.id = p.id AND t.version = p.version
@@ -361,9 +365,9 @@ class PergamStore:
         """Metadata of an id, defaults when it has no row; None when the id has no versions."""
         with self.pool.connection() as conn:
             row = conn.execute(
-                """
-                SELECT COALESCE(m.tags, '{}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
-                       m.origin_url, m.origin_id, m.pinned_at
+                f"""
+                SELECT COALESCE(m.tags, '{{}}'), COALESCE(m.archived, false), {PINNED_SQL},
+                       m.origin_url, m.origin_id, CASE WHEN {PINNED_SQL} THEN m.pinned_at END
                 FROM (SELECT DISTINCT id FROM pergams WHERE id = %(id)s) p
                 LEFT JOIN pergam_meta m ON m.id = p.id
                 """,
@@ -467,7 +471,9 @@ class PergamStore:
         the same content are skipped, and when any present version differs, or the
         result would leave a version number missing, `ImportConflict` is raised
         before anything is written. Tags are merged as on publish; `archived`,
-        `pinned` and `origin` are set only when the id is new to this server.
+        `pinned` and `origin` are set only when the id is new to this server. A
+        pin that does not fit (archived, or past the cap) is dropped and named in
+        `pin_refused`; `pinned_at` is never later than the import.
 
         A trusted `editor` follows the rules of a publish: an id already here needs
         its owner or a collaborator, and every version written must be by `editor`
@@ -499,30 +505,38 @@ class PergamStore:
                     [(doc.id, v.version, v.note) for v in missing if v.note],
                 )
             save_text(conn, [(doc.id, v.version, v.html) for v in missing])
+            pin_refused = None
             if present:
                 if doc.tags:
                     add_tags(conn, doc.id, doc.tags)
                 origin = self._origin(conn, doc.id)
             else:
                 origin = doc.origin
-                pinned = doc.pinned and not doc.archived and self._has_pin_room(conn, doc.id)
+                pin_refused = self._pin_refused(conn, doc) if doc.pinned else None
+                pinned = doc.pinned and pin_refused is None
                 conn.execute(
                     "INSERT INTO pergam_meta (id, tags, archived, pinned, pinned_at, origin_url, origin_id)"
-                    " VALUES (%s, %s, %s, %s, CASE WHEN %s THEN COALESCE(%s::timestamptz, clock_timestamp()) END, %s, %s)"
+                    " VALUES (%s, %s, %s, %s, CASE WHEN %s THEN LEAST(%s::timestamptz, clock_timestamp()) END, %s, %s)"
                     " ON CONFLICT (id) DO UPDATE SET tags = EXCLUDED.tags,"
                     " archived = EXCLUDED.archived, pinned = EXCLUDED.pinned, pinned_at = EXCLUDED.pinned_at,"
                     " origin_url = EXCLUDED.origin_url, origin_id = EXCLUDED.origin_id",
                     (doc.id, doc.tags, doc.archived, pinned, pinned, doc.pinned_at, origin and origin.url, origin and origin.id),
                 )
-        return ImportResult([v.version for v in missing], sorted(set(present) & {v.version for v in doc.versions}), origin)
+        skipped = sorted(set(present) & {v.version for v in doc.versions})
+        return ImportResult([v.version for v in missing], skipped, origin, pin_refused)
 
-    def _has_pin_room(self, conn: psycopg.Connection, pergam_id: str) -> bool:
-        """Whether an imported pin fits under the cap; an import over it arrives unpinned rather than failing."""
+    def _pin_refused(self, conn: psycopg.Connection, doc: ImportDocument) -> str | None:
+        """Why an imported pin is not kept, or None when it fits under the cap.
+
+        An import refused a pin arrives unpinned rather than failing; the response says why.
+        """
+        if doc.archived:
+            return ARCHIVED_REASON
         try:
-            claim_pin(conn, pergam_id, self.max_pinned)
-        except PinRefused:
-            return False
-        return True
+            claim_pin(conn, doc.id, self.max_pinned)
+        except PinRefused as exc:
+            return str(exc)
+        return None
 
     @staticmethod
     def _origin(conn: psycopg.Connection, pergam_id: str) -> Origin | None:
@@ -583,7 +597,7 @@ class PergamStore:
             page_where += " AND (lower(l.title), l.id) > (%(c_title)s, %(c_id)s)"
             params.update(c_title=filters.cursor.title_key, c_id=filters.cursor.id)
         elif isinstance(filters.cursor, IndexCursor):
-            page_where += " AND (COALESCE(m.pinned, false), l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
+            page_where += f" AND ({PINNED_SQL}, l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
             params.update(c_pinned=filters.cursor.pinned, c_at=filters.cursor.created_at, c_id=filters.cursor.id)
         order = ORDERS[filters.sort][0]
         source = SEARCHED if filters.q else LISTED
@@ -592,7 +606,7 @@ class PergamStore:
         def page_of(condition: str, limit: str, sort: str = filters.sort) -> str:
             return page_query(source, condition, sort, headline, limit)
 
-        pinned_where = f"{where} AND m.pinned AND NOT m.archived"
+        pinned_where = f"{where} AND {PINNED_SQL}"
         with self.pool.connection() as conn:
             rows = conn.execute(page_of(page_where, "%(limit)s"), params).fetchall()
             pinned: list[IndexRow] = []

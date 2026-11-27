@@ -127,3 +127,42 @@ def test_leading_markdown_markers_are_escaped(html: str, expected: str) -> None:
 
 def test_plain_rendering_is_not_escaped() -> None:
     assert extract_text("<p># tag</p>").plain == "# tag"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ("<p>a</p><div hidden>secret <b>x</b></div><p>b</p>", "a\nb"),
+        ('<p>a</p><div hidden="until-found">secret</div><p>b</p>', "a\nb"),
+        ('<p>a <span aria-hidden="true">icon</span> b</p>', "a b"),
+        ('<p>a <span aria-hidden="false">shown</span></p>', "a shown"),
+        ('<p style="display: none !important">gone</p><p style="color:red">kept</p>', "kept"),
+        ('<p style="color:red; VISIBILITY:hidden">gone</p><p>kept</p>', "kept"),
+        ('<p style="display:none-ish">kept</p>', "kept"),
+        ("<p>Pick <select><option>one<option>two</select> now</p>", "Pick now"),
+        ("<input list=l><datalist id=l><option value=a>alpha</datalist><p>after</p>", "after"),
+    ],
+    ids=["hidden", "until-found", "aria-hidden", "aria-visible", "display-none", "visibility", "not-none", "select", "datalist"],
+)
+def test_hidden_content_is_not_extracted(html: str, expected: str) -> None:
+    assert extract_text(html).plain == expected
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ("<p>a <img hidden src=x> b</p><p>c</p>", "a b\nc"),
+        ("<p hidden>gone<p>visible", "visible"),
+        ("<ul><li hidden>gone<li>shown</ul>", "shown"),
+        ("<div><p hidden>gone</div><p>after</p>", "after"),
+        ("<div hidden><div>x</div>still hidden</div><p>after</p>", "after"),
+        ("<p>before</p><div hidden>never closed<p>rest", "before"),
+    ],
+    ids=["void", "omitted-p-end", "omitted-li-end", "unmatched-end", "nested-same-tag", "never-closed"],
+)
+def test_a_hidden_region_ends_where_a_browser_ends_it(html: str, expected: str) -> None:
+    assert extract_text(html).plain == expected
+
+
+def test_hidden_content_stays_out_of_markdown_too() -> None:
+    assert extract_markdown('<h1>Title</h1><ul><li>one</li><li aria-hidden="true">two</li></ul>') == "# Title\n\n- one\n"

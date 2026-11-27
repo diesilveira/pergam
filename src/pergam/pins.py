@@ -18,16 +18,13 @@ class PinRefused(Exception):
 
 
 def max_pinned(env: Mapping[str, str]) -> int:
+    """The cap, written as plain ASCII digits (no sign, no other digit scripts); blank means the default."""
     raw = env.get("PERGAM_MAX_PINNED", "").strip()
     if not raw:
         return DEFAULT_MAX_PINNED
-    try:
-        limit = int(raw)
-    except ValueError:
-        raise ValueError(f"PERGAM_MAX_PINNED must be a whole number, 0 or more, got {raw!r}") from None
-    if limit < 0:
-        raise ValueError(f"PERGAM_MAX_PINNED must be a whole number, 0 or more, got {raw!r}")
-    return limit
+    if not (raw.isascii() and raw.isdigit()):
+        raise ValueError(f"PERGAM_MAX_PINNED must be a whole number, 0 or more, in plain digits, got {raw!r}")
+    return int(raw)
 
 
 def over_cap_reason(pinned: int, limit: int) -> str:
