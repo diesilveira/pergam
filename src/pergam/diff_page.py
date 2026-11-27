@@ -103,10 +103,9 @@ def _section(index: int, section: Section) -> str:
 
 
 def _toc(sections: list[Section] | TooLargeToDiff) -> str:
-    if isinstance(sections, TooLargeToDiff):
-        return '<p class="toc__empty">Not compared, so no sections.</p>'
-    if not sections:
-        return '<p class="toc__empty">Neither version has text.</p>'
+    """The section list, or "" when there is none to show: too large to compare, or no text on either side."""
+    if isinstance(sections, TooLargeToDiff) or not sections:
+        return ""
     items = "".join(
         f'<li><a class="toc__link{" toc__link--same" if not section.changed else ""}" href="#{section_id(i)}">'
         f'<span class="toc__name">{_heading(section)}</span><span class="toc__count">{_counts(section)}</span></a></li>'
@@ -163,6 +162,8 @@ def _picker(pergam_id: str, side: str, chosen: int, other: int, versions: list[V
 
 def _sections_menu(toc: str) -> str:
     """The section list, collapsed behind a "Sections" button in the bar, so the changes keep the page."""
+    if not toc:
+        return ""
     return (
         '<details class="dropdown toc"><summary class="btn dropdown__toggle">'
         f'{icons.SECTIONS}<span class="toc__label">Sections</span></summary>'

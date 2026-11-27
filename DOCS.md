@@ -173,7 +173,7 @@ Findings come in document order, at most 500 (`truncated` says when there were m
 - Changed sections are open, with additions (`+`, green) and removals (`−`, red); a replaced line is shown next to its replacement with the changed words marked. Runs of unchanged lines are cut to two lines around each change. Unchanged sections are collapsed.
 - The bar has a breadcrumb (`Index / title / Changes`), two version pickers, a **Sections** button, the summary (`+12 −6 lines · 3 of 5 sections changed`) and a button to open the newer version. Each picker is a dropdown of links to the same comparison with that side set to another version (`/{id}/diff/v{k}..v{b}` or `/{id}/diff/v{a}..v{k}`), so choosing a pair never means editing the URL and works without script.
 - The bar keeps one row at every width, with the search collapsed to its icon until focused. At 900 px and below it holds the logo, `Changes`, the pickers, the search, **Sections** and the theme toggle; the summary moves above the sections, and the two version cards there open either version.
-- **Sections** opens a list of every section with its additions and removals (`+2 −2`, `+12 new`, `−3 removed`, `unchanged`), each linking to it (`#sec-3`). It starts collapsed and is a `<details>` dropdown, so it works without script; with script choosing a section closes the list and opens that section when it is collapsed, also when it is followed again after the section was closed.
+- **Sections** opens a list of every section with its additions and removals (`+2 −2`, `+12 new`, `−3 removed`, `unchanged`), each linking to it (`#sec-3`). It starts collapsed and is a `<details>` dropdown, so it works without script; with script choosing a section closes the list, opens that section when it is collapsed (also when it is followed again after the section was closed) and moves focus to it. Without sections to list (too large to compare, or no text on either side) there is no Sections button. The pickers read `v1` and are named "v1, older version" and "v3, newer version".
 - The changes sit in one centred column at most 860 px wide.
 - Above the sections, both versions with their [notes](#version-notes), each linking to its view page.
 
@@ -183,7 +183,7 @@ The work is bounded, so a diff answers in well under a second whatever the input
 
 - Text both versions share at the start and at the end is matched without cost. Lines (and words) that occur exactly once in each version anchor the comparison, as in patience diff, so a large document with scattered edits is compared gap by gap. Within a gap, lines or words that repeat more than 8 times on the newer side never anchor a match (they still extend one).
 - Matching is metered. A replaced line whose word comparison would overrun its share, or any once the request has spent its total, is marked as a whole line instead of word by word.
-- A version over 2 MB of HTML or 20,000 lines of text, or line matching that overruns its budget, gets a **too large to diff** page (still `200`, same bar, pickers and Sections list, which then says nothing was compared) with links to both versions' `/text`.
+- A version over 2 MB of HTML or 20,000 lines of text, or line matching that overruns its budget, gets a **too large to diff** page (still `200`, same bar and pickers, no Sections button) with links to both versions' `/text`.
 
 ## Export and import
 

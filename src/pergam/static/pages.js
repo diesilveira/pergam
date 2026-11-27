@@ -306,17 +306,24 @@
       try {
         id = decodeURIComponent(hash.slice(1));
       } catch (error) {
-        return;
+        return null;
       }
       const target = id && document.getElementById(id);
       if (target instanceof HTMLDetailsElement) target.open = true;
+      return target || null;
+    };
+    const focusOn = (target) => {
+      const spot = target instanceof HTMLDetailsElement ? target.querySelector('summary') : target;
+      if (!spot.matches('summary')) spot.tabIndex = -1;
+      spot.focus({ preventScroll: true });
     };
     addEventListener('hashchange', () => open(location.hash));
     document.querySelectorAll('.toc a[href^="#"]').forEach((link) => {
       link.addEventListener('click', () => {
         const menu = link.closest('details');
         if (menu) menu.open = false;
-        open(link.getAttribute('href'));
+        const target = open(link.getAttribute('href'));
+        if (target) requestAnimationFrame(() => focusOn(target));
       });
     });
     open(location.hash);

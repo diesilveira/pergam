@@ -26,7 +26,6 @@
   .toc__link:hover { background:var(--raised); color:var(--text); }
   .toc__name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .toc__count { margin-left:auto; font-family:var(--mono); font-size:.7rem; color:var(--muted); white-space:nowrap; }
-  .toc__empty { margin:.2rem .5rem; color:var(--muted); font-size:.84rem; }
 
   .dmain { min-width:0; max-width:860px; margin:0 auto; padding:1.6rem 1.4rem 3rem; }
   .compare { display:flex; align-items:stretch; gap:.6rem; flex-wrap:wrap; margin-bottom:1rem; }

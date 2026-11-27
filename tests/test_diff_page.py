@@ -85,7 +85,7 @@ def test_too_large_answer_keeps_the_layout(client: Client) -> None:
     page = client.get(f"/{pid}/diff/v1..v2").text
 
     assert '<span class="bar__summary">Not compared.</span>' in page
-    assert '<p class="toc__empty">Not compared, so no sections.</p>' in page
+    assert '<details class="dropdown toc">' not in page and ">Sections<" not in page
     assert 'picker--old' in page and 'picker--new' in page
     assert re.search(r'<main class="dmain">.*<section class="too-large" role="status">', page, re.S)
 
@@ -287,6 +287,9 @@ def test_diff_page_fits_a_phone(page_at, client: Client, scheme: str, too_large:
 
     assert page.locator(".picker--new .dropdown__menu").is_visible()
     assert page.evaluate("document.documentElement.scrollWidth") <= 360
+    if too_large:
+        assert page.locator("details.toc").count() == 0
+        return
     open_sections(page)
     menu = page.locator(".toc__menu").bounding_box()
     assert menu["x"] >= 0 and menu["x"] + menu["width"] <= 360
@@ -313,3 +316,41 @@ def test_long_section_names_end_in_an_ellipsis_in_the_side_list(page_at, client:
 
     assert shape == {"cut": True, "ellipsis": True, "inside": True, "scrolls": False}
     assert page.locator(".toc__link", has_text="An extremely").locator(".toc__count").is_visible()
+
+
+@pytest.mark.parametrize(("section", "focused"), [("Costs", "sec-2"), ("Plan", "summary")])
+def test_choosing_a_section_moves_focus_to_it(page_at, client: Client, section: str, focused: str) -> None:
+    pid = publish_three(client)
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2")
+
+    page.locator("details.toc > summary").focus()
+    page.keyboard.press("Enter")
+    page.locator(".toc__menu").get_by_role("link", name=re.compile(f"^{section}")).focus()
+    page.keyboard.press("Enter")
+
+    page.wait_for_function("document.activeElement !== document.body")
+    where = page.evaluate("[document.activeElement.id, document.activeElement.tagName.toLowerCase(), "
+                          "document.activeElement.closest('.sec') && document.activeElement.closest('.sec').id]")
+    assert focused in where[:2]
+    assert where[2] == ("sec-2" if section == "Costs" else "sec-1")
+    assert page.locator(".toc__menu").is_hidden()
+
+
+def test_no_text_pages_have_no_sections_button(client: Client) -> None:
+    pid = client.publish(html="<img alt=''>")["id"]
+    client.publish(id=pid, html="<img alt=''>")
+
+    page = client.get(f"/{pid}/diff/v1..v2").text
+
+    assert '<p class="empty">Neither version has text.</p>' in page
+    assert '<details class="dropdown toc">' not in page
+
+
+def test_picker_names_start_with_their_visible_text(client: Client) -> None:
+    pid = publish_three(client)
+
+    page = client.get(f"/{pid}/diff/v1..v2").text
+
+    assert re.findall(r'<summary class="ver dropdown__toggle"([^>]*)>(v\d+)<span class="sr-only">, (\w+) version</span>', page) == [
+        ("", "v1", "older"), ("", "v2", "newer"),
+    ]
