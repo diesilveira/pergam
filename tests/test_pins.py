@@ -340,12 +340,14 @@ def test_a_row_left_archived_and_pinned_reads_as_not_pinned_everywhere(client: C
     assert 'class="flag flag--pinned"' not in page and old not in cards(page)
 
 
-def test_an_imported_pin_time_is_never_later_than_the_import(client: Client) -> None:
+def test_an_imported_pin_time_is_never_later_than_the_import(client: Client, db: psycopg.Connection) -> None:
+    """Bounded by the database clock read after the import, which stamped it; the host clock may differ."""
     ahead = (datetime.now(timezone.utc) + timedelta(minutes=4)).isoformat()
 
     resp = client.post_json(export_doc("abc123ef", True, pinned_at=ahead), "/import")
+    after_import = db.execute("SELECT clock_timestamp()").fetchone()[0]
     pinned_at = datetime.fromisoformat(client.get("/api/pergams/abc123ef").json()["pinned_at"])
 
     assert resp.status == 201
     assert "pin_refused" not in resp.json()
-    assert pinned_at <= datetime.now(timezone.utc)
+    assert pinned_at <= after_import
