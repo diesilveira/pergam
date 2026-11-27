@@ -157,7 +157,6 @@
     const flags = Array.from(document.querySelectorAll('[data-meta-flag]'));
     const pins = flags.filter((button) => button.dataset.metaFlag === 'pinned');
     const tagLists = Array.from(document.querySelectorAll('[data-tags]'));
-    const barTags = document.querySelector('.bar__tags');
     const tagEdits = Array.from(document.querySelectorAll('[data-tags-edit]'));
     const tagForm = document.querySelector('[data-tags-form]');
     const tagInput = tagForm && tagForm.querySelector('input');
@@ -248,20 +247,12 @@
     });
 
     if (tagEdits.length && tagForm && tagInput) {
-      const barEdit = tagEdits.find((button) => !button.closest('details'));
-      let openedBy = barEdit;
+      let openedBy = tagEdits[0];
       const editing = (on) => {
         tagForm.hidden = !on;
-        if (barEdit) barEdit.hidden = on;
-        if (barTags) barTags.hidden = on;
-        if (on) {
-          tagInput.focus();
-          return;
-        }
-        const menu = openedBy && openedBy.closest('details');
-        (menu ? menu.querySelector('summary') : openedBy).focus();
+        if (on) tagInput.focus();
+        else if (!closeMenuOf(openedBy)) openedBy.focus();
       };
-      if (barEdit) barEdit.hidden = false;
       const reread = async () => {
         try {
           const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
