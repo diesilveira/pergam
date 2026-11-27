@@ -11,6 +11,7 @@ from __future__ import annotations
 import html as html_lib
 from dataclasses import dataclass
 
+from pergam import icons
 from pergam.search import MAX_QUERY_CHARS
 from pergam.static_files import SHORTCUTS_SCRIPT_PATH, STYLESHEET_PATH, THEME_SCRIPT_PATH, hashed_url
 
@@ -22,8 +23,8 @@ HEAD_ASSETS = (
 )
 
 _THEME_TOGGLE = (
-    '<button type="button" class="icon-btn" data-theme-toggle hidden aria-label="Switch theme">'
-    '<span aria-hidden="true">◐</span></button>'
+    '<button type="button" class="icon-btn" data-theme-toggle data-theme-mode="system" hidden aria-label="Switch theme">'
+    f"{icons.THEME_SYSTEM}{icons.THEME_LIGHT}{icons.THEME_DARK}</button>"
 )
 
 
@@ -49,7 +50,7 @@ class SearchBox:
         variant += " topbar__search--collapsed" if self.collapsed else ""
         return (
             f'<form class="topbar__search{variant}" action="/" method="get" role="search">'
-            '<label class="topbar__search-icon" for="topbar-search" aria-hidden="true">⌕</label>'
+            f'<label class="topbar__search-icon" for="topbar-search" aria-hidden="true">{icons.SEARCH}</label>'
             f'<input class="topbar__search-input" id="topbar-search" type="search" name="q" value="{esc(self.query)}"'
             ' placeholder="Search title and text" aria-label="Search title and text"'
             f' maxlength="{MAX_QUERY_CHARS}" autocomplete="off" data-search>'

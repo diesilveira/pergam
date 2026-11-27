@@ -235,3 +235,8 @@ a.tag:hover { color: var(--accent); border-color: var(--accent); }
 .btn:disabled { cursor: progress; opacity: .7; }
 .btn[aria-disabled="true"] { cursor: not-allowed; opacity: .55; }
 .icon { flex: 0 0 auto; display: block; }
+/* Theme toggle: one inline icon per mode (pergam.icons), the current one shown. */
+[data-theme-toggle] .icon { display: none; }
+[data-theme-toggle][data-theme-mode="system"] .icon--theme-system,
+[data-theme-toggle][data-theme-mode="light"] .icon--theme-light,
+[data-theme-toggle][data-theme-mode="dark"] .icon--theme-dark { display: block; }

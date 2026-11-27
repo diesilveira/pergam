@@ -4,13 +4,13 @@
  * The choice cycles system -> light -> dark -> system; "system" is no stored value
  * and no data-theme, so the colour scheme of the OS applies (see pergam.css).
  * Any element with a data-theme-toggle attribute cycles it; it starts hidden and
- * is shown here, so pages without script never show a dead button. Other open
+ * is shown here, so pages without script never show a dead button. Its
+ * data-theme-mode names the current mode, and pergam.css shows that mode's icon. Other open
  * tabs follow a change through the storage event.
  */
 (() => {
   const KEY = 'pergam-theme';
   const ORDER = ['system', 'light', 'dark'];
-  const GLYPHS = { system: '◐', light: '☀', dark: '☾' };
   const root = document.documentElement;
 
   const remembered = () => {
@@ -44,8 +44,6 @@
       button.dataset.themeMode = mode;
       button.setAttribute('aria-label', text);
       button.title = text;
-      const glyph = button.querySelector('[aria-hidden]');
-      if (glyph) glyph.textContent = GLYPHS[mode];
     });
   };
 
