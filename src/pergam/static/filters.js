@@ -13,7 +13,8 @@
  *   updates every count and the apply button in place; values with no result are
  *   dimmed and cannot be ticked, unless already ticked.
  * - Apply navigates once, replacing the dialog's history entry, to the canonical URL
- *   the form describes (values sorted within each key, as the server's links are);
+ *   the form describes (values sorted by code point within each key, as the server's
+ *   links are);
  *   the new page then focuses the "N of M" summary and says it. Enter in a find
  *   field does not apply.
  * - Long lists expand in place; a find field filters a long author or tag list, and
@@ -63,6 +64,16 @@
   let timer = null;
   let pending = null;
 
+  const byCodePoint = (a, b) => {
+    const left = Array.from(a);
+    const right = Array.from(b);
+    for (let i = 0; i < Math.min(left.length, right.length); i += 1) {
+      const difference = left[i].codePointAt(0) - right[i].codePointAt(0);
+      if (difference) return difference;
+    }
+    return left.length - right.length;
+  };
+
   const query = () => {
     const values = new Map();
     for (const [key, value] of new FormData(form)) {
@@ -72,7 +83,7 @@
     }
     const pairs = [];
     values.forEach((list, key) => {
-      if (['type', 'author', 'tag'].includes(key)) list.sort();
+      if (['type', 'author', 'tag'].includes(key)) list.sort(byCodePoint);
       list.forEach((value) => pairs.push([key, value]));
     });
     return new URLSearchParams(pairs).toString();

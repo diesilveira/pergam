@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from urllib.parse import urlencode
 
 import pytest
 
@@ -413,3 +414,27 @@ def test_without_script_a_value_with_no_result_can_still_be_ticked(browser, site
 
     assert page.locator("input[name=type][value=informe]").is_checked()
     context.close()
+
+
+def test_tags_outside_the_basic_plane_sort_like_the_server(browser, client: Client) -> None:
+    """JavaScript compares UTF-16 code units, Python code points; the dialog must give the server's URL."""
+    astral, wide_z = "\U0001d538x", "ｚx"
+    client.publish(title="A", tags=[astral])
+    client.publish(title="B", tags=[wide_z])
+    base = f"http://127.0.0.1:{client.port}"
+    context, page = open_page(browser)
+    page.goto(base + "/")
+    open_dialog(page)
+
+    page.locator(".pill", has_text=astral).click()
+    page.locator(".pill", has_text=wide_z).click()
+    wait_for_label(page, "Show 2 pergams")
+    page.locator("[data-filters-apply]").click()
+    page.wait_for_url(re.compile(r"\?tag="))
+
+    server = client.get("/?" + urlencode([("tag", astral), ("tag", wide_z)])).text
+    expected = re.search(r'href="/filters\?([^"]+)"', server).group(1).replace("&amp;", "&")
+    assert page.url == f"{base}/?{expected}"
+    assert expected.index("%EF%BD%9Ax") < expected.index("%F0%9D%94%B8x")
+    context.close()
+

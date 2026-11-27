@@ -281,7 +281,7 @@ The Filters button opens one dialog with four sections: Type, Author, Tags (each
 - **Phone**: at 600 px and below the dialog fills the screen and slides up, with 40 px chips, one column of authors and 44 px buttons.
 - **Without script** the Filters button (and "Edit filters", "+N more") is a link to `/filters` with the same query: a page with the same form, every value shown, counts for the current URL, "Show results" (a GET form to `/`) and "Cancel" back to the list. The dialog, the live counts, folding, find fields and dimmed values need script; the page never marks a value unavailable, since nothing there could stop it being ticked.
 
-URLs list the keys in the order the form submits them and the values of each key sorted, so one selection has one URL whether it comes from the dialog, a chip or a link: `/?type=plan&type=reporte&author=ana%40example.com&tag=infra&state=archived&q=roadmap&sort=title`. Every older single-value URL works unchanged. A filter takes at most 50 values (**400** above that); values are bound as SQL parameters, never spliced into a query.
+URLs list the keys in the order the form submits them and the values of each key sorted by code point, so one selection has one URL whether it comes from the dialog, a chip or a link: `/?type=plan&type=reporte&author=ana%40example.com&tag=infra&state=archived&q=roadmap&sort=title`. Every older single-value URL works unchanged. A filter takes at most 50 values (**400** above that); values are bound as SQL parameters, never spliced into a query.
 
 ## Pages and theme
 
