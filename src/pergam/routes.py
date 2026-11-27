@@ -639,10 +639,12 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     def _redirect_archived(self, raw_query: str) -> None:
         """`/?archived=1` is now `/?state=all` (and `archived=0` the default): a permanent redirect keeps old links.
 
-        An explicit `state` wins; every other parameter is kept, in its order.
+        An explicit `state` wins; every other parameter is kept, in its order. Like the
+        old code, only the first non-blank `archived` counts (`?archived=0&archived=1` stays active).
         """
         pairs = parse_qsl(raw_query, keep_blank_values=True)
-        wants_all = any(key == "archived" and legacy_archived(value) for key, value in pairs)
+        first = next((value for key, value in pairs if key == "archived" and value), None)
+        wants_all = legacy_archived(first)
         kept = [(key, value) for key, value in pairs if key != "archived"]
         if wants_all and not any(key == "state" for key, _ in kept):
             kept.append(("state", ALL))
