@@ -19,7 +19,7 @@
           background:var(--surface); border-right:1px solid var(--border); min-height:calc(100vh - 3.4rem); }
   .toc__title { margin:.2rem .5rem .5rem; font-size:.68rem; font-weight:600; text-transform:uppercase;
                  letter-spacing:.09em; color:var(--muted); }
-  .toc__list { list-style:none; margin:0; padding:0; display:grid; gap:.1rem; }
+  .toc__list { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:minmax(0, 1fr); gap:.1rem; }
   .toc__link { display:flex; gap:.5rem; align-items:baseline; padding:.3rem .5rem; border-radius:7px;
                 font-size:.84rem; color:var(--soft); }
   .toc__link:hover { background:var(--raised); color:var(--text); }

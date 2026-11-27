@@ -249,3 +249,23 @@ def test_diff_page_fits_a_phone(page_at, client: Client, scheme: str, too_large:
 
     assert page.locator(".picker--new .dropdown__menu").is_visible()
     assert page.evaluate("document.documentElement.scrollWidth") <= 360
+
+
+def test_long_section_names_end_in_an_ellipsis_in_the_side_list(page_at, client: Client) -> None:
+    heading = "An extremely long section heading that has to be cut short in the side list"
+    pid = client.publish(html=f"<h1>Plan</h1><h2>{heading}</h2><p>one</p>")["id"]
+    client.publish(id=pid, html=f"<h1>Plan</h1><h2>{heading}</h2><p>two</p>")
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2", viewport={"width": 1280, "height": 700})
+
+    name = page.locator(".toc__link", has_text="An extremely").locator(".toc__name")
+    shape = name.evaluate(
+        """(node) => ({
+            cut: node.scrollWidth > node.clientWidth,
+            ellipsis: getComputedStyle(node).textOverflow === 'ellipsis',
+            inside: node.closest('.toc__link').getBoundingClientRect().right <= node.closest('.toc').getBoundingClientRect().right,
+            scrolls: node.closest('.toc').scrollWidth > node.closest('.toc').clientWidth,
+        })"""
+    )
+
+    assert shape == {"cut": True, "ellipsis": True, "inside": True, "scrolls": False}
+    assert page.locator(".toc__link", has_text="An extremely").locator(".toc__count").is_visible()
