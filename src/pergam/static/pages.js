@@ -8,7 +8,8 @@
  * a narrow one the panel always starts closed and opens over the document. Dropdowns (<details
  * class="dropdown">) close on Escape and on a click elsewhere, the framed document
  * included: a click there never reaches this page, but moves focus to the frame.
- * On the diff page, a section link opens the collapsed section it points to.
+ * On the diff page, a link in the Sections menu closes the menu and opens the
+ * collapsed section it points to.
  *
  * The pin, archive and tag controls, rendered hidden only when the server offers
  * them, call PATCH /{id}/meta with a JSON body (which a cross-site form cannot send)
@@ -308,7 +309,11 @@
     };
     addEventListener('hashchange', () => open(location.hash));
     document.querySelectorAll('.toc a[href^="#"]').forEach((link) => {
-      link.addEventListener('click', () => open(link.getAttribute('href')));
+      link.addEventListener('click', () => {
+        const menu = link.closest('details');
+        if (menu) menu.open = false;
+        open(link.getAttribute('href'));
+      });
     });
     open(location.hash);
   };

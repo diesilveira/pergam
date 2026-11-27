@@ -148,18 +148,53 @@ def test_choosing_versions_navigates_to_the_matching_range(page_at, client: Clie
     page.wait_for_url(f"{base}/{pid}/diff/v2..v3")
 
 
+def open_sections(page) -> None:
+    page.locator("details.toc > summary").click()
+
+
+def test_sections_start_collapsed_and_a_link_closes_the_list(page_at, client: Client) -> None:
+    pid = publish_three(client)
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2")
+    menu = page.locator(".toc__menu")
+
+    assert menu.is_hidden()
+    open_sections(page)
+    assert menu.is_visible()
+    menu.get_by_role("link", name=re.compile(r"^Costs")).click()
+
+    assert menu.is_hidden()
+    assert page.url.endswith("#sec-2")
+    open_sections(page)
+    page.keyboard.press("Escape")
+    assert menu.is_hidden()
+    assert page.evaluate("document.activeElement.closest('details.toc') !== null")
+
+
+@pytest.mark.parametrize("width", [1280, 1440])
+def test_the_changes_sit_in_a_centred_reading_column(page_at, client: Client, width: int) -> None:
+    pid = publish_three(client)
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2", viewport={"width": width, "height": 700})
+
+    box = page.locator("main.dmain").bounding_box()
+
+    assert box["width"] <= 860
+    assert abs(box["x"] - (width - box["x"] - box["width"])) <= 2
+
+
 def test_section_link_opens_a_collapsed_section(page_at, client: Client) -> None:
     pid = publish_three(client)
     page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2")
     plan = page.locator("#sec-1")
 
     assert plan.evaluate("node => node.open") is False
+    open_sections(page)
     page.locator(".toc").get_by_role("link", name=re.compile(r"^Plan")).click()
 
     page.wait_for_function("document.querySelector('#sec-1').open")
     assert page.url.endswith("#sec-1")
     plan.locator("summary").click()
     assert plan.evaluate("node => node.open") is False
+    open_sections(page)
     page.locator(".toc").get_by_role("link", name=re.compile(r"^Plan")).click()
     page.wait_for_function("document.querySelector('#sec-1').open")
 
@@ -172,6 +207,7 @@ def test_a_malformed_fragment_breaks_nothing(page_at, client: Client) -> None:
 
     page.goto(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2#%E0%A4%A")
     page.evaluate("location.hash = '#%zz'")
+    open_sections(page)
     page.locator(".toc").get_by_role("link", name=re.compile(r"^Plan")).click()
 
     page.wait_for_function("document.querySelector('#sec-1').open")
@@ -183,6 +219,7 @@ def test_without_script_pickers_and_section_links_still_work(page_at, client: Cl
     base = f"http://127.0.0.1:{client.port}"
     page = page_at(f"{base}/{pid}/diff/v1..v2", java_script_enabled=False)
 
+    open_sections(page)
     page.locator(".toc").get_by_role("link", name=re.compile(r"^Costs")).click()
     assert page.url.endswith("#sec-2")
     page.get_by_label("Older version: v1").click()
@@ -228,6 +265,7 @@ def test_word_marks_and_side_list_stay_readable(page_at, client: Client, scheme:
     pid = publish_three(client)
 
     page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2", scheme)
+    open_sections(page)
 
     ratios = page.evaluate(MARK_CONTRAST)
     assert {name.split(".")[0] for name, _ in ratios} >= {"INS", "DEL", "A", "SPAN"}
@@ -249,6 +287,11 @@ def test_diff_page_fits_a_phone(page_at, client: Client, scheme: str, too_large:
 
     assert page.locator(".picker--new .dropdown__menu").is_visible()
     assert page.evaluate("document.documentElement.scrollWidth") <= 360
+    open_sections(page)
+    menu = page.locator(".toc__menu").bounding_box()
+    assert menu["x"] >= 0 and menu["x"] + menu["width"] <= 360
+    assert page.locator(".picker--new .dropdown__menu").is_hidden()
+    assert page.evaluate("document.documentElement.scrollWidth") <= 360
 
 
 def test_long_section_names_end_in_an_ellipsis_in_the_side_list(page_at, client: Client) -> None:
@@ -256,14 +299,15 @@ def test_long_section_names_end_in_an_ellipsis_in_the_side_list(page_at, client:
     pid = client.publish(html=f"<h1>Plan</h1><h2>{heading}</h2><p>one</p>")["id"]
     client.publish(id=pid, html=f"<h1>Plan</h1><h2>{heading}</h2><p>two</p>")
     page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2", viewport={"width": 1280, "height": 700})
+    open_sections(page)
 
     name = page.locator(".toc__link", has_text="An extremely").locator(".toc__name")
     shape = name.evaluate(
         """(node) => ({
             cut: node.scrollWidth > node.clientWidth,
             ellipsis: getComputedStyle(node).textOverflow === 'ellipsis',
-            inside: node.closest('.toc__link').getBoundingClientRect().right <= node.closest('.toc').getBoundingClientRect().right,
-            scrolls: node.closest('.toc').scrollWidth > node.closest('.toc').clientWidth,
+            inside: node.closest('.toc__link').getBoundingClientRect().right <= node.closest('.toc__menu').getBoundingClientRect().right,
+            scrolls: node.closest('.toc__menu').scrollWidth > node.closest('.toc__menu').clientWidth,
         })"""
     )
 

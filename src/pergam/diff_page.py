@@ -1,8 +1,9 @@
 """The page behind `/{id}/diff/v{a}..v{b}`, from `templates/diff.html` and `diff.css`.
 
 The bar holds a breadcrumb, two version pickers (plain links to other ranges, so
-they work without script), the summary and a link to the newer version. A side
-list names every section with its additions and removals and links to it.
+they work without script), a "Sections" dropdown that names every section with
+its additions and removals and links to it, the summary and a link to the newer
+version. The changes sit in one centred column.
 Changed sections are open, with long runs of unchanged lines inside them cut
 down to `CONTEXT` lines around each change; unchanged sections are collapsed.
 """
@@ -13,6 +14,7 @@ import html as html_lib
 from pathlib import Path
 from string import Template
 
+from pergam import icons
 from pergam.diff import DiffLine, Section, TooLargeToDiff
 from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
 from pergam.static_files import PAGES_SCRIPT_PATH, hashed_url
@@ -159,7 +161,19 @@ def _picker(pergam_id: str, side: str, chosen: int, other: int, versions: list[V
     )
 
 
-def _bar(pergam_id: str, old: VersionInfo, new: VersionInfo, versions: list[VersionInfo], summary: str) -> tuple[str, str]:
+def _sections_menu(toc: str) -> str:
+    """The section list, collapsed behind a "Sections" button in the bar, so the changes keep the page."""
+    return (
+        '<details class="dropdown toc"><summary class="btn dropdown__toggle">'
+        f'{icons.SECTIONS}<span class="toc__label">Sections</span></summary>'
+        '<nav class="dropdown__menu dropdown__menu--end toc__menu" aria-labelledby="toc-title">'
+        f'<h2 class="toc__title" id="toc-title">Sections</h2>{toc}</nav></details>'
+    )
+
+
+def _bar(
+    pergam_id: str, old: VersionInfo, new: VersionInfo, versions: list[VersionInfo], summary: str, toc: str
+) -> tuple[str, str]:
     middle = (
         '<div class="crumbs"><nav aria-label="Breadcrumb"><a href="/">Index</a>'
         '<span class="crumbs__sep" aria-hidden="true">/</span>'
@@ -171,6 +185,7 @@ def _bar(pergam_id: str, old: VersionInfo, new: VersionInfo, versions: list[Vers
         f'{_picker(pergam_id, "new", new.version, old.version, versions)}</div>'
     )
     actions = (
+        f"{_sections_menu(toc)}"
         f'<span class="bar__summary">{summary}</span>'
         f'<a class="btn btn--primary" href="/{pergam_id}/v{new.version}/view">Open v{new.version}</a>'
     )
@@ -195,7 +210,7 @@ def render_diff(
         body = "".join(_section(i, section) for i, section in enumerate(sections))
         body = body or '<p class="empty">Neither version has text.</p>'
         summary = _summary(sections)
-    middle, actions = _bar(pergam_id, old, new, choices, summary)
+    middle, actions = _bar(pergam_id, old, new, choices, summary, _toc(sections))
     return _PAGE.substitute(
         head_assets=HEAD_ASSETS,
         pages_script=hashed_url(PAGES_SCRIPT_PATH),
@@ -208,7 +223,6 @@ def render_diff(
         new_href=f"/{pergam_id}/v{new.version}/view",
         old_note=f'<span class="note">{esc(old.note)}</span>' if old.note else "",
         new_note=f'<span class="note">{esc(new.note)}</span>' if new.note else "",
-        toc=_toc(sections),
         summary=summary,
         sections=body,
     )
