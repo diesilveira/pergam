@@ -438,3 +438,39 @@ def test_tags_outside_the_basic_plane_sort_like_the_server(browser, client: Clie
     assert expected.index("%EF%BD%9Ax") < expected.index("%F0%9D%94%B8x")
     context.close()
 
+
+@pytest.mark.parametrize(
+    ("content_type", "body"),
+    [
+        ("text/plain; charset=utf-8", '<form class="fform" data-filters-form></form>'),
+        ("text/html; charset=utf-8", "<p>no form here</p>"),
+    ],
+    ids=["not-html", "no-form"],
+)
+def test_an_answer_without_a_form_is_never_put_in_the_dialog(browser, site, content_type: str, body: str) -> None:
+    context, page = open_page(browser)
+    page.route("**/filters/form*", lambda route: route.fulfill(status=200, content_type=content_type, body=body))
+    page.goto(site["base"] + "/?tag=shared")
+
+    page.locator(".filters-btn").click()
+
+    page.wait_for_url(site["base"] + "/filters?tag=shared")
+    context.close()
+
+
+def test_only_the_fetched_form_is_moved_into_the_dialog(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/")
+    real = page.request.get(site["base"] + "/filters/form").text()
+    extra = '<p id="stray">outside the form</p><img id="stray-img" src="data:,">'
+    page.route(
+        "**/filters/form*",
+        lambda route: route.fulfill(status=200, content_type="text/html; charset=utf-8", body=extra + real + extra),
+    )
+
+    open_dialog(page)
+
+    assert page.locator("#stray, #stray-img").count() == 0
+    assert page.evaluate("document.querySelector('[data-filters-dialog]').children.length") == 1
+    context.close()
+

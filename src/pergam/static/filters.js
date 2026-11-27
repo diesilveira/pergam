@@ -93,10 +93,13 @@
     loading =
       loading ||
       fetch(dialog.dataset.src, { headers: { Accept: 'text/html' } }).then(async (response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        dialog.innerHTML = await response.text();
-        form = dialog.querySelector('[data-filters-form]');
-        if (!form) throw new Error('no form');
+        const type = response.headers.get('Content-Type') || '';
+        if (!response.ok || !type.startsWith('text/html')) throw new Error(`HTTP ${response.status} ${type}`);
+        const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const fetched = parsed.querySelector('form[data-filters-form]');
+        if (!fetched) throw new Error('no form');
+        form = document.adoptNode(fetched);
+        dialog.replaceChildren(form);
         pristine = form.innerHTML;
       });
     return loading.catch((error) => {
