@@ -55,6 +55,7 @@ class ImportResult:
     imported: list[int]
     skipped: list[int]
     origin: Origin | None
+    pin_refused: str | None = None
 
 
 class ImportConflict(Exception):
@@ -470,7 +471,9 @@ class PergamStore:
         the same content are skipped, and when any present version differs, or the
         result would leave a version number missing, `ImportConflict` is raised
         before anything is written. Tags are merged as on publish; `archived`,
-        `pinned` and `origin` are set only when the id is new to this server.
+        `pinned` and `origin` are set only when the id is new to this server. A
+        pin that does not fit (archived, or past the cap) is dropped and named in
+        `pin_refused`; `pinned_at` is never later than the import.
 
         A trusted `editor` follows the rules of a publish: an id already here needs
         its owner or a collaborator, and every version written must be by `editor`
@@ -502,30 +505,38 @@ class PergamStore:
                     [(doc.id, v.version, v.note) for v in missing if v.note],
                 )
             save_text(conn, [(doc.id, v.version, v.html) for v in missing])
+            pin_refused = None
             if present:
                 if doc.tags:
                     add_tags(conn, doc.id, doc.tags)
                 origin = self._origin(conn, doc.id)
             else:
                 origin = doc.origin
-                pinned = doc.pinned and not doc.archived and self._has_pin_room(conn, doc.id)
+                pin_refused = self._pin_refused(conn, doc) if doc.pinned else None
+                pinned = doc.pinned and pin_refused is None
                 conn.execute(
                     "INSERT INTO pergam_meta (id, tags, archived, pinned, pinned_at, origin_url, origin_id)"
-                    " VALUES (%s, %s, %s, %s, CASE WHEN %s THEN COALESCE(%s::timestamptz, clock_timestamp()) END, %s, %s)"
+                    " VALUES (%s, %s, %s, %s, CASE WHEN %s THEN LEAST(%s::timestamptz, clock_timestamp()) END, %s, %s)"
                     " ON CONFLICT (id) DO UPDATE SET tags = EXCLUDED.tags,"
                     " archived = EXCLUDED.archived, pinned = EXCLUDED.pinned, pinned_at = EXCLUDED.pinned_at,"
                     " origin_url = EXCLUDED.origin_url, origin_id = EXCLUDED.origin_id",
                     (doc.id, doc.tags, doc.archived, pinned, pinned, doc.pinned_at, origin and origin.url, origin and origin.id),
                 )
-        return ImportResult([v.version for v in missing], sorted(set(present) & {v.version for v in doc.versions}), origin)
+        skipped = sorted(set(present) & {v.version for v in doc.versions})
+        return ImportResult([v.version for v in missing], skipped, origin, pin_refused)
 
-    def _has_pin_room(self, conn: psycopg.Connection, pergam_id: str) -> bool:
-        """Whether an imported pin fits under the cap; an import over it arrives unpinned rather than failing."""
+    def _pin_refused(self, conn: psycopg.Connection, doc: ImportDocument) -> str | None:
+        """Why an imported pin is not kept, or None when it fits under the cap.
+
+        An import refused a pin arrives unpinned rather than failing; the response says why.
+        """
+        if doc.archived:
+            return ARCHIVED_REASON
         try:
-            claim_pin(conn, pergam_id, self.max_pinned)
-        except PinRefused:
-            return False
-        return True
+            claim_pin(conn, doc.id, self.max_pinned)
+        except PinRefused as exc:
+            return str(exc)
+        return None
 
     @staticmethod
     def _origin(conn: psycopg.Connection, pergam_id: str) -> Origin | None:
