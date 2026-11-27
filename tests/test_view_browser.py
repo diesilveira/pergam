@@ -201,7 +201,7 @@ def test_every_control_in_the_bar_and_panel_is_reachable_and_named(open_page, pe
 
     controls = [item for item in reached if item["tag"] in ("A", "BUTTON", "SUMMARY")]
     names = {item["name"] for item in controls}
-    common = {"q3", "Version 1 of 3", "Pin", "More actions", "History"}
+    common = {"q3", "v1 of 3", "Pin", "More actions", "History"}
     assert (common | {"Index"} if viewport is WIDE else common) <= names
     assert any(name.startswith("v3") for name in names)
     assert any(name.startswith("Theme:") for name in names)
@@ -397,3 +397,15 @@ def test_print_from_the_menu_closes_it(open_page, client: Client) -> None:
     frame.wait_for_function("window.printed === true")
     assert page.locator(".more .dropdown__menu").is_hidden()
     assert page.evaluate("document.activeElement.getAttribute('aria-label')") == "More actions"
+
+
+@pytest.mark.parametrize("viewport", [WIDE, PHONE], ids=["wide", "phone"])
+def test_the_version_selector_is_named_by_what_it_shows(open_page, pergam: str, viewport) -> None:
+    page = open_page(pergam, viewport=viewport)
+    summary = page.locator("summary.ver")
+
+    of_width = summary.locator(".ver__of").bounding_box()["width"]
+
+    assert of_width > 10 if viewport is WIDE else of_width <= 1
+    assert summary.get_attribute("aria-label") is None
+    assert summary.evaluate("node => node.textContent") == "v1 of 3"

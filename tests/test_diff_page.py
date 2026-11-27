@@ -51,8 +51,8 @@ def test_pickers_link_every_other_pair_and_mark_the_current_one(client: Client) 
 
     old = re.search(r'<details class="dropdown versions picker--old">(.*?)</details>', page).group(1)
     new = re.search(r'<details class="dropdown versions picker--new">(.*?)</details>', page).group(1)
-    assert '<summary class="ver dropdown__toggle" aria-label="Older version: v1">v1</summary>' in old
-    assert '<summary class="ver dropdown__toggle" aria-label="Newer version: v2">v2</summary>' in new
+    assert '<summary class="ver dropdown__toggle">v1<span class="sr-only">, older version</span></summary>' in old
+    assert '<summary class="ver dropdown__toggle">v2<span class="sr-only">, newer version</span></summary>' in new
     assert re.findall(r'<a href="([^"]+)"( aria-current="page")?>', old) == [
         (f"/{pid}/diff/v3..v2", ""), (f"/{pid}/diff/v2..v2", ""), (f"/{pid}/diff/v1..v2", ' aria-current="page"'),
     ]
@@ -136,10 +136,10 @@ def test_choosing_versions_navigates_to_the_matching_range(page_at, client: Clie
     base = f"http://127.0.0.1:{client.port}"
     page = page_at(f"{base}/{pid}/diff/v1..v2")
 
-    page.get_by_label("Newer version: v2").click()
+    page.locator(".picker--new summary").click()
     page.locator(".picker--new").get_by_role("link", name=re.compile(r"^v3")).click()
     page.wait_for_url(f"{base}/{pid}/diff/v1..v3")
-    page.get_by_label("Older version: v1").focus()
+    page.locator(".picker--old summary").focus()
     page.keyboard.press("Enter")
     page.keyboard.press("Tab")
     page.keyboard.press("Tab")
@@ -222,7 +222,7 @@ def test_without_script_pickers_and_section_links_still_work(page_at, client: Cl
     open_sections(page)
     page.locator(".toc").get_by_role("link", name=re.compile(r"^Costs")).click()
     assert page.url.endswith("#sec-2")
-    page.get_by_label("Older version: v1").click()
+    page.locator(".picker--old summary").click()
     page.locator(".picker--old").get_by_role("link", name=re.compile(r"^v2")).click()
 
     page.wait_for_url(f"{base}/{pid}/diff/v2..v2")
@@ -283,7 +283,7 @@ def test_diff_page_fits_a_phone(page_at, client: Client, scheme: str, too_large:
         viewport={"width": 360, "height": 740},
     )
 
-    page.get_by_label("Newer version").click()
+    page.locator(".picker--new summary").click()
 
     assert page.locator(".picker--new .dropdown__menu").is_visible()
     assert page.evaluate("document.documentElement.scrollWidth") <= 360

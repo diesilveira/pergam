@@ -104,7 +104,7 @@
     .crumbs nav, .crumbs__sep { display:none; }
     .topbar__actions { gap:.3rem; }
     .topbar .btn { padding:.25rem .45rem; }
-    .ver__of { display:none; }
+    .ver__of { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
     .btn--pin span { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   }
   @media print {

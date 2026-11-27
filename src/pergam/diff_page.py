@@ -152,11 +152,11 @@ def _picker(pergam_id: str, side: str, chosen: int, other: int, versions: list[V
         return f"/{pergam_id}/diff/v{pair[0]}..v{pair[1]}"
 
     items = "".join(_picker_item(href(info.version), info, info.version == chosen) for info in versions)
-    label = "Older version" if side == "old" else "Newer version"
+    label = "older version" if side == "old" else "newer version"
     menu_class = "dropdown__menu versions__list" + (" dropdown__menu--end" if side == "new" else "")
     return (
         f'<details class="dropdown versions picker--{side}">'
-        f'<summary class="ver dropdown__toggle" aria-label="{label}: v{chosen}">v{chosen}</summary>'
+        f'<summary class="ver dropdown__toggle">v{chosen}<span class="sr-only">, {label}</span></summary>'
         f'<ol class="{menu_class}" reversed>{items}</ol></details>'
     )
 
