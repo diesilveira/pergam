@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 from pergam.public_url import PublicAddress
+from pergam.states import ACTIVE
 from pergam.store import FeedEntry
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
@@ -39,8 +40,11 @@ def _add(parent: ET.Element, tag: str, text: str | None = None, **attrs: str) ->
     return element
 
 
-def feed_url(public: PublicAddress, tag: str | None, author: str | None) -> str:
-    query = urlencode([(key, value) for key, value in (("tag", tag), ("author", author)) if value])
+def feed_url(public: PublicAddress, tag: str | None, author: str | None, state: str = ACTIVE) -> str:
+    pairs = [(key, value) for key, value in (("tag", tag), ("author", author)) if value]
+    if state != ACTIVE:
+        pairs.append(("state", state))
+    query = urlencode(pairs)
     return public.url("feed.atom") + (f"?{query}" if query else "")
 
 
@@ -61,11 +65,14 @@ def _entry(feed: ET.Element, entry: FeedEntry, public: PublicAddress) -> None:
     _add(element, "summary", summary, type="text")
 
 
-def render_feed(entries: list[FeedEntry], public: PublicAddress, tag: str | None, author: str | None) -> bytes:
-    self_url = feed_url(public, tag, author)
+def render_feed(
+    entries: list[FeedEntry], public: PublicAddress, tag: str | None, author: str | None, state: str = ACTIVE
+) -> bytes:
+    self_url = feed_url(public, tag, author, state)
     feed = ET.Element("feed", {"xmlns": ATOM_NS})
     _add(feed, "id", self_url)
-    scope = " · ".join(f"{key} {value}" for key, value in (("tag", tag), ("author", author)) if value)
+    named = (("tag", tag), ("author", author), ("state", None if state == ACTIVE else state))
+    scope = " · ".join(f"{key} {value}" for key, value in named if value)
     _add(feed, "title", f"pergam · {public.display}" + (f" · {scope}" if scope else ""))
     _add(feed, "subtitle", "Recent publications")
     newest = entries[0].created_at if entries else datetime.now(timezone.utc)

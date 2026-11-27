@@ -8,11 +8,12 @@ import re
 import sys
 import threading
 from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse
 
 from pergam.access import Access, CollaboratorError, Forbidden, parse_collaborators
-from pergam.api import index_json, pergam_json
+from pergam.api import facets_json, index_json, pergam_json
 from pergam.cursor import CursorError, SortError, decode_cursor, parse_sort
 from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
@@ -21,6 +22,7 @@ from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
 from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, single_proxy_user
 from pergam.ids import ID_RE
+from pergam.filters_ui import render_filters_page
 from pergam.index_page import render_index
 from pergam.lint import LINT_CONCURRENCY, LINT_MAX_BODY_BYTES, lint_html
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
@@ -29,6 +31,7 @@ from pergam.notes import NoteError, parse_note
 from pergam.pins import PinRefused
 from pergam.public_url import PublicAddress
 from pergam.search import QueryError, parse_query
+from pergam.states import ALL, StateError, legacy_archived, parse_state
 from pergam.store import ImportConflict, IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
@@ -68,16 +71,37 @@ def _first(query: dict[str, list[str]], key: str) -> str | None:
     return query.get(key, [None])[0] or None
 
 
+MAX_FILTER_VALUES = 50
+
+
+class FilterError(ValueError):
+    pass
+
+
+def _values(query: dict[str, list[str]], key: str, normalise: Callable[[str], str]) -> tuple[str, ...]:
+    """Every value of a repeated `key`, normalised, blanks dropped, duplicates removed, first order kept."""
+    raw = query.get(key, [])
+    if len(raw) > MAX_FILTER_VALUES:
+        raise FilterError(f"at most {MAX_FILTER_VALUES} values of {key}")
+    return tuple(dict.fromkeys(value for value in map(normalise, raw) if value))
+
+
 def parse_filters(query: dict[str, list[str]]) -> IndexFilters:
-    """Index filters from a query string, shared by `/` and `/api/pergams`; raises `CursorError`, `SortError` or `QueryError`."""
+    """Index filters from a query string, shared by `/` and `/api/pergams`.
+
+    `type`, `author` and `tag` may repeat (any of the values). Raises `CursorError`,
+    `SortError`, `StateError`, `FilterError` or `QueryError`. An old `archived=1` without
+    a `state` reads as `state=all` (the page redirects to that URL first).
+    """
     token = _first(query, "cursor")
     sort = parse_sort(_first(query, "sort"))
+    state = parse_state(_first(query, "state") or (ALL if legacy_archived(_first(query, "archived")) else None))
     return IndexFilters(
-        type=normalise_type(_first(query, "type") or "") or None,
-        author=_first(query, "author"),
-        tag=normalise_tag(_first(query, "tag") or "") or None,
+        types=_values(query, "type", normalise_type),
+        authors=_values(query, "author", str.strip),
+        tags=_values(query, "tag", normalise_tag),
         q=parse_query(_first(query, "q")),
-        archived=_first(query, "archived") in ("1", "true"),
+        state=state,
         cursor=decode_cursor(token, sort) if token else None,
         sort=sort,
     )
@@ -288,6 +312,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path.strip("/")
 
         if path == "":
+            if "archived" in parse_qs(parsed.query, keep_blank_values=True):
+                self._redirect_archived(parsed.query)
+                return
             self._render_index(parse_qs(parsed.query))
             return
         if path == "feed.atom":
@@ -295,6 +322,12 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         if path == "api/pergams":
             self._render_index_json(parse_qs(parsed.query))
+            return
+        if path == "facets":
+            self._render_facets(parse_qs(parsed.query))
+            return
+        if path == "filters":
+            self._render_filters_page(parse_qs(parsed.query))
             return
         static = STATIC_FILES.get(parsed.path)
         if static is not None:
@@ -554,7 +587,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return parse_filters(query)
         except CursorError:
             self.send_error(400, "Invalid cursor")
-        except (SortError, QueryError) as exc:
+        except (SortError, StateError, FilterError, QueryError) as exc:
             self.send_error(400, str(exc))
         return None
 
@@ -562,14 +595,28 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         filters = self._filters(query)
         if filters is None:
             return
-        page = render_index(self.store.index(filters, cards=True), filters, self.public.display)
+        page = render_index(self.store.index(filters, cards=True), filters, self.public.display, self.types)
         self._send_page(page)
 
     def _render_index_json(self, query: dict[str, list[str]]) -> None:
         filters = self._filters(query)
         if filters is None:
             return
-        self._send_json(index_json(self.store.index(filters), self.public, filters.sort))
+        self._send_json(index_json(self.store.index(filters), self.public, filters.sort, filters.state))
+
+    def _render_facets(self, query: dict[str, list[str]]) -> None:
+        """`GET /facets`: the total and the counts for a set of filters, for the filter dialog's live preview."""
+        filters = self._filters(query)
+        if filters is None:
+            return
+        self._send_json(facets_json(self.store.facets(filters), filters, self.types))
+
+    def _render_filters_page(self, query: dict[str, list[str]]) -> None:
+        """`/filters`: the filter form as a page, what the Filters button opens without script."""
+        filters = self._filters(query)
+        if filters is None:
+            return
+        self._send_page(render_filters_page(self.store.facets(filters), filters, self.types, self.public.display))
 
     def _render_pergam_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)
@@ -579,10 +626,31 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json(pergam_json(pergam_id, versions, meta, self.public))
 
+    def _redirect_archived(self, raw_query: str) -> None:
+        """`/?archived=1` is now `/?state=all` (and `archived=0` the default): a permanent redirect keeps old links.
+
+        An explicit `state` wins; every other parameter is kept, in its order.
+        """
+        pairs = parse_qsl(raw_query, keep_blank_values=True)
+        wants_all = any(key == "archived" and legacy_archived(value) for key, value in pairs)
+        kept = [(key, value) for key, value in pairs if key != "archived"]
+        if wants_all and not any(key == "state" for key, _ in kept):
+            kept.append(("state", ALL))
+        self.send_response(301)
+        self.send_header("Location", "/" + (f"?{urlencode(kept)}" if kept else ""))
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", NO_STORE)
+        self.end_headers()
+
     def _render_feed(self, query: dict[str, list[str]]) -> None:
         tag = normalise_tag(_first(query, "tag") or "") or None
         author = (_first(query, "author") or "").strip() or None
-        body = render_feed(self.store.feed(tag, author), self.public, tag, author)
+        try:
+            state = parse_state(_first(query, "state"))
+        except StateError as exc:
+            self.send_error(400, str(exc))
+            return
+        body = render_feed(self.store.feed(tag, author, state), self.public, tag, author, state)
         self._send(200, ATOM_CONTENT_TYPE, body)
 
     def _send_json(self, body: object, status: int = 200) -> None:

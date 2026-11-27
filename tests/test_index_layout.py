@@ -14,7 +14,7 @@ import pytest
 from psycopg_pool import ConnectionPool
 
 from pergam.cursor import IndexCursor, TitleCursor
-from pergam.index_page import TAGS_SHOWN, date_group
+from pergam.index_page import date_group
 from pergam.search import HEADLINE_SQL, MATCHES_SQL, search_params
 from pergam.store import SEARCHED, IndexFilters, PergamStore, page_query, save_text
 from pergam.summary import SUMMARY_CHARS, SOURCE_CHARS, summarise
@@ -33,10 +33,10 @@ def api_crawl(client: Client, query: str) -> list[str]:
     raise AssertionError("too many pages")
 
 
-@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&archived=1", "?sort=title&tag=seeded&type=plan"])
+@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&state=all", "?sort=title&tag=seeded&type=plan"])
 def test_title_order_pages_every_pergam_once(client: Client, db: psycopg.Connection, query: str) -> None:
     flags = seed(db)
-    archived = "archived=1" in query
+    archived = "state=all" in query
     rows = db.execute(
         "SELECT l.id, l.type FROM pergams_latest l LEFT JOIN pergam_meta m USING (id) ORDER BY lower(l.title), l.id"
     ).fetchall()
@@ -222,7 +222,7 @@ FACETS = (("types", "type"), ("authors", "author"), ("tags", "tag"))
 
 @pytest.mark.parametrize(
     "query",
-    ["", "q=needle", "q=needle&type=plan", "q=needle&archived=1", "q=needle&tag=ops", "type=plan", "type=plan&author=bo@example.com&tag=ops", "author=ana@example.com&archived=1"],
+    ["", "q=needle", "q=needle&type=plan", "q=needle&state=all", "q=needle&tag=ops", "type=plan", "type=plan&author=bo@example.com&tag=ops", "author=ana@example.com&state=all"],
 )
 def test_each_facet_counts_what_choosing_it_would_give(client: Client, results: dict[str, str], query: str) -> None:
     """Standard faceting: a facet applies `q` and every other filter, never its own."""
@@ -235,18 +235,15 @@ def test_each_facet_counts_what_choosing_it_would_give(client: Client, results: 
             assert item["count"] == matching(client, {**others, name: item[name]}), (key, item)
         if key != "tags":
             assert sum(item["count"] for item in body["counts"][key]) == matching(client, others)
-    with_archived = matching(client, {**params, "archived": "1"})
-    without = matching(client, {k: v for k, v in params.items() if k != "archived"})
-    assert body["archived_count"] == with_archived - without
+    assert body["archived_count"] == matching(client, {**params, "state": "archived"})
+    assert body["state"] == params.get("state", "active")
 
 
 def test_other_values_of_a_facet_stay_listed_within_a_search(client: Client, results: dict[str, str]) -> None:
-    page = client.get("/?q=needle&type=plan").text
+    body = client.get("/api/pergams?q=needle&type=plan").json()
 
-    assert '<a class="facet" href="/?type=reporte&amp;q=needle"><span class="type-dot"' in page
-    assert re.search(r'>reporte<span class="facet__count">1</span>', page)
-    assert re.search(r'>All<span class="facet__count">3</span>', page)
-    assert "<h1>2 results</h1>" in page
+    assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "reporte", "count": 1}]
+    assert body["matching"] == 2
 
 
 def test_search_counts_cover_the_results_and_archived_matches(client: Client, results: dict[str, str]) -> None:
@@ -256,9 +253,7 @@ def test_search_counts_cover_the_results_and_archived_matches(client: Client, re
     assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "reporte", "count": 1}]
     assert body["counts"]["tags"] == [{"tag": "ops", "count": 2}, {"tag": "q3", "count": 1}]
     assert body["archived_count"] == 1
-    assert re.search(r'>All<span class="facet__count">3</span>', page)
-    assert "<h1>3 results</h1>" in page
-    assert "for “needle” · the filters count these results only" in page
+    assert ">3 of 4<" in page
 
 
 def test_facets_apply_the_other_filters_without_a_search(client: Client, results: dict[str, str]) -> None:
@@ -268,62 +263,104 @@ def test_facets_apply_the_other_filters_without_a_search(client: Client, results
     assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "informe", "count": 1}, {"type": "reporte", "count": 1}]
     assert body["counts"]["authors"] == [{"author": "bo@example.com", "count": 1}]
     assert body["archived_count"] == 0
-    assert "showing 1 of 4" in page
+    assert ">1 of 4<" in page
 
 
-def test_an_empty_search_says_what_was_searched_and_offers_to_widen_it(client: Client, results: dict[str, str]) -> None:
-    page = client.get("/?q=%3Cnothing%3E&type=plan").text
+@pytest.mark.parametrize(
+    ("query", "title", "clear", "edit"),
+    [
+        (
+            "/?q=%3Cnothing%3E&type=plan",
+            "No pergams match “&lt;nothing&gt;” with these filters.",
+            "/?q=%3Cnothing%3E",
+            "/filters?type=plan&q=%3Cnothing%3E",
+        ),
+        ("/?type=otro&sort=title", "No pergams match these filters.", "/?sort=title", "/filters?type=otro&sort=title"),
+        ("/?tag=nope", "No pergams match these filters.", "/", "/filters?tag=nope"),
+    ],
+)
+def test_empty_results_say_what_was_searched_and_offer_a_way_out(
+    client: Client, results: dict[str, str], query: str, title: str, clear: str, edit: str
+) -> None:
+    page = client.get(query).text
 
-    assert "Nothing matches “&lt;nothing&gt;” with type plan (archived pergams not included)." in page
-    assert '<a class="btn btn--primary" href="/?q=%3Cnothing%3E&amp;archived=1">Search every pergam</a>' in page
+    assert f'<p class="empty__title">{title}</p>' in page
+    assert f'<a class="btn btn--primary" href="{clear.replace("&", "&amp;")}">Clear filters</a>' in page
+    assert f'<a class="btn" href="{edit.replace("&", "&amp;")}" data-filters-open>Edit filters</a>' in page
+    assert 'class="summary"' in page
+
+
+def test_an_empty_search_without_filters_offers_to_clear_it(client: Client, results: dict[str, str]) -> None:
+    page = client.get("/?q=nothing-here").text
+
+    assert '<p class="empty__title">No pergams match “nothing-here”.</p>' in page
     assert '<a class="btn" href="/">Clear search</a>' in page
 
 
-def test_empty_filters_offer_to_clear_them(client: Client, results: dict[str, str]) -> None:
-    page = client.get("/?tag=nope&sort=title").text
+def test_an_empty_archive_says_so(client: Client) -> None:
+    client.publish()
 
-    assert "No pergams with tag nope." in page
-    assert '<a class="btn btn--primary" href="/?sort=title">Clear filters</a>' in page
-    assert '<a class="facet is-on" href="/?sort=title" aria-current="true"><span' in page
+    assert '<p class="empty__title">Nothing is archived yet.</p>' in client.get("/?state=archived").text
 
 
 def test_links_keep_the_sort_and_drop_the_cursor(client: Client, results: dict[str, str]) -> None:
     page = client.get("/?sort=title&type=plan").text
 
     assert 'href="/?type=plan&amp;tag=ops&amp;sort=title"' in page
-    assert '<a class="chip" href="/?type=plan" title="Most recent first">Recent</a>' in page
-    assert '<a class="chip is-on" href="/?type=plan&amp;sort=title" aria-current="true"' in page
+    assert '<li><a href="/?type=plan">Recent</a></li>' in page
+    assert '<li><a href="/?type=plan&amp;sort=title" aria-current="true">Title A–Z</a></li>' in page
 
 
-def test_long_tag_lists_fold_but_keep_the_active_tag_in_view(client: Client) -> None:
-    for n in range(TAGS_SHOWN + 4):
-        client.publish(title=f"Doc {n}", tags=[f"tag{m:02d}" for m in range(n + 1)])
-    rarest = f"tag{TAGS_SHOWN + 3:02d}"
-
-    plain = client.get("/").text
-    active = client.get(f"/?tag={rarest}").text
-
-    assert f"Show all {TAGS_SHOWN + 4}</summary>" in plain
-    shown = active.split('<details class="facets__more">')[0]
-    assert f'<a class="facet is-on" href="/" aria-current="true"><span class="facet__hash" aria-hidden="true">#</span>{rarest}' in shown
-
-
-def test_stats_are_one_line_under_the_heading(client: Client) -> None:
-    pid = client.publish(html="<p>x</p>")["id"]
+def test_the_index_is_one_column_without_a_filter_column_or_stats_line(client: Client) -> None:
+    pid = client.publish(html="<p>x</p>", tags=["ops"])["id"]
     client.publish(id=pid, html="<p>y</p>")
 
     page = client.get("/").text
 
-    assert "<h1>All pergams</h1>" in page
-    assert '<p class="index-stats">1 pergams · 1 authors · 2 versions · 1 new this week · 16 B</p>' in page
-    assert "stats-grid" not in page
+    assert '<h1 class="index-title">All pergams</h1>' in page
+    assert 'class="facets' not in page and "index-stats" not in page and "data-density-toggle" not in page
+    assert '<main class="index">' in page
 
 
-def test_the_density_toggle_is_hidden_until_the_script_runs(client: Client) -> None:
+def test_feed_and_json_links_move_to_the_footer(client: Client) -> None:
+    client.publish()
+
+    page = client.get("/?tag=ops&sort=title").text
+    footer = page[page.index('<footer class="index-foot">'):]
+    top_bar = page[page.index('<header class="topbar">'):page.index("</header>")]
+
+    assert '<a href="/feed.atom">Atom feed</a>' in footer
+    assert '<a href="/api/pergams?tag=ops&amp;sort=title">This list as JSON</a>' in footer
+    assert "feed.atom" not in top_bar and "/api/pergams" not in top_bar
+    assert "data-theme-toggle" in top_bar and 'class="topbar__search' in top_bar
+
+
+def test_the_sort_menu_links_each_order_and_keeps_the_filters(client: Client) -> None:
+    client.publish()
+
+    menu = re.search(r'<details class="dropdown sortmenu".*?</details>', client.get("/?tag=ops&sort=title").text).group(0)
+
+    assert '<summary class="btn sortmenu__toggle" aria-label="Sort: Title A–Z">Title A–Z' in menu
+    assert '<li><a href="/?tag=ops">Recent</a></li>' in menu
+    assert '<li><a href="/?tag=ops&amp;sort=title" aria-current="true">Title A–Z</a></li>' in menu
+
+
+def test_the_summaries_switch_is_hidden_until_the_script_runs(client: Client) -> None:
     page = client.get("/").text
 
-    assert '<button type="button" class="chip" data-density-toggle aria-pressed="false" hidden>Compact</button>' in page
+    assert re.search(r'<li class="sortmenu__switch" data-summaries-item hidden><button type="button" role="switch" aria-checked="false" data-summaries-toggle>', page)
     assert re.search(r'<script src="/static/index.js\?v=[0-9a-f]{12}"></script>', page)
+
+
+def test_rows_keep_their_details_in_the_markup_for_the_summaries_switch(client: Client) -> None:
+    pid = client.publish(title="Plan", html="<p>The first sentence is long enough.</p>", tags=["ops"])["id"]
+
+    row = re.search(rf'<li class="row" data-href="/{pid}/view">.*?</li>', client.get("/").text).group(0)
+
+    assert '<span class="row__summary">The first sentence is long enough.</span>' in row
+    assert '<a class="tag" href="/?tag=ops"' in row
+    assert 'title="1 version">v1</span>' in row
+    assert 'aria-label="Filter by author: you@example.com"' in row
 
 
 @pytest.mark.parametrize("path", ["/static/shortcuts.js", "/static/index.js"])
@@ -356,12 +393,12 @@ def test_every_page_has_the_search_field_in_its_top_bar(client: Client, path: st
 
 
 def test_the_index_search_field_shows_the_query_and_keeps_the_filters(client: Client) -> None:
-    form = search_form(client.get('/?q=%22a%22%3Cb&tag=ops&archived=1&sort=title').text)
+    form = search_form(client.get('/?q=%22a%22%3Cb&tag=ops&state=all&sort=title').text)
 
     assert 'value="&quot;a&quot;&lt;b"' in form
     assert re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)">', form) == [
         ("tag", "ops"),
-        ("archived", "1"),
+        ("state", "all"),
         ("sort", "title"),
     ]
 
@@ -403,7 +440,7 @@ def test_a_later_page_of_carded_rows_shows_no_empty_state(client: Client, db: ps
     assert crawl(client, "/?sort=title")[-1] == "c0000000"
 
 
-@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&archived=1"])
+@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&state=all"])
 def test_title_ties_across_page_boundaries_are_broken_by_id(client: Client, db: psycopg.Connection, query: str) -> None:
     titles = ["Same", "same", "SAME", "Other"]
     insert(db, [(f"{n:08x}", titles[n % 4], n % 9 == 0) for n in range(230)])

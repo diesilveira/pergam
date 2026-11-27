@@ -94,7 +94,7 @@ def test_snippet_escapes_body_text_except_the_highlight(client: Client) -> None:
 
 
 def test_matching_count_includes_body_matches(client: Client, searchable: dict[str, str]) -> None:
-    assert "<h1>2 results</h1>" in client.get("/?q=downtime").text
+    assert ">2 of 3<" in client.get("/?q=downtime").text
 
 
 def wait_for_text_rows(url: str, expected: int, timeout: float = 10.0) -> None:

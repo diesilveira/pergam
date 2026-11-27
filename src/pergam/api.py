@@ -10,8 +10,9 @@ from typing import Any
 
 from pergam.cursor import DEFAULT_SORT
 from pergam.meta import Meta
+from pergam.states import ACTIVE
 from pergam.public_url import PublicAddress
-from pergam.store import IndexData, IndexRow, VersionInfo
+from pergam.store import Facets, IndexData, IndexFilters, IndexRow, VersionInfo
 
 
 def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
@@ -38,11 +39,12 @@ def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
     return body
 
 
-def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT) -> dict[str, Any]:
+def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT, state: str = ACTIVE) -> dict[str, Any]:
     stats = data.stats
     return {
         "pergams": [_row(row, public) for row in data.rows],
         "sort": sort,
+        "state": state,
         "matching": data.matching,
         "next_cursor": data.next_cursor.encode() if data.next_cursor else None,
         "archived_count": data.archived_count,
@@ -60,6 +62,33 @@ def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT)
             "new_versions_7d": stats.new_versions_7d,
             "pinned": stats.total_pinned,
             "max_pinned": stats.max_pinned,
+        },
+    }
+
+
+def facet_values(
+    counts: list[tuple[str, int]], selected: tuple[str, ...], first: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
+    """`[{value, count}]` for one facet: every known value, the selected ones at zero when no pergam has them.
+
+    `first` (the configured types) come first in their own order; the rest follow by count.
+    """
+    known = dict(counts)
+    extra = {value: 0 for value in (*first, *selected) if value not in known}
+    ordered = [value for value in first if value in known or value in extra]
+    ordered += [value for value, _ in counts if value not in ordered]
+    ordered += [value for value in extra if value not in ordered]
+    return [{"value": value, "count": known.get(value, 0)} for value in ordered]
+
+
+def facets_json(facets: Facets, filters: IndexFilters, types: tuple[str, ...]) -> dict[str, Any]:
+    return {
+        "total": facets.total,
+        "facets": {
+            "type": facet_values(facets.types, filters.types, types),
+            "author": facet_values(facets.authors, filters.authors),
+            "tag": facet_values(facets.tags, filters.tags),
+            "state": facets.states,
         },
     }
 

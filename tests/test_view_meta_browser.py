@@ -141,7 +141,7 @@ def test_archiving_from_the_page_hides_the_pergam_from_the_index(open_page, clie
 
     page.wait_for_function("document.querySelector('[data-meta-flag=archived]').ariaPressed === 'true'")
     assert pid not in listed_order(client.get("/").text)
-    assert pid in listed_order(client.get("/?archived=1").text)
+    assert pid in listed_order(client.get("/?state=all").text)
     in_menu(page, "Archive").click()
     page.wait_for_function("document.querySelector('[data-meta-flag=archived]').ariaPressed === 'false'")
     assert pid in listed_order(client.get("/").text)

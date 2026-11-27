@@ -16,6 +16,7 @@ from pergam.cursor import DEFAULT_SORT, Cursor, IndexCursor, TitleCursor
 from pergam.meta import Meta, MetaChange, Origin
 from pergam.pins import ARCHIVED_REASON, DEFAULT_MAX_PINNED, PinRefused, over_cap_reason
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
+from pergam.states import ACTIVE, scope_sql
 from pergam.summary import SOURCE_CHARS, summarise
 from pergam.tags import merge_tags
 from pergam.text import EXTRACTOR_VERSION, PageText, extract_text
@@ -64,17 +65,100 @@ class ImportConflict(Exception):
 
 @dataclass(frozen=True)
 class IndexFilters:
-    type: str | None = None
-    author: str | None = None
-    tag: str | None = None
+    """What the index lists. Within `types`, `authors` and `tags` a pergam matches any value; filters combine with AND."""
+
+    types: tuple[str, ...] = ()
+    authors: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
     q: str | None = None
-    archived: bool = False
+    state: str = ACTIVE
     cursor: Cursor | None = None
     sort: str = DEFAULT_SORT
 
     @property
     def active(self) -> bool:
-        return bool(self.type or self.author or self.tag or self.q)
+        return bool(self.types or self.authors or self.tags or self.q)
+
+
+@dataclass(frozen=True)
+class Facets:
+    """Counts for the filters, each facet with `q`, the status and the other facets applied but not its own values.
+
+    `types`, `authors` and `tags` hold every value any pergam has, whatever its status,
+    zero counts included, most used first; `states` counts `active`, `archived` and
+    `all`; `total` is what the filters as given list.
+    """
+
+    total: int
+    types: list[tuple[str, int]]
+    authors: list[tuple[str, int]]
+    tags: list[tuple[str, int]]
+    states: dict[str, int]
+
+
+class FilterSql:
+    """The SQL conditions of `IndexFilters`, every value bound as a parameter (lists as arrays).
+
+    `narrowed(*facets)` is every condition but the named facets', so a query stays the
+    same size however many values are selected.
+    """
+
+    def __init__(self, filters: IndexFilters) -> None:
+        self.scope = scope_sql(filters.state)
+        self.conditions: dict[str, str] = {}
+        self.params: dict[str, Any] = {}
+        if filters.types:
+            self.conditions["type"] = "l.type = ANY(%(types)s)"
+            self.params["types"] = list(filters.types)
+        if filters.authors:
+            self.conditions["author"] = "l.author = ANY(%(authors)s)"
+            self.params["authors"] = list(filters.authors)
+        if filters.tags:
+            self.conditions["tag"] = "m.tags && %(tags)s::text[]"
+            self.params["tags"] = list(filters.tags)
+        if filters.q:
+            self.conditions["q"] = MATCHES_SQL
+            self.params.update(search_params(filters.q))
+        self.source = SEARCHED if filters.q else LISTED
+
+    def narrowed(self, *without: str) -> str:
+        return "".join(f" AND {sql}" for name, sql in self.conditions.items() if name not in without)
+
+    @property
+    def where(self) -> str:
+        return f"WHERE true{self.scope}{self.narrowed()}"
+
+
+def facet_counts(conn: psycopg.Connection, sql: FilterSql) -> Facets:
+    """Five bounded queries, whatever the number of selected values."""
+
+    def values(column: str, facet: str, joins: str = "") -> list[tuple[str, int]]:
+        return [
+            (value, count)
+            for value, count in conn.execute(
+                f"SELECT {column}, count(*) FILTER (WHERE true{sql.scope}{sql.narrowed(facet)})"
+                f" {sql.source}{joins} GROUP BY 1 ORDER BY 2 DESC, 1",
+                sql.params,
+            )
+        ]
+
+    total = conn.execute(f"SELECT count(*) {sql.source} {sql.where}", sql.params).fetchone()[0]
+    active, archived = conn.execute(
+        f"SELECT count(*) FILTER (WHERE NOT COALESCE(m.archived, false)), count(*) FILTER (WHERE m.archived)"
+        f" {sql.source} WHERE true{sql.narrowed()}",
+        sql.params,
+    ).fetchone()
+    return Facets(
+        total=total,
+        types=values("l.type", "type"),
+        authors=values("l.author", "author"),
+        tags=values("tag", "tag", " CROSS JOIN unnest(m.tags) tag"),
+        states={"active": active, "archived": archived, "all": active + archived},
+    )
+
+
+def nonzero(counts: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    return [(value, count) for value, count in counts if count]
 
 
 @dataclass(frozen=True)
@@ -126,6 +210,8 @@ class IndexData:
     next_cursor: Cursor | None
     pinned: list[IndexRow] = field(default_factory=list)
     pinned_ids: frozenset[str] = frozenset()
+    state_counts: dict[str, int] = field(default_factory=dict)
+    facets: Facets | None = None
 
 
 @dataclass(frozen=True)
@@ -564,34 +650,22 @@ class PergamStore:
         version count, text prefix and headline.
 
         Counts are facets over every visible pergam, not just the page: each one
-        (type, author, tag, and `archived_count` for the archived state) applies `q`
-        and every other active filter but not its own, so the other values of a facet
-        stay listed with what choosing them would give.
+        (type, author, tag, and `state_counts` for the status) applies `q` and every
+        other active filter but not its own, so the other values of a facet stay listed
+        with what choosing them would give. `archived_count` is `state_counts["archived"]`.
 
         `cards` asks for the pinned pergams the HTML lifts into cards (the first
         `page_size` that match, in the page's order): their rows on the first page,
         only their ids on later pages, where the list still has to leave them out.
         """
-        scope = "" if filters.archived else " AND NOT COALESCE(m.archived, false)"
-        conditions: dict[str, str] = {}
-        params: dict[str, Any] = {"source_chars": SOURCE_CHARS, "limit": page_size + 1, "pinned_limit": page_size}
-        if filters.type:
-            conditions["type"] = "l.type = %(type)s"
-            params["type"] = filters.type
-        if filters.author:
-            conditions["author"] = "l.author = %(author)s"
-            params["author"] = filters.author
-        if filters.tag:
-            conditions["tag"] = "m.tags @> ARRAY[%(tag)s]::text[]"
-            params["tag"] = filters.tag
-        if filters.q:
-            conditions["q"] = MATCHES_SQL
-            params.update(search_params(filters.q))
-
-        def narrowed(*without: str) -> str:
-            return "".join(f" AND {sql}" for name, sql in conditions.items() if name not in without)
-
-        where = f"WHERE true{scope}{narrowed()}"
+        sql = FilterSql(filters)
+        params: dict[str, Any] = {
+            **sql.params,
+            "source_chars": SOURCE_CHARS,
+            "limit": page_size + 1,
+            "pinned_limit": page_size,
+        }
+        where = sql.where
         page_where = where
         if isinstance(filters.cursor, TitleCursor):
             page_where += " AND (lower(l.title), l.id) > (%(c_title)s, %(c_id)s)"
@@ -599,8 +673,7 @@ class PergamStore:
         elif isinstance(filters.cursor, IndexCursor):
             page_where += f" AND ({PINNED_SQL}, l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
             params.update(c_pinned=filters.cursor.pinned, c_at=filters.cursor.created_at, c_id=filters.cursor.id)
-        order = ORDERS[filters.sort][0]
-        source = SEARCHED if filters.q else LISTED
+        source = sql.source
         headline = HEADLINE_SQL if filters.q else "NULL"
 
         def page_of(condition: str, limit: str, sort: str = filters.sort) -> str:
@@ -622,21 +695,7 @@ class PergamStore:
             elif cards:
                 pinned = [index_row(row) for row in conn.execute(page_of(pinned_where, "%(pinned_limit)s", "pinned"), params)]
                 pinned_ids = frozenset(row.id for row in pinned)
-            matching = conn.execute(f"SELECT count(*) {source} {where}", params).fetchone()[0]
-            type_counts = conn.execute(
-                f"SELECT l.type, count(*) {source} WHERE true{scope}{narrowed('type')} GROUP BY 1 ORDER BY 2 DESC, 1",
-                params,
-            ).fetchall()
-            author_counts = conn.execute(
-                f"SELECT l.author, count(*) {source} WHERE true{scope}{narrowed('author')} GROUP BY 1 ORDER BY 2 DESC, 1",
-                params,
-            ).fetchall()
-            tag_counts = conn.execute(
-                f"SELECT tag, count(*) {source} CROSS JOIN unnest(m.tags) tag WHERE true{scope}{narrowed('tag')}"
-                " GROUP BY 1 ORDER BY 2 DESC, 1",
-                params,
-            ).fetchall()
-            archived_count = conn.execute(f"SELECT count(*) {source} WHERE m.archived{narrowed()}", params).fetchone()[0]
+            facets = facet_counts(conn, sql)
             stats = conn.execute(
                 """
                 SELECT
@@ -654,20 +713,27 @@ class PergamStore:
         page = [index_row(row) for row in rows[:page_size]]
         return IndexData(
             rows=page,
-            type_counts=[(t, c) for t, c in type_counts],
-            author_counts=[(a, c) for a, c in author_counts],
-            tag_counts=[(t, c) for t, c in tag_counts],
+            type_counts=nonzero(facets.types),
+            author_counts=nonzero(facets.authors),
+            tag_counts=nonzero(facets.tags),
             stats=IndexStats(*stats, max_pinned=self.max_pinned),
-            matching=matching,
-            archived_count=archived_count,
+            matching=facets.total,
+            archived_count=facets.states["archived"],
+            state_counts=facets.states,
+            facets=facets,
             next_cursor=page[-1].cursor(filters.sort) if len(rows) > page_size else None,
             pinned=pinned,
             pinned_ids=pinned_ids,
         )
 
-    def feed(self, tag: str | None, author: str | None, limit: int = FEED_SIZE) -> list[FeedEntry]:
-        """The newest versions of pergams that are not archived, each publication its own entry."""
-        where = "WHERE NOT COALESCE(m.archived, false)"
+    def facets(self, filters: IndexFilters) -> Facets:
+        """The counts the filter dialog shows for `filters`, without listing any row."""
+        with self.pool.connection() as conn:
+            return facet_counts(conn, FilterSql(filters))
+
+    def feed(self, tag: str | None, author: str | None, state: str = ACTIVE, limit: int = FEED_SIZE) -> list[FeedEntry]:
+        """The newest versions of the pergams in `state` (active by default), each publication its own entry."""
+        where = "WHERE true" + scope_sql(state)
         params: dict[str, Any] = {"limit": limit, "summary_chars": SUMMARY_CHARS}
         if tag:
             where += " AND m.tags @> ARRAY[%(tag)s]::text[]"

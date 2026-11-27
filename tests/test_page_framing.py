@@ -29,7 +29,7 @@ def framing(resp) -> dict[str, str]:
 @pytest.mark.parametrize("method", ["GET", "HEAD"])
 @pytest.mark.parametrize(
     "path",
-    ["/", "/?q=plan", "/?sort=title&type=otro", "/?archived=1", "/{id}/view", "/{id}/v1/view", "/{id}/diff/v1..v2"],
+    ["/", "/?q=plan", "/?sort=title&type=otro", "/?state=all", "/{id}/view", "/{id}/v1/view", "/{id}/diff/v1..v2"],
 )
 def test_every_page_refuses_other_framers(client: Client, path: str, method: str) -> None:
     resp = client.request(method, path.format(id=publish_two(client)))

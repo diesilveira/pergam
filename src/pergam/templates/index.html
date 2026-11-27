@@ -5,25 +5,23 @@
 <link rel="alternate" type="application/atom+xml" title="pergam · recent publications" href="/feed.atom">
 ${head_assets}
 <script src="${index_script}"></script>
+<script src="${filters_script}" defer></script>
 <style>
 ${css}</style></head><body>
 
 ${top_bar}
 
-<div class="index">
-  ${sidebar}
-  <main class="index__main">
-    <div class="index-head">
-      <div class="index-head__text">
-        <h1>${heading}</h1>
-        <p class="index-head__note">${showing_note}</p>
-      </div>
-      <div class="index-head__controls">${controls}</div>
-    </div>
-    <p class="index-stats">${stats_line}</p>
-    ${pinned}
-    <div class="groups" data-groups>${groups}</div>
-    ${pager}
-  </main>
-</div>
+<main class="index">
+  <h1 class="index-title">${heading}</h1>
+  <div class="toolbar">
+    ${trigger}
+    ${summary}
+    <div class="toolbar__end">${sort_menu}</div>
+  </div>
+  ${pinned}
+  <div class="groups" data-groups>${groups}</div>
+  ${pager}
+</main>
+${dialog}
+${footer}
 </body></html>

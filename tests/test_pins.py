@@ -257,7 +257,7 @@ def test_rows_left_archived_and_pinned_are_no_cards_no_count_and_normalise_on_wr
 
     for pid in ids:
         assert patch(client, pid, {"pinned": True}).status == 200
-    page = client.get("/?archived=1").text
+    page = client.get("/?state=all").text
 
     assert old not in cards(page)
     assert client.get("/api/pergams").json()["stats"]["pinned"] == 3
@@ -329,7 +329,7 @@ def test_a_row_left_archived_and_pinned_reads_as_not_pinned_everywhere(client: C
     db.execute("UPDATE pergams SET created_at = created_at - interval '1 day' WHERE id = %s", (old,))
 
     rows = client.get("/api/pergams?archived=1").json()["pergams"]
-    page = client.get("/?archived=1").text
+    page = client.get("/?state=all").text
 
     assert [row["id"] for row in rows] == [newer, old]
     assert (rows[1]["pinned"], rows[1]["pinned_at"]) == (False, None)
@@ -340,12 +340,14 @@ def test_a_row_left_archived_and_pinned_reads_as_not_pinned_everywhere(client: C
     assert 'class="flag flag--pinned"' not in page and old not in cards(page)
 
 
-def test_an_imported_pin_time_is_never_later_than_the_import(client: Client) -> None:
+def test_an_imported_pin_time_is_never_later_than_the_import(client: Client, db: psycopg.Connection) -> None:
+    """Bounded by the database clock read after the import, which stamped it; the host clock may differ."""
     ahead = (datetime.now(timezone.utc) + timedelta(minutes=4)).isoformat()
 
     resp = client.post_json(export_doc("abc123ef", True, pinned_at=ahead), "/import")
+    after_import = db.execute("SELECT clock_timestamp()").fetchone()[0]
     pinned_at = datetime.fromisoformat(client.get("/api/pergams/abc123ef").json()["pinned_at"])
 
     assert resp.status == 201
     assert "pin_refused" not in resp.json()
-    assert pinned_at <= datetime.now(timezone.utc)
+    assert pinned_at <= after_import
