@@ -249,7 +249,7 @@ python3 <skill-dir>/pergam_promote.py abc12345 --from local --to team
 | GET    | `/`                   | HTML index, latest version per id, pinned first, paginated. Filters: `?type=plan&author=...&tag=...&q=words`; `q` searches titles and visible text (`"quoted phrase"` for exact order); `?archived=1` includes archived ones; `?sort=title` orders by title instead of most recent. |
 | GET    | `/api/pergams`        | JSON index with the same filters as `/` (`type`, `author`, `tag`, `q`, `archived`, `sort`, `cursor`): `{pergams, sort, matching, next_cursor, counts, stats}`. Use it to find or count pergams instead of scraping `/`. |
 | GET    | `/api/pergams/{id}`   | JSON: latest title/type/author, `tags`, `archived`, `pinned`, `origin` (server it was imported from, or `null`) and `versions` (newest first). |
-| GET    | `/{id}/view`          | View page of the latest version: bar with title, type, tags, `v3 of 5`, a version selector and actions, a history panel, document in a frame. |
+| GET    | `/{id}/view`          | View page of the latest version: a calm bar (title, version selector, Pin, History, a menu for the rest), a history and details panel one click away, the document in a frame. |
 | GET    | `/{id}/v{n}/view`     | View page of a specific version; says so when a newer one exists.    |
 | GET    | `/{id}/v{n}/content`  | The posted HTML as `text/html` plus the frame bridge tag (what the view frames). Use `/raw` for the exact bytes. |
 | GET    | `/{id}/raw`           | Raw HTML (latest).                                                   |

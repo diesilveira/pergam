@@ -99,6 +99,13 @@ def open_menu_over_the_document(page) -> None:
     page.evaluate("() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))")
 
 
+def in_menu(page, name: str):
+    """The ⋯ menu's entry `name`, opening the menu first when it is closed."""
+    if not page.locator("details.more").evaluate("node => node.open"):
+        open_menu_over_the_document(page)
+    return page.locator("details.more").get_by_role("button", name=name, exact=True)
+
+
 def status_text(page) -> str:
     page.wait_for_function("document.querySelector('[data-meta-status]').textContent !== ''")
     return page.locator("[data-meta-status]").inner_text()
@@ -129,14 +136,13 @@ def test_pinning_from_the_page_puts_the_pergam_first_on_the_index(
 def test_archiving_from_the_page_hides_the_pergam_from_the_index(open_page, client: Client) -> None:
     pid = client.publish()["id"]
     page = open_page(f"{base(client)}/{pid}/view")
-    archive = page.get_by_role("button", name="Archive", exact=True)
 
-    archive.click()
+    in_menu(page, "Archive").click()
 
     page.wait_for_function("document.querySelector('[data-meta-flag=archived]').ariaPressed === 'true'")
     assert pid not in listed_order(client.get("/").text)
     assert pid in listed_order(client.get("/?archived=1").text)
-    archive.click()
+    in_menu(page, "Archive").click()
     page.wait_for_function("document.querySelector('[data-meta-flag=archived]').ariaPressed === 'false'")
     assert pid in listed_order(client.get("/").text)
 
@@ -144,9 +150,11 @@ def test_archiving_from_the_page_hides_the_pergam_from_the_index(open_page, clie
 def test_tags_are_edited_inline_with_the_keyboard(open_page, client: Client, db: psycopg.Connection) -> None:
     pid = client.publish(tags=["q3"])["id"]
     page = open_page(f"{base(client)}/{pid}/view")
-    edit = page.locator(".bar__tag-edit")
+    tags = page.locator(".facts__tags .tag")
 
-    edit.focus()
+    page.get_by_label("More actions").focus()
+    page.keyboard.press("Enter")
+    in_menu(page, "Edit tags").focus()
     page.keyboard.press("Enter")
     field = page.get_by_role("textbox", name="Tags, separated by commas")
     assert page.evaluate("document.activeElement.id") == "tag-input"
@@ -155,17 +163,17 @@ def test_tags_are_edited_inline_with_the_keyboard(open_page, client: Client, db:
     page.keyboard.press("Enter")
 
     assert status_text(page) == "Tags saved."
-    assert page.locator(".bar__tags .tag").all_inner_texts() == ["<b>", "budget-review", "q3"]
-    assert page.locator(".bar__tags .tag").nth(1).get_attribute("href") == "/?tag=budget-review"
-    assert page.locator(".bar__tags b").count() == 0
+    assert [tags.nth(i).text_content() for i in range(tags.count())] == ["<b>", "budget-review", "q3"]
+    assert tags.nth(1).get_attribute("href") == "/?tag=budget-review"
+    assert page.locator(".facts__tags b").count() == 0
     assert db.execute(META, (pid,)).fetchone() == (["<b>", "budget-review", "q3"], False, False)
-    assert page.evaluate("document.activeElement.dataset.tagsEdit") == ""
+    assert page.evaluate("document.activeElement.getAttribute('aria-label')") == "More actions"
 
-    edit.click()
+    in_menu(page, "Edit tags").click()
     field.fill("something else")
     page.keyboard.press("Escape")
     assert field.is_hidden()
-    edit.click()
+    in_menu(page, "Edit tags").click()
     assert field.input_value() == "<b>, budget-review, q3"
 
 
@@ -173,7 +181,7 @@ def test_rejected_tags_leave_the_state_and_say_why(open_page, client: Client, db
     pid = client.publish(tags=["q3"])["id"]
     page = open_page(f"{base(client)}/{pid}/view")
 
-    page.get_by_role("button", name="Edit tags").click()
+    in_menu(page, "Edit tags").click()
     page.get_by_role("textbox", name="Tags, separated by commas").fill("x" * 41)
     page.get_by_role("button", name="Save").click()
 
@@ -206,7 +214,7 @@ def test_an_unknown_user_is_told_to_sign_in(open_page, trusting: Client, db: psy
     pid = trusting.as_user("ana@example.com").publish()["id"]
     page = open_page(f"{base(trusting)}/{pid}/view")
 
-    page.get_by_role("button", name="Archive", exact=True).click()
+    in_menu(page, "Archive").click()
 
     assert status_text(page).startswith("The server does not know who you are")
     assert db.execute(META, (pid,)).fetchone() is None
@@ -218,7 +226,8 @@ def test_a_stranger_gets_no_controls(open_page, trusting: Client) -> None:
     page = open_page(f"{base(trusting)}/{pid}/view", extra_http_headers={"X-Forwarded-User": "eve@example.com"})
 
     assert page.locator("[data-meta-flag], [data-tags-edit], [data-meta-status]").count() == 0
-    assert page.locator(".bar__tags").get_by_role("link", name="q3").is_visible()
+    page.get_by_role("button", name="History", exact=True).click()
+    assert page.locator(".facts__tags").get_by_role("link", name="q3").is_visible()
 
 
 def test_without_script_the_controls_are_absent(open_page, client: Client) -> None:
@@ -231,25 +240,23 @@ def test_without_script_the_controls_are_absent(open_page, client: Client) -> No
     page.get_by_label("More actions").click()
     for name in ("Pin", "Archive", "Edit tags"):
         assert page.get_by_role("button", name=name, exact=True).count() == 0
-    assert page.locator(".bar__tags").get_by_role("link", name="q3").is_visible()
+    assert page.locator(".facts__tags").get_by_role("link", name="q3").is_visible()
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 def test_controls_fit_a_phone_and_their_messages_meet_aa(open_page, client: Client, scheme: str) -> None:
     pid = client.publish(tags=["q3"])["id"]
     page = open_page(f"{base(client)}/{pid}/view", scheme, viewport={"width": 360, "height": 740})
-    menu_pin = page.locator(".dropdown__phone [data-meta-flag=pinned]")
+    pin = page.get_by_role("button", name="Pin", exact=True)
 
-    assert page.locator(".meta-controls").is_hidden()
-    open_menu_over_the_document(page)
-    menu_pin.click()
+    assert pin.is_visible()
+    pin.click()
     ok = status_text(page)
-    assert menu_pin.get_attribute("aria-pressed") == "true"
-    assert page.locator(".meta-controls [data-meta-flag=pinned]").get_attribute("aria-pressed") == "true"
+    assert pin.get_attribute("aria-pressed") == "true"
     page.route(f"**/{pid}/meta", lambda route: route.fulfill(status=500, body=""))
-    menu_pin.click()
+    in_menu(page, "Archive").click()
     page.wait_for_selector(".meta-status--error")
-    page.locator(".dropdown__phone [data-tags-edit]").click()
+    in_menu(page, "Edit tags").click()
     assert page.evaluate("document.activeElement.id") == "tag-input"
     assert page.locator(".more .dropdown__menu").is_hidden()
 
@@ -299,7 +306,7 @@ def test_a_published_script_cannot_pin_archive_or_tag(
         "dom": "blocked" if opened == "framed" else "no-parent",
     }
     assert db.execute("SELECT count(*) FROM pergam_meta").fetchone() == (0,)
-    assert pressed == (["false"] * 4 if opened == "framed" else [])
+    assert pressed == (["false"] * 2 if opened == "framed" else [])
     assert status_silent
 
 
@@ -343,7 +350,7 @@ def test_opening_the_tag_editor_rereads_the_current_tags(open_page, client: Clie
     page = open_page(f"{base(client)}/{pid}/view")
     patch_meta(client, pid, {"tags": ["ops", "q3"], "pinned": True})
 
-    page.get_by_role("button", name="Edit tags").click()
+    in_menu(page, "Edit tags").click()
 
     field = page.get_by_role("textbox", name="Tags, separated by commas")
     page.wait_for_function("document.querySelector('#tag-input').value === 'ops, q3'")
@@ -427,7 +434,7 @@ def test_archiving_a_pinned_pergam_unpins_it_and_pin_stays_unavailable(
     sent: list[str] = []
     page.on("request", lambda request: sent.append(request.method) if request.url.endswith("/meta") else None)
 
-    page.get_by_role("button", name="Archive", exact=True).click()
+    in_menu(page, "Archive").click()
 
     assert status_text(page) == "Archived and unpinned: the index hides it unless archived pergams are shown."
     assert db.execute("SELECT archived, pinned FROM pergam_meta WHERE id = %s", (pid,)).fetchone() == (True, False)
@@ -441,7 +448,7 @@ def test_archiving_a_pinned_pergam_unpins_it_and_pin_stays_unavailable(
     assert status_text(page) == "Archived pergams cannot be pinned: unarchive it first."
     assert sent == ["PATCH"]
 
-    page.get_by_role("button", name="Archive", exact=True).click()
+    in_menu(page, "Archive").click()
     assert status_text(page) == "Unarchived."
     assert db.execute("SELECT archived, pinned FROM pergam_meta WHERE id = %s", (pid,)).fetchone() == (False, False)
     assert pin.get_attribute("aria-pressed") == "false"
@@ -453,7 +460,7 @@ def test_archiving_an_unpinned_pergam_says_archived_only(open_page, client: Clie
     pid = client.publish()["id"]
     page = open_page(f"{base(client)}/{pid}/view")
 
-    page.get_by_role("button", name="Archive", exact=True).click()
+    in_menu(page, "Archive").click()
 
     assert status_text(page) == "Archived: the index hides it unless archived pergams are shown."
 

@@ -79,7 +79,7 @@ def test_details_without_access_name_the_first_author_and_no_collaborators() -> 
 
     facts = dict(re.findall(r"<div><dt>(.*?)</dt><dd>(.*?)</dd></div>", page))
     assert facts == {
-        "Type": "plan",
+        "Type": '<span class="badge" style="--type-rgb:240,210,138">plan</span>',
         "Tags": '<span class="facts__tags" data-tags></span>',
         "Author": "ana@example.com",
         "Collaborators": '<span class="muted">none</span>',
@@ -131,21 +131,22 @@ def test_bar_has_a_breadcrumb_buttons_and_a_menu_for_the_rest(client: Client) ->
     page = client.get(f"/{pid}/view").text
 
     assert '<nav aria-label="Breadcrumb"><a href="/">Index</a></nav>' in page
-    assert f'<a class="btn" href="/{pid}/diff/v1..v2" title="What changed from v1 to v2">Compare</a>' in page
-    assert f'<a class="btn" href="/{pid}/v2/text">Text</a>' in page
+    header = re.search(r'<header class="topbar">(.*?)</header>', page).group(1)
+    bar = re.sub(r'<details class="dropdown more">.*?</details>', "", header)
+    for gone in ('class="badge"', 'class="tag"', "Compare", ">Text<", ">Archive<", "Edit tags", "bar__print"):
+        assert gone not in bar
     menu = re.search(r'<details class="dropdown more">(.*?)</details>', page).group(1)
     assert '<summary class="icon-btn dropdown__toggle" aria-label="More actions"' in menu
-    assert re.findall(r'<li class="dropdown__phone"><a href="([^"]+)">([^<]+)</a>', menu) == [
+    assert re.findall(r'<li><(?:a href="([^"]+)"[^>]*|button type="button" class="dropdown__item[^"]*"[^>]*)>([^<]+)<', menu) == [
         (f"/{pid}/diff/v1..v2", "Compare with v1"),
         (f"/{pid}/v2/text", "Text"),
-    ]
-    assert re.findall(r'<li><a href="([^"]+)"[^>]*>([^<]+)</a>', menu) == [
+        ("", "Print"),
         (f"/{pid}/v2/raw", "Raw HTML"),
         (f"/{pid}/export", "Export (JSON)"),
         (f"/{pid}/v2/content", "Open document"),
     ]
     assert (
-        '<button type="button" class="btn" data-panel-toggle aria-controls="panel" aria-expanded="true" hidden>'
+        '<button type="button" class="btn" data-panel-toggle aria-controls="panel" aria-expanded="false" hidden>'
         "History</button>"
     ) in page
     assert '<aside class="panel" id="panel" aria-labelledby="panel-title">' in page

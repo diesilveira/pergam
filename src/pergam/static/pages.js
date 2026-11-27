@@ -2,9 +2,10 @@
  * Progressive enhancement of the view and diff pages; both work without it.
  *
  * Loaded synchronously in <head>, like theme.js, so the history panel's state is
- * on <html data-panel="open|closed"> before first paint. On a wide screen the
- * reader's last choice is remembered under pergam-history-panel; on a narrow
- * one the panel starts closed and opens over the document. Dropdowns (<details
+ * on <html data-panel="open|closed"> before first paint. It starts closed, so a
+ * first visit shows the document at full width; on a wide screen the reader's
+ * last choice is remembered under pergam-history-panel and wins from then on; on
+ * a narrow one the panel always starts closed and opens over the document. Dropdowns (<details
  * class="dropdown">) close on Escape and on a click elsewhere, the framed document
  * included: a click there never reaches this page, but moves focus to the frame.
  * On the diff page, a section link opens the collapsed section it points to.
@@ -36,7 +37,7 @@
       /* private mode: the choice lasts for this page only */
     }
   };
-  const initialPanel = () => (wide.matches ? remembered() || 'open' : 'closed');
+  const initialPanel = () => (wide.matches ? remembered() || 'closed' : 'closed');
   root.dataset.panel = initialPanel();
 
   const setUpPanel = () => {

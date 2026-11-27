@@ -31,8 +31,8 @@ def test_without_trusted_identity_everyone_gets_the_controls_with_the_current_st
     page = client.get(f"/{pid}/view").text
 
     assert controls(page) == {"url": f"/{pid}/meta", "pinned": "false", "archived": "true", "tags": "ops, q3"}
-    assert '<button type="button" class="icon-btn bar__tag-edit" data-tags-edit aria-label="Edit tags"' in page
-    assert re.search(r'<button [^>]*data-tags-edit[^>]*hidden>', page)
+    assert '<li data-meta-item hidden><button type="button" class="dropdown__item" data-tags-edit>Edit tags</button></li>' in page
+    assert '<li data-meta-item hidden><button type="button" class="dropdown__item" data-meta-flag="archived" aria-pressed="true">Archive</button></li>' in page
     assert '<p class="meta-status" data-meta-status role="status"></p>' in page
 
 
@@ -104,6 +104,7 @@ def test_an_archived_pergam_offers_pin_as_unavailable_and_says_why(client: Clien
 
     blocked, open_ = client.get(f"/{archived}/view").text, client.get(f"/{live}/view").text
 
-    assert '<button type="button" class="btn" data-meta-flag="pinned" aria-pressed="false" aria-disabled="true" aria-describedby="pin-note">Pin</button>' in blocked
+    assert '<button type="button" class="btn btn--pin" data-meta-flag="pinned" aria-pressed="false" aria-disabled="true" aria-describedby="pin-note">' in blocked
     assert '<span class="sr-only" id="pin-note">Archived pergams cannot be pinned: unarchive it first.</span>' in blocked
-    assert 'data-meta-flag="pinned" aria-pressed="false" aria-disabled="false">Pin</button>' in open_
+    assert 'data-meta-flag="pinned" aria-pressed="false" aria-disabled="false">' in open_
+    assert re.search(r'data-meta-flag="pinned"[^>]*><svg class="icon"[^>]*aria-hidden="true".*?</svg><span>Pin</span></button>', open_)

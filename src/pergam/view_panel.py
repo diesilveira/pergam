@@ -1,7 +1,7 @@
 """The side panel of the view page: every version with its note, author and date, then the pergam's details.
 
-It is plain server-rendered HTML, so it works without script; `static/pages.js`
-only collapses it and remembers that choice.
+It is plain server-rendered HTML, so it works without script (below the document);
+`static/pages.js` opens and closes it beside the document and remembers that choice.
 """
 
 from __future__ import annotations
@@ -10,9 +10,11 @@ import html as html_lib
 from datetime import datetime
 from urllib.parse import urlencode, urlparse
 
+from pergam import icons
 from pergam.access import Access
 from pergam.meta import Meta, Origin
 from pergam.store import VersionInfo
+from pergam.taxonomy import type_rgb
 
 esc = html_lib.escape
 
@@ -76,7 +78,7 @@ def _tag_links(tags: list[str]) -> str:
 def _details(pergam_id: str, kind: str, meta: Meta, owner: str, collaborators: list[str]) -> str:
     people = ", ".join(esc(user) for user in collaborators) or '<span class="muted">none</span>'
     facts = (
-        ("Type", esc(kind)),
+        ("Type", f'<span class="badge" style="--type-rgb:{",".join(map(str, type_rgb(kind)))}">{esc(kind)}</span>'),
         ("Tags", _tag_links(meta.tags)),
         ("Author", esc(owner)),
         ("Collaborators", people),
@@ -100,7 +102,7 @@ def render_panel(
         '<aside class="panel" id="panel" aria-labelledby="panel-title">'
         '<div class="panel__head"><h2 class="panel__title" id="panel-title">History</h2>'
         '<button type="button" class="icon-btn" data-panel-close aria-label="Close history" hidden>'
-        '<span aria-hidden="true">×</span></button></div>'
+        f"{icons.CLOSE}</button></div>"
         f'<ol class="history" reversed>{items}</ol>'
         f"{_details(pergam_id, kind, meta, owner, collaborators)}</aside>"
     )

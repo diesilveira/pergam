@@ -70,29 +70,31 @@ def frame_width(page) -> float:
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
-def test_panel_starts_open_on_a_wide_screen_and_its_state_is_remembered(open_page, pergam: str, scheme: str) -> None:
+def test_a_first_visit_shows_the_document_at_full_width_and_the_panel_state_is_remembered(
+    open_page, pergam: str, scheme: str
+) -> None:
     page = open_page(pergam, scheme, viewport=WIDE)
     toggle = page.get_by_role("button", name="History", exact=True)
-
-    assert page.locator("#panel").is_visible()
-    assert toggle.get_attribute("aria-expanded") == "true"
-    assert frame_width(page) < WIDE["width"] - 200
-
-    toggle.click()
 
     assert page.locator("#panel").is_hidden()
     assert toggle.get_attribute("aria-expanded") == "false"
     assert frame_width(page) == WIDE["width"]
+
+    toggle.click()
+
+    assert page.locator("#panel").is_visible()
+    assert toggle.get_attribute("aria-expanded") == "true"
+    assert frame_width(page) < WIDE["width"] - 200
+    page.reload()
+    assert page.locator("#panel").is_visible()
+    assert page.evaluate(f"localStorage.getItem('{PANEL_KEY}')") == "open"
+    page.get_by_role("button", name="History", exact=True).click()
     page.reload()
     assert page.locator("#panel").is_hidden()
     assert frame_width(page) == WIDE["width"]
-    assert page.evaluate(f"localStorage.getItem('{PANEL_KEY}')") == "closed"
-    page.get_by_role("button", name="History", exact=True).click()
-    page.reload()
-    assert page.locator("#panel").is_visible()
 
 
-def test_remembered_closed_panel_is_closed_before_first_paint(open_page, pergam: str) -> None:
+def test_remembered_open_panel_is_open_before_first_paint(open_page, pergam: str) -> None:
     page = open_page(pergam, viewport=WIDE)
     page.get_by_role("button", name="History", exact=True).click()
     page.add_init_script(
@@ -108,7 +110,7 @@ def test_remembered_closed_panel_is_closed_before_first_paint(open_page, pergam:
 
     page.reload()
 
-    assert page.evaluate("window.atBody") == "closed"
+    assert page.evaluate("window.atBody") == "open"
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
@@ -143,12 +145,14 @@ def test_a_phone_does_not_reopen_a_panel_remembered_open_on_a_wide_screen(open_p
     assert page.locator("#panel").is_hidden()
 
 
-def test_without_script_the_panel_shows_and_no_dead_control_does(open_page, pergam: str) -> None:
+def test_without_script_the_panel_shows_below_the_document_and_no_dead_control_does(open_page, pergam: str) -> None:
     wide = open_page(pergam, viewport=WIDE, java_script_enabled=False)
     phone = open_page(pergam, viewport=PHONE, java_script_enabled=False)
 
     for page in (wide, phone):
         assert page.locator("#panel").is_visible()
+        assert frame_width(page) == page.viewport_size["width"]
+        assert page.locator("#panel").bounding_box()["y"] > page.locator("iframe.doc").bounding_box()["y"]
         assert page.get_by_role("link", name="v2", exact=False).first.is_visible()
         assert page.locator("[data-panel-toggle], [data-panel-close], .bar__print").evaluate_all(
             "nodes => nodes.every(node => node.hidden)"
@@ -162,7 +166,7 @@ def test_menu_and_version_selector_open_with_the_keyboard_and_close_with_escape(
     page.keyboard.press("Enter")
     assert page.get_by_role("link", name="Raw HTML").is_visible()
     page.keyboard.press("Tab")
-    assert page.evaluate("document.activeElement.textContent") == "Raw HTML"
+    assert page.evaluate("document.activeElement.textContent") == "Text"
     page.keyboard.press("Escape")
     assert page.get_by_role("link", name="Raw HTML").is_hidden()
     assert page.evaluate("document.activeElement.getAttribute('aria-label')") == "More actions"
@@ -176,8 +180,9 @@ def test_menu_and_version_selector_open_with_the_keyboard_and_close_with_escape(
 @pytest.mark.parametrize("viewport", [WIDE, PHONE], ids=["wide", "phone"])
 def test_every_control_in_the_bar_and_panel_is_reachable_and_named(open_page, pergam: str, viewport) -> None:
     page = open_page(pergam, viewport=viewport)
-    if viewport is PHONE:
-        page.get_by_role("button", name="History", exact=True).click()
+    page.get_by_role("button", name="History", exact=True).click()
+    if viewport is WIDE:
+        page.locator("h1.bar__title").click()
 
     reached = []
     for _ in range(40):
@@ -196,8 +201,8 @@ def test_every_control_in_the_bar_and_panel_is_reachable_and_named(open_page, pe
 
     controls = [item for item in reached if item["tag"] in ("A", "BUTTON", "SUMMARY")]
     names = {item["name"] for item in controls}
-    common = {"q3", "v1 of 3", "More actions", "History"}
-    assert (common | {"Index", "Text"} if viewport is WIDE else common) <= names
+    common = {"q3", "Version 1 of 3", "Pin", "More actions", "History"}
+    assert (common | {"Index"} if viewport is WIDE else common) <= names
     assert any(name.startswith("v3") for name in names)
     assert any(name.startswith("Theme:") for name in names)
     assert any(name.startswith("Compare v1 with current") for name in names)
@@ -205,12 +210,29 @@ def test_every_control_in_the_bar_and_panel_is_reachable_and_named(open_page, pe
     assert all(item["outline"] for item in controls)
 
 
+@pytest.mark.parametrize("viewport", [WIDE, PHONE], ids=["wide", "phone"])
+def test_every_menu_entry_is_reachable_with_the_keyboard(open_page, client: Client, viewport) -> None:
+    pid = client.publish(title="Plan", html="<h1>one</h1>")["id"]
+    client.publish(id=pid, title="Plan", html="<h1>two</h1>")
+    page = open_page(f"http://127.0.0.1:{client.port}/{pid}/view", viewport=viewport)
+    page.wait_for_selector(".bar__print:not([hidden])", state="attached")
+
+    page.locator("summary[aria-label='More actions']").focus()
+    page.keyboard.press("Enter")
+    reached = []
+    for _ in range(8):
+        page.keyboard.press("Tab")
+        reached.append(page.evaluate("document.activeElement.textContent.trim()"))
+
+    assert reached == ["Compare with v1", "Text", "Print", "Archive", "Edit tags", "Raw HTML", "Export (JSON)",
+                       "Open document"]
+
+
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 @pytest.mark.parametrize("viewport", [WIDE, PHONE], ids=["wide", "phone"])
 def test_outdated_notice_and_panel_text_meet_aa(open_page, pergam: str, scheme: str, viewport) -> None:
     page = open_page(pergam, scheme, viewport=viewport)
-    if viewport is PHONE:
-        page.get_by_role("button", name="History", exact=True).click()
+    page.get_by_role("button", name="History", exact=True).click()
 
     ratios = page.evaluate(CONTRAST_OF, ".outdated span, .outdated a, .history__n, .history__when, .history__note, "
                                         ".history__compare, .facts dt, .facts dd, .panel__title, .crumbs a, .bar__title")
@@ -264,8 +286,7 @@ def test_the_version_shown_is_scrolled_into_view_in_a_long_history(open_page, cl
     for n in range(2, 41):
         client.publish(id=pid, title="Long", html=f"<p>{n}</p>", note=f"version {n}")
     page = open_page(f"http://127.0.0.1:{client.port}/{pid}/v3/view", viewport=viewport)
-    if viewport is PHONE:
-        page.get_by_role("button", name="History", exact=True).click()
+    page.get_by_role("button", name="History", exact=True).click()
 
     assert page.evaluate("document.getElementById('panel').scrollTop") > 0
     assert page.evaluate(CURRENT_IN_PANEL)
@@ -333,6 +354,7 @@ def test_the_search_is_an_icon_that_opens_over_the_bar(open_page, client: Client
 
 def test_compare_with_current_shows_for_the_version_viewed_and_on_hover_or_focus(open_page, pergam: str) -> None:
     page = open_page(pergam, viewport=WIDE)
+    page.get_by_role("button", name="History", exact=True).click()
     shown, other = (page.locator(f".history__item:has(a[href$='/v{n}/view']) .history__compare") for n in (1, 2))
 
     assert shown.bounding_box()["width"] > 50
@@ -351,7 +373,7 @@ def test_compare_with_current_shows_for_the_version_viewed_and_on_hover_or_focus
 @pytest.mark.parametrize("target", ["more", "versions"])
 def test_a_click_in_the_document_closes_an_open_dropdown(open_page, pergam: str, target: str) -> None:
     page = open_page(pergam, viewport=WIDE)
-    page.wait_for_selector(".bar__print:not([hidden])")
+    page.wait_for_selector(".bar__print:not([hidden])", state="attached")
     dropdown = page.locator(f"details.{target}")
 
     dropdown.locator("summary").click()

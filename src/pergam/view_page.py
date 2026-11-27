@@ -21,14 +21,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from string import Template
-from urllib.parse import urlencode
 
+from pergam import icons
 from pergam.access import Access
 from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
 from pergam.meta import Meta
 from pergam.static_files import BRIDGE_PATH, PAGES_SCRIPT_PATH, STORAGE_SHIM, hashed_url
 from pergam.store import VersionInfo
-from pergam.taxonomy import type_rgb
 from pergam.view_panel import diff_path, published_at, render_panel
 
 _TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -133,18 +132,9 @@ def _version_item(pergam_id: str, info: VersionInfo, current: int, latest: int) 
     )
 
 
-def _tag_links(tags: list[str]) -> str:
-    return "".join(f'<a class="tag" href="/?{esc(urlencode({"tag": tag}))}">{esc(tag)}</a>' for tag in tags)
-
-
-def _tags(tags: list[str], editable: bool) -> str:
-    shown = f'<span class="bar__tags" data-tags>{_tag_links(tags)}</span>'
-    if not editable:
-        return shown
+def _tag_form(tags: list[str]) -> str:
+    """The tag editor, opened from the ⋯ menu over the bar; the tags themselves show in the panel's details."""
     return (
-        f"{shown}"
-        '<button type="button" class="icon-btn bar__tag-edit" data-tags-edit aria-label="Edit tags" title="Edit tags" '
-        'hidden><span aria-hidden="true">✎</span></button>'
         '<form class="tag-form" data-tags-form hidden>'
         '<label class="sr-only" for="tag-input">Tags, separated by commas</label>'
         '<input class="input" id="tag-input" name="tags" autocomplete="off" spellcheck="false" '
@@ -161,9 +151,10 @@ def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[V
         '<div class="crumbs"><nav aria-label="Breadcrumb"><a href="/">Index</a></nav>'
         '<span class="crumbs__sep" aria-hidden="true">/</span>'
         f'<h1 class="bar__title">{esc(shown.title)}</h1></div>'
-        f'<span class="badge" style="--type-rgb:{",".join(map(str, type_rgb(shown.type)))}">{esc(shown.type)}</span>'
-        f"{_tags(meta.tags, editable)}"
-        f'<details class="dropdown versions"><summary class="ver dropdown__toggle">v{shown.version} of {len(versions)}</summary>'
+        f"{_tag_form(meta.tags) if editable else ''}"
+        f'<details class="dropdown versions"><summary class="ver dropdown__toggle" '
+        f'aria-label="Version {shown.version} of {len(versions)}">'
+        f'v{shown.version}<span class="ver__of"> of {len(versions)}</span></summary>'
         f'<ol class="dropdown__menu versions__list" reversed>{items}</ol></details>'
     )
 
@@ -174,6 +165,7 @@ def _pin_state(meta: Meta) -> str:
 
 
 def _flag(flag: str, label: str, on: bool, css: str, extra: str = "") -> str:
+    """A toggle for `flag`; `label` is HTML whose text names the button."""
     return (
         f'<button type="button" class="{css}" data-meta-flag="{flag}" aria-pressed="{str(on).lower()}"{extra}>'
         f"{label}</button>"
@@ -181,58 +173,49 @@ def _flag(flag: str, label: str, on: bool, css: str, extra: str = "") -> str:
 
 
 def _meta_controls(pergam_id: str, meta: Meta) -> str:
-    """Pin and Archive toggles in the bar; at phone width the same controls live in the ⋯ menu."""
+    """Pin, the one metadata toggle in the bar; Archive and the tag editor are in the ⋯ menu."""
     return (
         f'<span class="meta-controls" data-meta-url="/{pergam_id}/meta" hidden>'
-        f'{_flag("pinned", "Pin", meta.pinned, "btn", _pin_state(meta))}{_flag("archived", "Archive", meta.archived, "btn")}'
+        f'{_flag("pinned", f"{icons.PIN}<span>Pin</span>", meta.pinned, "btn btn--pin", _pin_state(meta))}'
         '<span class="sr-only" id="pin-note">Archived pergams cannot be pinned: unarchive it first.</span></span>'
     )
 
 
-def _phone_items(pergam_id: str, meta: Meta, version: int, editable: bool) -> str:
-    """Menu entries for what the bar hides at phone width, so it keeps one row; hidden elsewhere."""
+def _menu(pergam_id: str, meta: Meta, version: int, editable: bool) -> str:
+    """The ⋯ menu: everything the calm bar leaves out, at every width.
+
+    Print is the frame bridge's own control (`.bar__print`), hidden until the bridge
+    answers, as the inline handler in `templates/view.html` expects.
+    """
     items = []
     if version > 1:
-        items.append(f'<li class="dropdown__phone"><a href="{diff_path(pergam_id, version - 1, version)}">Compare with v{version - 1}</a></li>')
-    items.append(f'<li class="dropdown__phone"><a href="/{pergam_id}/v{version}/text">Text</a></li>')
+        items.append(f'<li><a href="{diff_path(pergam_id, version - 1, version)}">Compare with v{version - 1}</a></li>')
+    items.append(f'<li><a href="/{pergam_id}/v{version}/text">Text</a></li>')
+    items.append('<li><button type="button" class="dropdown__item bar__print" hidden>Print</button></li>')
     if editable:
         items += [
-            f'<li class="dropdown__phone" data-meta-item hidden>{_flag("pinned", "Pin", meta.pinned, "dropdown__item", _pin_state(meta))}</li>',
-            f'<li class="dropdown__phone" data-meta-item hidden>{_flag("archived", "Archive", meta.archived, "dropdown__item")}</li>',
-            '<li class="dropdown__phone" data-meta-item hidden>'
-            '<button type="button" class="dropdown__item" data-tags-edit>Edit tags</button></li>',
+            f'<li data-meta-item hidden>{_flag("archived", "Archive", meta.archived, "dropdown__item")}</li>',
+            '<li data-meta-item hidden><button type="button" class="dropdown__item" data-tags-edit>Edit tags</button></li>',
         ]
-    return "".join(items)
-
-
-def _compare_link(pergam_id: str, version: int) -> str:
-    if version == 1:
-        return ""
+    items += [
+        '<li class="dropdown__rule" role="separator"></li>',
+        f'<li><a href="/{pergam_id}/v{version}/raw">Raw HTML</a></li>',
+        f'<li><a href="/{pergam_id}/export" download="pergam-{pergam_id}.json">Export (JSON)</a></li>',
+        f'<li><a href="{content_path(pergam_id, version)}">Open document</a></li>',
+    ]
     return (
-        f'<a class="btn" href="{diff_path(pergam_id, version - 1, version)}" '
-        f'title="What changed from v{version - 1} to v{version}">Compare</a>'
+        '<details class="dropdown more"><summary class="icon-btn dropdown__toggle" aria-label="More actions" '
+        f'title="Compare, text, print, archive, tags, raw HTML, export">{icons.MORE}</summary>'
+        f'<ul class="dropdown__menu dropdown__menu--end">{"".join(items)}</ul></details>'
     )
 
 
 def _bar_actions(pergam_id: str, meta: Meta, version: int, editable: bool) -> str:
-    more = (
-        '<details class="dropdown more"><summary class="icon-btn dropdown__toggle" aria-label="More actions" '
-        'title="Raw HTML, export, open document"><span aria-hidden="true">⋯</span></summary>'
-        '<ul class="dropdown__menu dropdown__menu--end">'
-        f"{_phone_items(pergam_id, meta, version, editable)}"
-        f'<li><a href="/{pergam_id}/v{version}/raw">Raw HTML</a></li>'
-        f'<li><a href="/{pergam_id}/export" download="pergam-{pergam_id}.json">Export (JSON)</a></li>'
-        f'<li><a href="{content_path(pergam_id, version)}">Open document</a></li></ul></details>'
-    )
     return (
         f"{_meta_controls(pergam_id, meta) if editable else ''}"
-        '<nav class="bar__links" aria-label="Pergam">'
-        f"{_compare_link(pergam_id, version)}"
-        f'<a class="btn" href="/{pergam_id}/v{version}/text">Text</a>'
-        '<button type="button" class="btn bar__print" hidden>Print</button>'
-        f"{more}</nav>"
-        '<button type="button" class="btn" data-panel-toggle aria-controls="panel" aria-expanded="true" hidden>'
+        '<button type="button" class="btn" data-panel-toggle aria-controls="panel" aria-expanded="false" hidden>'
         "History</button>"
+        f'<nav class="bar__links" aria-label="Pergam">{_menu(pergam_id, meta, version, editable)}</nav>'
     )
 
 

@@ -43,7 +43,7 @@ def test_view_frames_the_latest_version_in_a_page_of_its_own(client: Client) -> 
     assert '<span class="badge" style="--type-rgb:240,210,138">plan</span>' in page
     assert '<a class="tag" href="/?tag=q3">q3</a>' in page
     assert "ana@example.com" in page
-    assert '<summary class="ver dropdown__toggle">v2 of 2</summary>' in page
+    assert '<summary class="ver dropdown__toggle" aria-label="Version 2 of 2">v2<span class="ver__of"> of 2</span></summary>' in page
     assert '<nav aria-label="Breadcrumb"><a href="/">Index</a></nav>' in page
     assert f'<a href="/{pid}/v2/raw">Raw HTML</a>' in page
     assert 'class="outdated"' not in page
@@ -55,7 +55,7 @@ def test_earlier_version_shows_that_a_newer_one_exists(client: Client) -> None:
     page = client.get(f"/{pid}/v1/view").text
 
     assert frame_src(page) == f"/{pid}/v1/content"
-    assert '<summary class="ver dropdown__toggle">v1 of 5</summary>' in page
+    assert '<summary class="ver dropdown__toggle" aria-label="Version 1 of 5">v1<span class="ver__of"> of 5</span></summary>' in page
     assert re.search(
         rf'<p class="outdated" role="status">.*<a href="/{pid}/view">Go to the current version \(v5\)</a>', page
     )
@@ -66,7 +66,7 @@ def test_latest_version_pinned_by_number_has_no_outdated_notice(client: Client) 
 
     page = client.get(f"/{pid}/v3/view").text
 
-    assert '<summary class="ver dropdown__toggle">v3 of 3</summary>' in page
+    assert '<summary class="ver dropdown__toggle" aria-label="Version 3 of 3">v3<span class="ver__of"> of 3</span></summary>' in page
     assert 'class="outdated"' not in page
 
 
@@ -104,7 +104,7 @@ def test_bar_links_the_document_alone_and_offers_print_once_bridged(client: Clie
     page = client.get(f"/{pid}/view").text
 
     assert f'<a href="/{pid}/v1/content">Open document</a>' in page
-    assert '<button type="button" class="btn bar__print" hidden>Print</button>' in page
+    assert '<li><button type="button" class="dropdown__item bar__print" hidden>Print</button></li>' in page
     assert '<body data-title-suffix=" · v1 · pergam">' in page
 
 
