@@ -45,7 +45,7 @@ def test_panel_lists_every_version_with_note_author_date_and_a_compare_with_curr
 
     page = render_view("abcdef12", versions, Meta([], False, False), 1, now=NOW)
 
-    items = re.findall(r'<li class="history__item">(.*?)</li>', page)
+    items = re.findall(r'<li class="history__item[^"]*">(.*?)</li>', page)
     assert len(items) == 3
     assert '<a class="history__link" href="/abcdef12/v3/view">' in items[0]
     assert '<span class="history__latest">current</span>' in items[0]
@@ -54,6 +54,9 @@ def test_panel_lists_every_version_with_note_author_date_and_a_compare_with_curr
     assert "bo@example.com" in items[1] and "2 days ago" in items[1]
     assert '<a class="history__compare" href="/abcdef12/diff/v2..v3">' in items[1]
     assert '<a class="history__link" href="/abcdef12/v1/view" aria-current="page">' in items[2]
+    assert re.findall(r'<li class="(history__item[^"]*)">', page) == [
+        "history__item", "history__item", "history__item history__item--shown",
+    ]
     assert f'<time datetime="{(NOW - timedelta(days=6)).isoformat()}" title="2026-03-04 12:00 UTC">6 days ago</time>' in items[2]
 
 

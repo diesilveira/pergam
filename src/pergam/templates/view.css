@@ -59,6 +59,9 @@
   .history__compare { justify-self:start; margin:.05rem .55rem .3rem; color:var(--accent); font-size:.76rem; }
   .history__compare:hover { text-decoration:underline; }
 
+  .history__item:not(.history__item--shown):not(:hover):not(:focus-within) .history__compare {
+    position:absolute; width:1px; height:1px; margin:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
   .facts { margin:0; display:grid; gap:.45rem; font-size:.82rem; }
   .facts div { display:grid; gap:.05rem; }
   .facts dt { color:var(--muted); font-size:.72rem; }

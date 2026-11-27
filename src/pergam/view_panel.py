@@ -50,7 +50,8 @@ def _version(pergam_id: str, info: VersionInfo, shown: int, latest: int, now: da
         else ""
     )
     return (
-        f'<li class="history__item"><a class="history__link" href="/{pergam_id}/v{info.version}/view"{current}>'
+        f'<li class="history__item{" history__item--shown" if info.version == shown else ""}">'
+        f'<a class="history__link" href="/{pergam_id}/v{info.version}/view"{current}>'
         f'<span class="history__n">v{info.version}</span>{latest_badge}'
         f'<span class="history__when">{published_at(info.created_at, now)} · '
         f'<span class="history__author">{esc(info.author)}</span></span>{note}</a>{compare}</li>'

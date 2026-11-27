@@ -301,6 +301,23 @@ def test_the_bar_keeps_one_row_on_a_phone(open_page, client: Client, trusting: C
     assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
 
 
+def test_compare_with_current_shows_for_the_version_viewed_and_on_hover_or_focus(open_page, pergam: str) -> None:
+    page = open_page(pergam, viewport=WIDE)
+    shown, other = (page.locator(f".history__item:has(a[href$='/v{n}/view']) .history__compare") for n in (1, 2))
+
+    assert shown.bounding_box()["width"] > 50
+    assert other.bounding_box()["width"] <= 1
+    page.locator(".history__item:has(a[href$='/v2/view'])").hover()
+    assert other.bounding_box()["width"] > 50
+    page.locator("h1.bar__title").hover()
+    assert other.bounding_box()["width"] <= 1
+    page.locator(".history__item:has(a[href$='/v2/view']) .history__link").focus()
+    page.keyboard.press("Tab")
+    assert page.evaluate("document.activeElement.className") == "history__compare"
+    assert other.bounding_box()["width"] > 50
+    assert other.evaluate("node => getComputedStyle(node).outlineStyle") != "none"
+
+
 @pytest.mark.parametrize("target", ["more", "versions"])
 def test_a_click_in_the_document_closes_an_open_dropdown(open_page, pergam: str, target: str) -> None:
     page = open_page(pergam, viewport=WIDE)
