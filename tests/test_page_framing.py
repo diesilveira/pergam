@@ -27,7 +27,10 @@ def framing(resp) -> dict[str, str]:
 
 
 @pytest.mark.parametrize("method", ["GET", "HEAD"])
-@pytest.mark.parametrize("path", ["/", "/?q=plan", "/{id}/view", "/{id}/v1/view", "/{id}/diff/v1..v2"])
+@pytest.mark.parametrize(
+    "path",
+    ["/", "/?q=plan", "/?sort=title&type=otro", "/?archived=1", "/{id}/view", "/{id}/v1/view", "/{id}/diff/v1..v2"],
+)
 def test_every_page_refuses_other_framers(client: Client, path: str, method: str) -> None:
     resp = client.request(method, path.format(id=publish_two(client)))
 
@@ -143,11 +146,12 @@ def framed_by_another_site(browser, framer_url: str) -> tuple[str, list[str]]:
         page.close()
 
 
-def test_another_site_cannot_frame_the_view_page(browser, client: Client, framer) -> None:
+@pytest.mark.parametrize("path", ["/{id}/view", "/{id}/diff/v1..v2", "/"])
+def test_another_site_cannot_frame_a_page(browser, client: Client, framer, path: str) -> None:
     pid = publish_two(client)
     base = f"http://127.0.0.1:{client.port}"
 
-    view_url, console = framed_by_another_site(browser, framer(f"{base}/{pid}/view"))
+    view_url, console = framed_by_another_site(browser, framer(base + path.format(id=pid)))
     control_url, _ = framed_by_another_site(browser, framer(f"{base}/healthz"))
 
     assert control_url == f"{base}/healthz"
