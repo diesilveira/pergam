@@ -381,3 +381,19 @@ def test_a_click_in_the_document_closes_an_open_dropdown(open_page, pergam: str,
     page.frame(url=lambda url: "/content" in url).locator("body").click(position={"x": 20, "y": 400})
 
     page.wait_for_function(f"!document.querySelector('details.{target}').open")
+
+
+def test_print_from_the_menu_closes_it(open_page, client: Client) -> None:
+    pid = client.publish(title="Plan", html="<h1>one</h1>")["id"]
+    page = open_page(f"http://127.0.0.1:{client.port}/{pid}/view", viewport=WIDE)
+    page.wait_for_selector(".bar__print:not([hidden])", state="attached")
+    frame = page.frame(url=lambda url: "/content" in url)
+    frame.evaluate("() => { window.print = () => { window.printed = true; }; }")
+
+    page.get_by_label("More actions").click()
+    page.evaluate("() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))")
+    page.locator(".bar__print").click()
+
+    frame.wait_for_function("window.printed === true")
+    assert page.locator(".more .dropdown__menu").is_hidden()
+    assert page.evaluate("document.activeElement.getAttribute('aria-label')") == "More actions"

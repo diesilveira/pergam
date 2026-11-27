@@ -104,6 +104,9 @@
     addEventListener('blur', () => {
       if (document.activeElement instanceof HTMLIFrameElement) dropdowns.forEach((dropdown) => { dropdown.open = false; });
     });
+    document.querySelectorAll('details.dropdown .bar__print').forEach((print) => {
+      print.addEventListener('click', () => closeMenuOf(print));
+    });
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
       const open = dropdowns.find((dropdown) => dropdown.open);
