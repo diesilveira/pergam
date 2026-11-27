@@ -141,12 +141,12 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 ```
 ┌─────────────┐      ┌──────────────────┐      ┌──────────────┐
 │   Client    │ ───→ │      pergam      │ ───→ │   Postgres   │
-│ (AI / curl) │      │ (Python, stdlib) │      │  (4 tables)  │
+│ (AI / curl) │      │ (Python, stdlib) │      │  (5 tables)  │
 └─────────────┘      └──────────────────┘      └──────────────┘
 ```
 
 - **One Python process**, no framework — `http.server` and `psycopg`. Pages, scripts and Mermaid are served by the process itself.
-- **Four Postgres tables**: `pergams` (immutable, keyed by `id` and `version`), `pergam_meta` (tags, archived, pinned, origin, collaborators: what belongs to the id), `pergam_text` (each version's text and search document) and `pergam_note`. The latest version per `id` is read through the `pergams_latest` view.
+- **Five Postgres tables**: `pergams` (immutable, keyed by `id` and `version`), `pergam_meta` (tags, archived, pinned, origin, collaborators: what belongs to the id), `pergam_text` (each version's text and search document), `pergam_note` and `schema_migrations`. The latest version per `id` is read through the `pergams_latest` view.
 - **Numbered migrations** in `db/migrations/` are applied when the server starts.
 - **Framed documents**: the view page loads each version in a sandboxed iframe from `/{id}/v{n}/content` and talks to it only through `postMessage`.
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
