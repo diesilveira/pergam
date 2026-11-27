@@ -313,3 +313,23 @@ def test_import_over_the_cap_or_archived_arrives_unpinned(capped: tuple[Client, 
     assert client.get("/api/pergams/abc123ef").json()["pinned"] is False
     archived = client.get("/api/pergams/abc123ff").json()
     assert (archived["archived"], archived["pinned"], archived["pinned_at"]) == (True, False, None)
+
+
+def test_a_row_left_archived_and_pinned_reads_as_not_pinned_everywhere(client: Client, db: psycopg.Connection) -> None:
+    old = client.publish(title="Old")["id"]
+    newer = client.publish(title="Newer")["id"]
+    db.execute(
+        "INSERT INTO pergam_meta (id, archived, pinned, pinned_at) VALUES (%s, true, true, now())", (old,)
+    )
+    db.execute("UPDATE pergams SET created_at = created_at - interval '1 day' WHERE id = %s", (old,))
+
+    rows = client.get("/api/pergams?archived=1").json()["pergams"]
+    page = client.get("/?archived=1").text
+
+    assert [row["id"] for row in rows] == [newer, old]
+    assert (rows[1]["pinned"], rows[1]["pinned_at"]) == (False, None)
+    assert client.get(f"/{old}/meta").json() == {"id": old, "tags": [], "archived": True, "pinned": False}
+    one = client.get(f"/api/pergams/{old}").json()
+    assert (one["pinned"], one["pinned_at"]) == (False, None)
+    assert client.get(f"/{old}/export").json()["meta"] == {"tags": [], "archived": True, "pinned": False, "pinned_at": None}
+    assert 'class="flag flag--pinned"' not in page and old not in cards(page)

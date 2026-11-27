@@ -140,11 +140,13 @@ class FeedEntry:
 
 
 PAGE_SIZE = 100
+PINNED_SQL = "(COALESCE(m.pinned, false) AND NOT COALESCE(m.archived, false))"
+"""Whether a pergam is pinned: an archived one never is, whatever a row written by an older build says."""
 LISTED = "FROM pergams_latest l LEFT JOIN pergam_meta m ON m.id = l.id"
 SEARCHED = LISTED + " LEFT JOIN pergam_text t ON t.id = l.id AND t.version = l.version"
 ORDERS = {
     "recent": (
-        "COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC",
+        f"{PINNED_SQL} DESC, l.created_at DESC, l.id DESC",
         "p.pinned DESC, p.created_at DESC, p.id DESC",
     ),
     "title": ("lower(l.title), l.id", "p.title_key, p.id"),
@@ -300,7 +302,8 @@ def page_query(source: str, condition: str, sort: str, headline: str, limit: str
         FROM (
             SELECT l.id, l.version, l.title, l.type, l.author, l.created_at, l.bytes,
                    COALESCE(m.tags, '{{}}') AS tags, COALESCE(m.archived, false) AS archived,
-                   COALESCE(m.pinned, false) AS pinned, lower(l.title) AS title_key, m.pinned_at
+                   {PINNED_SQL} AS pinned, lower(l.title) AS title_key,
+                   CASE WHEN {PINNED_SQL} THEN m.pinned_at END AS pinned_at
             {source} {condition} ORDER BY {order} LIMIT {limit}
         ) p
         LEFT JOIN pergam_text t ON t.id = p.id AND t.version = p.version
@@ -361,9 +364,9 @@ class PergamStore:
         """Metadata of an id, defaults when it has no row; None when the id has no versions."""
         with self.pool.connection() as conn:
             row = conn.execute(
-                """
-                SELECT COALESCE(m.tags, '{}'), COALESCE(m.archived, false), COALESCE(m.pinned, false),
-                       m.origin_url, m.origin_id, m.pinned_at
+                f"""
+                SELECT COALESCE(m.tags, '{{}}'), COALESCE(m.archived, false), {PINNED_SQL},
+                       m.origin_url, m.origin_id, CASE WHEN {PINNED_SQL} THEN m.pinned_at END
                 FROM (SELECT DISTINCT id FROM pergams WHERE id = %(id)s) p
                 LEFT JOIN pergam_meta m ON m.id = p.id
                 """,
@@ -583,7 +586,7 @@ class PergamStore:
             page_where += " AND (lower(l.title), l.id) > (%(c_title)s, %(c_id)s)"
             params.update(c_title=filters.cursor.title_key, c_id=filters.cursor.id)
         elif isinstance(filters.cursor, IndexCursor):
-            page_where += " AND (COALESCE(m.pinned, false), l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
+            page_where += f" AND ({PINNED_SQL}, l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
             params.update(c_pinned=filters.cursor.pinned, c_at=filters.cursor.created_at, c_id=filters.cursor.id)
         order = ORDERS[filters.sort][0]
         source = SEARCHED if filters.q else LISTED
@@ -592,7 +595,7 @@ class PergamStore:
         def page_of(condition: str, limit: str, sort: str = filters.sort) -> str:
             return page_query(source, condition, sort, headline, limit)
 
-        pinned_where = f"{where} AND m.pinned AND NOT m.archived"
+        pinned_where = f"{where} AND {PINNED_SQL}"
         with self.pool.connection() as conn:
             rows = conn.execute(page_of(page_where, "%(limit)s"), params).fetchall()
             pinned: list[IndexRow] = []
