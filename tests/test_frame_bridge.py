@@ -189,6 +189,7 @@ def test_print_control_prints_the_framed_document(view) -> None:
     page.evaluate("() => { window.print = () => { window.printed = true; }; }")
 
     page.click("summary[aria-label='More actions']")
+    page.evaluate("() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))")
     page.click(".bar__print")
     page.keyboard.press("Control+p")
 
