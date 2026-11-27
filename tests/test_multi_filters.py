@@ -193,8 +193,11 @@ def test_the_number_of_queries_does_not_grow_with_the_values(
 
 
 @pytest.mark.parametrize("sort", ["recent", "title"])
-@pytest.mark.parametrize("state", ["active", "all"])
-def test_paging_visits_every_pergam_once_with_several_values(client: Client, db: psycopg.Connection, sort: str, state: str) -> None:
+@pytest.mark.parametrize("state", ["active", "archived", "all"])
+@pytest.mark.parametrize("q", [None, "Doc 1"])
+def test_paging_visits_every_pergam_once_with_several_values(
+    client: Client, db: psycopg.Connection, sort: str, state: str, q: str | None
+) -> None:
     flags = seed(db)
     order = (
         "lower(l.title), l.id"
@@ -202,11 +205,16 @@ def test_paging_visits_every_pergam_once_with_several_values(client: Client, db:
         else "COALESCE(m.pinned AND NOT m.archived, false) DESC, l.created_at DESC, l.id DESC"
     )
     rows = db.execute(
-        f"SELECT l.id, l.type FROM pergams_latest l LEFT JOIN pergam_meta m USING (id) ORDER BY {order}"
+        f"SELECT l.id, l.type, l.title FROM pergams_latest l LEFT JOIN pergam_meta m USING (id) ORDER BY {order}"
     ).fetchall()
-    expected = [pid for pid, kind in rows if kind in ("plan", "otro") and (state == "all" or not flags[pid][1])]
+    in_state = {"active": lambda pid: not flags[pid][1], "archived": lambda pid: flags[pid][1], "all": lambda pid: True}[state]
+    expected = [
+        pid
+        for pid, kind, title in rows
+        if kind in ("plan", "otro") and in_state(pid) and (q is None or q.lower() in title.lower())
+    ]
     by_date = [pid for (pid,) in db.execute("SELECT id FROM pergams_latest ORDER BY created_at DESC, id DESC")]
-    query = f"?type=plan&type=otro&state={state}&sort={sort}"
+    query = f"?type=plan&type=otro&state={state}&sort={sort}" + (f"&q={q.replace(' ', '+')}" if q else "")
 
     visited = crawl(client, f"/{query}")
     api_ids: list[str] = []
@@ -216,5 +224,6 @@ def test_paging_visits_every_pergam_once_with_several_values(client: Client, db:
         api_ids.extend(row["id"] for row in body["pergams"])
         path = f"/api/pergams{query}&cursor={body['next_cursor']}" if body["next_cursor"] else ""
 
+    assert expected
     assert api_ids == expected
     assert visited == as_listed(expected, flags, by_date)

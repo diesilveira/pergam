@@ -103,9 +103,10 @@
     .index { padding-top:1.2rem; }
     .toolbar { flex-wrap:wrap; }
     .toolbar .summary { order:3; flex-basis:100%; }
-    .row { grid-template-columns:minmax(0,1fr) auto auto; gap:.6rem; }
-    .row .badge { display:none; }
-    :root[data-summaries="on"] .row { grid-template-columns:minmax(0,1fr) auto auto; }
+    .row { gap:.5rem; padding-inline:.4rem; }
+    .row .badge { max-width:9ch; overflow:hidden; text-overflow:ellipsis; }
+    .row__date { min-width:0; }
+    :root[data-summaries="on"] .row { grid-template-columns:minmax(0,1fr) auto auto auto; }
     :root[data-summaries="on"] .row__version, :root[data-summaries="on"] .row__author-name { display:none; }
     .topbar__host { display:none; }
   }

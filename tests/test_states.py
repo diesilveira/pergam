@@ -88,6 +88,8 @@ def test_the_archived_view_is_titled_and_carries_no_badge(client: Client, shelf:
         ("/?archived=true&tag=ops&sort=title", "/?tag=ops&sort=title&state=all"),
         ("/?type=plan&archived=1&q=needle", "/?type=plan&q=needle&state=all"),
         ("/?archived=1&state=archived", "/?state=archived"),
+        ("/?archived=0&archived=1", "/"),
+        ("/?archived=&archived=1", "/?state=all"),
         ("/?archived=0", "/"),
         ("/?archived=", "/"),
     ],

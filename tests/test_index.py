@@ -120,7 +120,7 @@ def test_tag_counts_cover_visible_pergams(client: Client, tagged: dict[str, str]
     [
         ("/", None),
         ("/?state=all", "5 of 5"),
-        ("/?state=archived", "1 of 5"),
+        ("/?state=archived", "1 of 1"),
         ("/?tag=ops", "2 of 4"),
         ("/?tag=ops&state=all", "3 of 5"),
         ("/?q=plan", "2 of 4"),

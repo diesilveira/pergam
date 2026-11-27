@@ -17,7 +17,7 @@ from pathlib import Path
 from string import Template
 
 from pergam import icons
-from pergam.filters_ui import FORM_CSS, dialog, filter_count, filters_page_link, summary, trigger
+from pergam.filters_ui import FORM_CSS, dialog_shell, filter_count, filters_page_link, summary, trigger
 from pergam.index_links import avatar, index_link, query_pairs, short_author, with_value
 from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
 from pergam.states import ALL, ARCHIVED
@@ -263,7 +263,7 @@ def footer(filters: IndexFilters) -> str:
     )
 
 
-def render_index(data: IndexData, filters: IndexFilters, host_display: str, types: tuple[str, ...] = ()) -> str:
+def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> str:
     now = datetime.now(timezone.utc)
     listed = [row for row in data.rows if row.id not in data.pinned_ids]
     cards = pinned_cards(data, filters, now)
@@ -279,7 +279,7 @@ def render_index(data: IndexData, filters: IndexFilters, host_display: str, type
         trigger=trigger(filters),
         summary=summary(data.matching, data.stats, filters),
         sort_menu=sort_menu(filters),
-        dialog=dialog(data.facets, filters, types) if data.facets else "",
+        dialog="" if filters.cursor else dialog_shell(filters),
         footer=footer(filters),
         pinned=cards,
         groups=groups if groups or cards or filters.cursor else empty_state(data, filters),

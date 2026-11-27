@@ -40,7 +40,7 @@ CHIPS_SHOWN = 5
 STATE_CHIPS = {ARCHIVED: "Archived only", ALL: "Active and archived"}
 STATUS_OPTIONS = ((ACTIVE, "Active"), (ARCHIVED, "Archived"), (ALL, "All"))
 
-FUNNEL, CROSS, CLOSE, CHECK = icons.FILTER, icons.CHIP_REMOVE, icons.CLOSE, icons.CHECK
+FUNNEL, CROSS, CLOSE = icons.FILTER, icons.CHIP_REMOVE, icons.CLOSE
 
 
 def filter_count(filters: IndexFilters) -> int:
@@ -76,10 +76,12 @@ class Chip:
 
 
 def chips(filters: IndexFilters) -> list[Chip]:
-    """One chip per active value, in the order of the form; removing one keeps everything else."""
-    out = [Chip("Type", value, value, without_value(filters, "types", value)) for value in filters.types]
-    out += [Chip("Author", short_author(value), value, without_value(filters, "authors", value)) for value in filters.authors]
-    out += [Chip("Tag", value, value, without_value(filters, "tags", value)) for value in filters.tags]
+    """One chip per active value, in the order of the URL; removing one keeps everything else."""
+    out = [Chip("Type", value, value, without_value(filters, "types", value)) for value in sorted(filters.types)]
+    out += [
+        Chip("Author", short_author(value), value, without_value(filters, "authors", value)) for value in sorted(filters.authors)
+    ]
+    out += [Chip("Tag", value, value, without_value(filters, "tags", value)) for value in sorted(filters.tags)]
     if filters.state != ACTIVE:
         out.append(Chip("", STATE_CHIPS[filters.state], STATE_CHIPS[filters.state], replace(filters, state=ACTIVE, cursor=None)))
     return out
@@ -95,8 +97,12 @@ def _chip(chip: Chip) -> str:
 
 
 def scope_total(stats: IndexStats, state: str) -> int:
-    """What "everything" means for the summary's "N of M": the active pergams, or all of them once archived ones show."""
-    return stats.total_pergams - (stats.total_archived if state == ACTIVE else 0)
+    """What "everything" means for the summary's "N of M": every pergam in the status (active, archived or all)."""
+    if state == ACTIVE:
+        return stats.total_pergams - stats.total_archived
+    if state == ARCHIVED:
+        return stats.total_archived
+    return stats.total_pergams
 
 
 def summary(matching: int, stats: IndexStats, filters: IndexFilters) -> str:
@@ -130,19 +136,26 @@ class Item:
     value: str
     count: int
     checked: bool
+    dims: bool = True
 
     @property
     def unavailable(self) -> bool:
-        return self.count == 0 and not self.checked
+        """No result and not selected: dimmed and refused in the dialog; the page has no script to refuse it, so never."""
+        return self.dims and self.count == 0 and not self.checked
 
 
-def items(counts: list[tuple[str, int]], selected: tuple[str, ...], first: tuple[str, ...] = ()) -> list[Item]:
+def items(
+    counts: list[tuple[str, int]], selected: tuple[str, ...], first: tuple[str, ...] = (), dims: bool = True
+) -> list[Item]:
     """Selected values first, then the others in facet order (configured types, else most used), then the empty ones."""
-    listed = [Item(entry["value"], entry["count"], entry["value"] in selected) for entry in facet_values(counts, selected, first)]
+    listed = [
+        Item(entry["value"], entry["count"], entry["value"] in selected, dims)
+        for entry in facet_values(counts, selected, first)
+    ]
     return (
         [item for item in listed if item.checked]
         + [item for item in listed if not item.checked and item.count]
-        + [item for item in listed if item.unavailable]
+        + [item for item in listed if not item.checked and not item.count]
     )
 
 
@@ -174,7 +187,7 @@ def _extra(extra: bool) -> str:
 def pill(name: str, item: Item, extra: bool = False) -> str:
     return (
         f'<label class="pill{" is-zero" if item.unavailable else ""}" data-item data-value="{esc(item.value)}"{_extra(extra)}>'
-        f'{_input(name, item, item.value)}{CHECK}{_label("pill__label", item.value)}{_count(item)}</label>'
+        f'{_input(name, item, item.value)}{_label("pill__label", item.value)}{_count(item)}</label>'
     )
 
 
@@ -196,21 +209,23 @@ class Section:
     shown: int
     find_above: int
     find_label: str
+    nothing_below: int
 
 
-TYPE = Section("type", "type", "Type", "types", 10**6, 10**6, "")
-AUTHOR = Section("author", "author", "Author", "authors", AUTHORS_SHOWN, FIND_AUTHORS_ABOVE, "Find an author")
-TAG = Section("tag", "tag", "Tags", "tags", TAGS_SHOWN, FIND_TAGS_ABOVE, "Find a tag")
+TYPE = Section("type", "type", "Type", "types", 10**6, 10**6, "", 2)
+AUTHOR = Section("author", "author", "Author", "authors", AUTHORS_SHOWN, FIND_AUTHORS_ABOVE, "Find an author", 2)
+TAG = Section("tag", "tag", "Tags", "tags", TAGS_SHOWN, FIND_TAGS_ABOVE, "Find a tag", 1)
 
 
 def section(spec: Section, values: list[Item], dialog: bool, existing: int) -> str:
     """One fieldset; in the dialog, values past `spec.shown` start folded (never a selected one, never just a few).
 
-    A section with nothing to choose is left out: no pergam has two different values
-    of it (`existing` counts the values any pergam has), and none is selected.
+    A section with nothing to choose is left out when none of its values is selected:
+    Type and Author when every pergam has the same one, Tags when no pergam has a tag
+    (`existing` counts the values any pergam has, against `spec.nothing_below`).
     """
     selected = sum(item.checked for item in values)
-    if not selected and existing <= 1:
+    if not selected and existing < spec.nothing_below:
         return ""
     keep = max(spec.shown, selected)
     folds = dialog and len(values) - keep > FEW_HIDDEN
@@ -265,20 +280,29 @@ def form_body(facets: Facets, filters: IndexFilters, types: tuple[str, ...], dia
         if value
     )
     return (
-        section(TYPE, items(facets.types, filters.types, types), dialog, len(facets.types))
-        + section(AUTHOR, items(facets.authors, filters.authors), dialog, len(facets.authors))
-        + section(TAG, items(facets.tags, filters.tags), dialog, len(facets.tags))
+        section(TYPE, items(facets.types, filters.types, types, dialog), dialog, len(facets.types))
+        + section(AUTHOR, items(facets.authors, filters.authors, dims=dialog), dialog, len(facets.authors))
+        + section(TAG, items(facets.tags, filters.tags, dims=dialog), dialog, len(facets.tags))
         + status_section(filters)
         + kept
     )
 
 
-def dialog(facets: Facets, filters: IndexFilters, types: tuple[str, ...]) -> str:
-    """The modal on the index; closed until filters.js opens it, so without script it is never shown."""
+def dialog_shell(filters: IndexFilters) -> str:
+    """The empty modal on the index; filters.js fills it from `data-src` (`/filters/form`) on first open.
+
+    Keeping the form out of the page keeps the index light however many authors and
+    tags there are; without script the dialog is never shown.
+    """
+    source = esc(index_link(replace(filters, cursor=None), path="/filters/form"))
+    return f'<dialog class="fdialog" aria-labelledby="filters-title" data-filters-dialog data-src="{source}"></dialog>'
+
+
+def dialog_form(facets: Facets, filters: IndexFilters, types: tuple[str, ...]) -> str:
+    """`/filters/form`: the dialog's form, the same partial as the `/filters` page with folding, find fields and live counts."""
     total = facets.total
     apply_label = f"Show {total} pergam{'s' if total != 1 else ''}" if total else "No matches"
     return (
-        '<dialog class="fdialog" aria-labelledby="filters-title" data-filters-dialog>'
         '<form class="fform" method="get" action="/" data-filters-form>'
         '<header class="fform__head"><h2 class="fform__title" id="filters-title">'
         '<span class="fform__title--wide">Filter pergams</span><span class="fform__title--narrow">Filters</span></h2>'
@@ -291,7 +315,7 @@ def dialog(facets: Facets, filters: IndexFilters, types: tuple[str, ...]) -> str
         f'<button type="submit" class="btn btn--primary fform__apply" data-filters-apply{" disabled" if not total else ""}>'
         f"{apply_label}</button>"
         '<p class="sr-only" aria-live="polite" data-filters-live></p>'
-        "</footer></form></dialog>"
+        "</footer></form>"
     )
 
 
