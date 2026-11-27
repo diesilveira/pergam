@@ -76,6 +76,8 @@ def test_details_without_access_name_the_first_author_and_no_collaborators() -> 
 
     facts = dict(re.findall(r"<div><dt>(.*?)</dt><dd>(.*?)</dd></div>", page))
     assert facts == {
+        "Type": "plan",
+        "Tags": '<span class="facts__tags" data-tags></span>',
         "Author": "ana@example.com",
         "Collaborators": '<span class="muted">none</span>',
         "Origin": "published here",
@@ -130,7 +132,11 @@ def test_bar_has_a_breadcrumb_buttons_and_a_menu_for_the_rest(client: Client) ->
     assert f'<a class="btn" href="/{pid}/v2/text">Text</a>' in page
     menu = re.search(r'<details class="dropdown more">(.*?)</details>', page).group(1)
     assert '<summary class="icon-btn dropdown__toggle" aria-label="More actions"' in menu
-    assert re.findall(r'<a href="([^"]+)"[^>]*>([^<]+)</a>', menu) == [
+    assert re.findall(r'<li class="dropdown__phone"><a href="([^"]+)">([^<]+)</a>', menu) == [
+        (f"/{pid}/diff/v1..v2", "Compare with v1"),
+        (f"/{pid}/v2/text", "Text"),
+    ]
+    assert re.findall(r'<li><a href="([^"]+)"[^>]*>([^<]+)</a>', menu) == [
         (f"/{pid}/v2/raw", "Raw HTML"),
         (f"/{pid}/export", "Export (JSON)"),
         (f"/{pid}/v2/content", "Open document"),

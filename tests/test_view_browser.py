@@ -10,6 +10,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from pergam.diff import MAX_LINES
 from support import Client, in_ci, unavailable
 
 try:
@@ -195,7 +196,8 @@ def test_every_control_in_the_bar_and_panel_is_reachable_and_named(open_page, pe
 
     controls = [item for item in reached if item["tag"] in ("A", "BUTTON", "SUMMARY")]
     names = {item["name"] for item in controls}
-    assert {"Index", "q3", "v1 of 3", "Text", "More actions", "History"} <= names
+    common = {"q3", "v1 of 3", "More actions", "History"}
+    assert (common | {"Index", "Text"} if viewport is WIDE else common) <= names
     assert any(name.startswith("v3") for name in names)
     assert any(name.startswith("Theme:") for name in names)
     assert any(name.startswith("Compare v1 with current") for name in names)
@@ -267,3 +269,33 @@ def test_the_version_shown_is_scrolled_into_view_in_a_long_history(open_page, cl
 
     assert page.evaluate("document.getElementById('panel').scrollTop") > 0
     assert page.evaluate(CURRENT_IN_PANEL)
+
+
+ONE_ROW = """() => {
+  const bar = document.querySelector('.topbar');
+  const shown = [...bar.children, ...bar.querySelector('.topbar__actions').children]
+    .filter((node) => node.getClientRects().length && !node.classList.contains('topbar__actions'))
+    .map((node) => node.getBoundingClientRect());
+  const middles = shown.map((box) => box.top + box.height / 2);
+  return { height: bar.getBoundingClientRect().height, spread: Math.max(...middles) - Math.min(...middles) };
+}"""
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+@pytest.mark.parametrize("page_kind", ["view", "view-stranger", "diff", "too-large"])
+def test_the_bar_keeps_one_row_on_a_phone(open_page, client: Client, trusting: Client, scheme: str, page_kind: str) -> None:
+    owner = trusting.as_user("ana@example.com")
+    pid = owner.publish(title="A rather long title for a phone", tags=["q3", "budget"], html="<h1>a</h1>")["id"]
+    owner.publish(id=pid, title="A rather long title for a phone", html="<h1>b</h1>")
+    if page_kind == "too-large":
+        owner.publish(id=pid, title="A rather long title for a phone", html="<p>x</p>" * (MAX_LINES + 1))
+    server, headers = (trusting, {"X-Forwarded-User": "eve@example.com"}) if page_kind == "view-stranger" else (client, {})
+    path = {"view": f"/{pid}/v1/view", "view-stranger": f"/{pid}/v1/view", "diff": f"/{pid}/diff/v1..v2",
+            "too-large": f"/{pid}/diff/v1..v3"}[page_kind]
+
+    page = open_page(f"http://127.0.0.1:{server.port}{path}", scheme, viewport=PHONE, extra_http_headers=headers)
+
+    bar = page.evaluate(ONE_ROW)
+    assert bar["spread"] < 8, bar
+    assert bar["height"] < 56, bar
+    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]

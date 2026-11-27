@@ -168,21 +168,41 @@ def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[V
     )
 
 
+def _pin_state(meta: Meta) -> str:
+    """An archived pergam cannot be pinned, so Pin is then unavailable and says why (`pin-note`)."""
+    return ' aria-disabled="true" aria-describedby="pin-note"' if meta.archived else ' aria-disabled="false"'
+
+
+def _flag(flag: str, label: str, on: bool, css: str, extra: str = "") -> str:
+    return (
+        f'<button type="button" class="{css}" data-meta-flag="{flag}" aria-pressed="{str(on).lower()}"{extra}>'
+        f"{label}</button>"
+    )
+
+
 def _meta_controls(pergam_id: str, meta: Meta) -> str:
-    """Pin and Archive toggles; an archived pergam cannot be pinned, so Pin is then unavailable and says why."""
-
-    def toggle(flag: str, label: str, on: bool, extra: str = "") -> str:
-        return (
-            f'<button type="button" class="btn" data-meta-flag="{flag}" aria-pressed="{str(on).lower()}"{extra}>'
-            f"{label}</button>"
-        )
-
-    blocked = ' aria-disabled="true" aria-describedby="pin-note"' if meta.archived else ' aria-disabled="false"'
+    """Pin and Archive toggles in the bar; at phone width the same controls live in the ⋯ menu."""
     return (
         f'<span class="meta-controls" data-meta-url="/{pergam_id}/meta" hidden>'
-        f'{toggle("pinned", "Pin", meta.pinned, blocked)}{toggle("archived", "Archive", meta.archived)}'
+        f'{_flag("pinned", "Pin", meta.pinned, "btn", _pin_state(meta))}{_flag("archived", "Archive", meta.archived, "btn")}'
         '<span class="sr-only" id="pin-note">Archived pergams cannot be pinned: unarchive it first.</span></span>'
     )
+
+
+def _phone_items(pergam_id: str, meta: Meta, version: int, editable: bool) -> str:
+    """Menu entries for what the bar hides at phone width, so it keeps one row; hidden elsewhere."""
+    items = []
+    if version > 1:
+        items.append(f'<li class="dropdown__phone"><a href="{diff_path(pergam_id, version - 1, version)}">Compare with v{version - 1}</a></li>')
+    items.append(f'<li class="dropdown__phone"><a href="/{pergam_id}/v{version}/text">Text</a></li>')
+    if editable:
+        items += [
+            f'<li class="dropdown__phone" data-meta-item hidden>{_flag("pinned", "Pin", meta.pinned, "dropdown__item", _pin_state(meta))}</li>',
+            f'<li class="dropdown__phone" data-meta-item hidden>{_flag("archived", "Archive", meta.archived, "dropdown__item")}</li>',
+            '<li class="dropdown__phone" data-meta-item hidden>'
+            '<button type="button" class="dropdown__item" data-tags-edit>Edit tags</button></li>',
+        ]
+    return "".join(items)
 
 
 def _compare_link(pergam_id: str, version: int) -> str:
@@ -199,6 +219,7 @@ def _bar_actions(pergam_id: str, meta: Meta, version: int, editable: bool) -> st
         '<details class="dropdown more"><summary class="icon-btn dropdown__toggle" aria-label="More actions" '
         'title="Raw HTML, export, open document"><span aria-hidden="true">⋯</span></summary>'
         '<ul class="dropdown__menu dropdown__menu--end">'
+        f"{_phone_items(pergam_id, meta, version, editable)}"
         f'<li><a href="/{pergam_id}/v{version}/raw">Raw HTML</a></li>'
         f'<li><a href="/{pergam_id}/export" download="pergam-{pergam_id}.json">Export (JSON)</a></li>'
         f'<li><a href="{content_path(pergam_id, version)}">Open document</a></li></ul></details>'
@@ -258,5 +279,5 @@ def render_view(
         meta_status='<p class="meta-status" data-meta-status role="status"></p>' if editable else "",
         outdated=_outdated(pergam_id, shown, versions[0].version, now),
         frame_attributes=_attributes(frame + policy.iframe_attributes),
-        panel=render_panel(pergam_id, versions, version, meta.origin, access, now),
+        panel=render_panel(pergam_id, versions, version, meta, access, now),
     )

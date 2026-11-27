@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import html as html_lib
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from pergam.access import Access
-from pergam.meta import Origin
+from pergam.meta import Meta, Origin
 from pergam.store import VersionInfo
 
 esc = html_lib.escape
@@ -67,12 +67,19 @@ def origin_link(origin: Origin | None) -> str:
     )
 
 
-def _details(pergam_id: str, owner: str, collaborators: list[str], origin: Origin | None) -> str:
+def _tag_links(tags: list[str]) -> str:
+    links = "".join(f'<a class="tag" href="/?{esc(urlencode({"tag": tag}))}">{esc(tag)}</a>' for tag in tags)
+    return f'<span class="facts__tags" data-tags>{links}</span>'
+
+
+def _details(pergam_id: str, kind: str, meta: Meta, owner: str, collaborators: list[str]) -> str:
     people = ", ".join(esc(user) for user in collaborators) or '<span class="muted">none</span>'
     facts = (
+        ("Type", esc(kind)),
+        ("Tags", _tag_links(meta.tags)),
         ("Author", esc(owner)),
         ("Collaborators", people),
-        ("Origin", origin_link(origin)),
+        ("Origin", origin_link(meta.origin)),
         ("Id", f"<code>{esc(pergam_id)}</code>"),
     )
     rows = "".join(f"<div><dt>{name}</dt><dd>{value}</dd></div>" for name, value in facts)
@@ -80,10 +87,11 @@ def _details(pergam_id: str, owner: str, collaborators: list[str], origin: Origi
 
 
 def render_panel(
-    pergam_id: str, versions: list[VersionInfo], shown: int, origin: Origin | None, access: Access | None, now: datetime
+    pergam_id: str, versions: list[VersionInfo], shown: int, meta: Meta, access: Access | None, now: datetime
 ) -> str:
     """`versions` newest first; without `access` the author of the first version is the author."""
     latest = versions[0].version
+    kind = next(info.type for info in versions if info.version == shown)
     owner = access.owner if access else versions[-1].author
     collaborators = access.collaborators if access else []
     items = "".join(_version(pergam_id, info, shown, latest, now) for info in versions)
@@ -93,5 +101,5 @@ def render_panel(
         '<button type="button" class="icon-btn" data-panel-close aria-label="Close history" hidden>'
         '<span aria-hidden="true">×</span></button></div>'
         f'<ol class="history" reversed>{items}</ol>'
-        f"{_details(pergam_id, owner, collaborators, origin)}</aside>"
+        f"{_details(pergam_id, kind, meta, owner, collaborators)}</aside>"
     )

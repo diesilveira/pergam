@@ -136,9 +136,11 @@
     const status = document.querySelector('[data-meta-status]');
     if (!controls || !status) return;
     const url = controls.dataset.metaUrl;
-    const flags = Array.from(controls.querySelectorAll('[data-meta-flag]'));
-    const tagList = document.querySelector('[data-tags]');
-    const tagEdit = document.querySelector('[data-tags-edit]');
+    const flags = Array.from(document.querySelectorAll('[data-meta-flag]'));
+    const pins = flags.filter((button) => button.dataset.metaFlag === 'pinned');
+    const tagLists = Array.from(document.querySelectorAll('[data-tags]'));
+    const barTags = document.querySelector('.bar__tags');
+    const tagEdits = Array.from(document.querySelectorAll('[data-tags-edit]'));
     const tagForm = document.querySelector('[data-tags-form]');
     const tagInput = tagForm && tagForm.querySelector('input');
     const busy = (on) => {
@@ -153,23 +155,22 @@
       if (text) pending = setTimeout(() => { status.textContent = text; }, ANNOUNCE_DELAY);
     };
 
-    const pin = controls.querySelector('[data-meta-flag="pinned"]');
     const show = (meta) => {
       flags.forEach((button) => button.setAttribute('aria-pressed', String(meta[button.dataset.metaFlag])));
-      if (pin) {
+      pins.forEach((pin) => {
         pin.setAttribute('aria-disabled', String(meta.archived));
         if (meta.archived) pin.setAttribute('aria-describedby', 'pin-note');
         else pin.removeAttribute('aria-describedby');
-      }
-      if (tagList) {
-        tagList.replaceChildren(...meta.tags.map((tag) => {
+      });
+      tagLists.forEach((list) => {
+        list.replaceChildren(...meta.tags.map((tag) => {
           const link = document.createElement('a');
           link.className = 'tag';
           link.href = '/?' + new URLSearchParams({ tag });
           link.textContent = tag;
           return link;
         }));
-      }
+      });
       if (tagInput) tagInput.defaultValue = tagInput.value = meta.tags.join(', ');
     };
 
@@ -219,7 +220,7 @@
           return;
         }
         const wanted = button.getAttribute('aria-pressed') !== 'true';
-        const wasPinned = Boolean(pin) && pin.getAttribute('aria-pressed') === 'true';
+        const wasPinned = pins.some((pin) => pin.getAttribute('aria-pressed') === 'true');
         const meta = await patch({ [flag]: wanted });
         if (!meta) return;
         const unpinned = flag === 'archived' && wanted && wasPinned && !meta.pinned;
@@ -227,15 +228,21 @@
       });
     });
 
-    if (tagEdit && tagForm && tagInput) {
+    if (tagEdits.length && tagForm && tagInput) {
+      const barEdit = tagEdits.find((button) => !button.closest('details'));
+      let openedBy = barEdit;
       const editing = (on) => {
         tagForm.hidden = !on;
-        tagEdit.hidden = on;
-        if (tagList) tagList.hidden = on;
-        if (on) tagInput.focus();
-        else tagEdit.focus();
+        if (barEdit) barEdit.hidden = on;
+        if (barTags) barTags.hidden = on;
+        if (on) {
+          tagInput.focus();
+          return;
+        }
+        const menu = openedBy && openedBy.closest('details');
+        (menu ? menu.querySelector('summary') : openedBy).focus();
       };
-      tagEdit.hidden = false;
+      if (barEdit) barEdit.hidden = false;
       const reread = async () => {
         try {
           const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
@@ -249,9 +256,14 @@
           /* keep editing what the page already shows */
         }
       };
-      tagEdit.addEventListener('click', () => {
-        editing(true);
-        reread();
+      tagEdits.forEach((button) => {
+        button.addEventListener('click', () => {
+          openedBy = button;
+          const menu = button.closest('details');
+          if (menu) menu.open = false;
+          editing(true);
+          reread();
+        });
       });
       const cancel = () => {
         tagForm.reset();
@@ -274,6 +286,7 @@
       });
     }
     controls.hidden = false;
+    document.querySelectorAll('[data-meta-item]').forEach((item) => { item.hidden = false; });
   };
 
   const setUpSectionLinks = () => {

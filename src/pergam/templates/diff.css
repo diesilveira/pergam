@@ -6,6 +6,7 @@
   .pickers { display:flex; align-items:center; gap:.35rem; }
   .pickers__arrow { color:var(--muted); }
   .bar__summary { font-family:var(--mono); font-size:.76rem; color:var(--muted); }
+  .summary--phone { display:none; margin:0 0 1rem; font-family:var(--mono); font-size:.76rem; color:var(--muted); }
 
   .versions__list { min-width:20rem; }
   .versions__list a { display:grid; grid-template-columns:3.2rem 1fr; gap:.2rem .6rem; align-items:baseline; }
@@ -75,4 +76,12 @@
   @media (max-width: 700px) {
     .crumbs__doc { max-width:14ch; }
     .versions__list { min-width:0; }
+  }
+  @media (max-width: 640px) {
+    .topbar { flex-wrap:nowrap; gap:.4rem; }
+    .logo__name { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+    .crumbs { flex:1 1 auto; }
+    .crumbs nav, .crumbs__sep, .bar__summary, .topbar__actions .btn--primary { display:none; }
+    .topbar__actions { flex:0 0 auto; }
+    .summary--phone { display:block; }
   }

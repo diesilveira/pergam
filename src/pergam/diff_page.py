@@ -209,5 +209,6 @@ def render_diff(
         old_note=f'<span class="note">{esc(old.note)}</span>' if old.note else "",
         new_note=f'<span class="note">{esc(new.note)}</span>' if new.note else "",
         toc=_toc(sections),
+        summary=summary,
         sections=body,
     )

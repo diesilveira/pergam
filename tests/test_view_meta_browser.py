@@ -88,6 +88,16 @@ def base(client: Client) -> str:
     return f"http://127.0.0.1:{client.port}"
 
 
+def open_menu_over_the_document(page) -> None:
+    """Open the ⋯ menu and let it settle before clicking in it.
+
+    The menu opens over the sandboxed frame, which runs in its own process; a click
+    sent within a frame or two of the menu appearing can still be routed to the frame.
+    """
+    page.get_by_label("More actions").click()
+    page.wait_for_timeout(250)
+
+
 def status_text(page) -> str:
     page.wait_for_function("document.querySelector('[data-meta-status]').textContent !== ''")
     return page.locator("[data-meta-status]").inner_text()
@@ -133,7 +143,7 @@ def test_archiving_from_the_page_hides_the_pergam_from_the_index(open_page, clie
 def test_tags_are_edited_inline_with_the_keyboard(open_page, client: Client, db: psycopg.Connection) -> None:
     pid = client.publish(tags=["q3"])["id"]
     page = open_page(f"{base(client)}/{pid}/view")
-    edit = page.locator("[data-tags-edit]")
+    edit = page.locator(".bar__tag-edit")
 
     edit.focus()
     page.keyboard.press("Enter")
@@ -206,9 +216,8 @@ def test_a_stranger_gets_no_controls(open_page, trusting: Client) -> None:
 
     page = open_page(f"{base(trusting)}/{pid}/view", extra_http_headers={"X-Forwarded-User": "eve@example.com"})
 
-    assert page.get_by_role("button", name="Pin", exact=True).count() == 0
-    assert page.get_by_role("button", name="Edit tags").count() == 0
-    assert page.get_by_role("link", name="q3").is_visible()
+    assert page.locator("[data-meta-flag], [data-tags-edit], [data-meta-status]").count() == 0
+    assert page.locator(".bar__tags").get_by_role("link", name="q3").is_visible()
 
 
 def test_without_script_the_controls_are_absent(open_page, client: Client) -> None:
@@ -218,20 +227,30 @@ def test_without_script_the_controls_are_absent(open_page, client: Client) -> No
 
     for name in ("Pin", "Archive", "Edit tags", "Save"):
         assert page.get_by_role("button", name=name, exact=True).count() == 0
-    assert page.get_by_role("link", name="q3").is_visible()
+    page.get_by_label("More actions").click()
+    for name in ("Pin", "Archive", "Edit tags"):
+        assert page.get_by_role("button", name=name, exact=True).count() == 0
+    assert page.locator(".bar__tags").get_by_role("link", name="q3").is_visible()
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 def test_controls_fit_a_phone_and_their_messages_meet_aa(open_page, client: Client, scheme: str) -> None:
     pid = client.publish(tags=["q3"])["id"]
     page = open_page(f"{base(client)}/{pid}/view", scheme, viewport={"width": 360, "height": 740})
+    menu_pin = page.locator(".dropdown__phone [data-meta-flag=pinned]")
 
-    page.get_by_role("button", name="Pin", exact=True).click()
+    assert page.locator(".meta-controls").is_hidden()
+    open_menu_over_the_document(page)
+    menu_pin.click()
     ok = status_text(page)
+    assert menu_pin.get_attribute("aria-pressed") == "true"
+    assert page.locator(".meta-controls [data-meta-flag=pinned]").get_attribute("aria-pressed") == "true"
     page.route(f"**/{pid}/meta", lambda route: route.fulfill(status=500, body=""))
-    page.get_by_role("button", name="Pin", exact=True).click()
+    menu_pin.click()
     page.wait_for_selector(".meta-status--error")
-    page.get_by_role("button", name="Edit tags").click()
+    page.locator(".dropdown__phone [data-tags-edit]").click()
+    assert page.evaluate("document.activeElement.id") == "tag-input"
+    assert page.locator(".more .dropdown__menu").is_hidden()
 
     assert ok
     assert page.evaluate("document.documentElement.scrollWidth") <= 360
@@ -279,7 +298,7 @@ def test_a_published_script_cannot_pin_archive_or_tag(
         "dom": "blocked" if opened == "framed" else "no-parent",
     }
     assert db.execute("SELECT count(*) FROM pergam_meta").fetchone() == (0,)
-    assert pressed == (["false", "false"] if opened == "framed" else [])
+    assert pressed == (["false"] * 4 if opened == "framed" else [])
     assert status_silent
 
 
