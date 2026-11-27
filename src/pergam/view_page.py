@@ -24,7 +24,7 @@ from string import Template
 from urllib.parse import urlencode
 
 from pergam.access import Access
-from pergam.layout import HEAD_ASSETS, top_bar
+from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
 from pergam.meta import Meta
 from pergam.static_files import BRIDGE_PATH, PAGES_SCRIPT_PATH, STORAGE_SHIM, hashed_url
 from pergam.store import VersionInfo
@@ -275,6 +275,7 @@ def render_view(
         top_bar=top_bar(
             middle=_bar_middle(pergam_id, shown, meta, versions, editable),
             actions=_bar_actions(pergam_id, meta, version, editable),
+            search=SearchBox(collapsed=True),
         ),
         meta_status='<p class="meta-status" data-meta-status role="status"></p>' if editable else "",
         outdated=_outdated(pergam_id, shown, versions[0].version, now),

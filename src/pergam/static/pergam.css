@@ -124,6 +124,23 @@ mark { background: var(--mark-bg); color: var(--text); border-radius: 3px; paddi
 @media (hover: none) {
   .topbar__search-key { display: none; }
 }
+/* Collapsed field (view and diff): the compact field at every width, by the actions. */
+:where(.topbar:has(.topbar__search--collapsed)) { position: relative; }
+.topbar__search--collapsed {
+  order: 0; flex: 0 0 28px; width: 28px; height: 24px; margin: -2px 0 -2px auto; padding: 0; justify-content: center;
+  background: transparent; border-color: transparent;
+}
+.topbar__search--collapsed + .topbar__actions { margin-left: 0; }
+.topbar__search--collapsed .topbar__search-icon { width: 28px; height: 24px; display: grid; place-items: center; cursor: pointer; }
+.topbar__search--collapsed .topbar__search-input { flex: 0 0 0; width: 0; padding: 0; }
+.topbar__search--collapsed .topbar__search-key { display: none; }
+.topbar__search--collapsed:focus-within {
+  position: absolute; z-index: 20; top: .4rem; right: var(--space-4); left: auto; width: min(32rem, calc(100% - 2 * var(--space-4)));
+  height: auto; margin: 0; padding: .3rem .6rem; justify-content: flex-start; background: var(--bg); border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+.topbar__search--collapsed:focus-within .topbar__search-icon { width: auto; height: auto; }
+.topbar__search--collapsed:focus-within .topbar__search-input { flex: 1; width: auto; padding: .1rem .2rem; }
 
 /* ── buttons ────────────────────────────────────────────────────────── */
 .btn {

@@ -348,7 +348,8 @@ def test_every_page_has_the_search_field_in_its_top_bar(client: Client, path: st
 
     assert 'action="/" method="get" role="search"' in form
     assert '<input class="topbar__search-input" id="topbar-search" type="search" name="q" value=""' in form
-    assert 'class="topbar__search topbar__search--compact"' in form
+    assert 'class="topbar__search topbar__search--compact' in form
+    assert ("topbar__search--collapsed" in form) is (path != "/nope")
     assert 'aria-label="Search title and text"' in form and "data-search" in form
     assert 'type="hidden"' not in form
     assert re.search(r'<script src="/static/shortcuts.js\?v=[0-9a-f]{12}" defer></script>', page)

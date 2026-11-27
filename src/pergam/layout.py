@@ -33,17 +33,20 @@ class SearchBox:
 
     A `compact` field (the default, for pages around a document) shrinks to its icon
     below 640px and opens over the bar when focused, so the bar keeps its rows; the
-    icon is a label, so a tap focuses the field with or without script.
+    icon is a label, so a tap focuses the field with or without script. A `collapsed`
+    one (view and diff, whose bar is already full) does the same at every width.
     """
 
     query: str = ""
     keep: tuple[tuple[str, str], ...] = ()
     compact: bool = True
+    collapsed: bool = False
 
     def html(self) -> str:
         esc = html_lib.escape
         kept = "".join(f'<input type="hidden" name="{esc(name)}" value="{esc(value)}">' for name, value in self.keep)
         variant = " topbar__search--compact" if self.compact else ""
+        variant += " topbar__search--collapsed" if self.collapsed else ""
         return (
             f'<form class="topbar__search{variant}" action="/" method="get" role="search">'
             '<label class="topbar__search-icon" for="topbar-search" aria-hidden="true">⌕</label>'

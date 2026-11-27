@@ -281,24 +281,54 @@ ONE_ROW = """() => {
 }"""
 
 
+LONG_TITLE = "A very long title for a quarterly planning document that keeps going well past any reasonable width"
+LONG_TAGS = ["quarterly-planning", "budget-review", "operations", "infrastructure", "q3"]
+WIDTHS = [360, 640, 768, 901, 1024, 1280, 1440]
+
+
 @pytest.mark.parametrize("scheme", ["light", "dark"])
+@pytest.mark.parametrize("width", WIDTHS)
 @pytest.mark.parametrize("page_kind", ["view", "view-stranger", "diff", "too-large"])
-def test_the_bar_keeps_one_row_on_a_phone(open_page, client: Client, trusting: Client, scheme: str, page_kind: str) -> None:
+def test_the_bar_keeps_one_row_at_every_width(
+    open_page, client: Client, trusting: Client, scheme: str, width: int, page_kind: str
+) -> None:
     owner = trusting.as_user("ana@example.com")
-    pid = owner.publish(title="A rather long title for a phone", tags=["q3", "budget"], html="<h1>a</h1>")["id"]
-    owner.publish(id=pid, title="A rather long title for a phone", html="<h1>b</h1>")
+    pid = owner.publish(title=LONG_TITLE, tags=LONG_TAGS, html="<h1>a</h1>")["id"]
+    owner.publish(id=pid, title=LONG_TITLE, html="<h1>b</h1>")
     if page_kind == "too-large":
-        owner.publish(id=pid, title="A rather long title for a phone", html="<p>x</p>" * (MAX_LINES + 1))
+        owner.publish(id=pid, title=LONG_TITLE, html="<p>x</p>" * (MAX_LINES + 1))
     server, headers = (trusting, {"X-Forwarded-User": "eve@example.com"}) if page_kind == "view-stranger" else (client, {})
-    path = {"view": f"/{pid}/v1/view", "view-stranger": f"/{pid}/v1/view", "diff": f"/{pid}/diff/v1..v2",
+    path = {"view": f"/{pid}/v2/view", "view-stranger": f"/{pid}/v1/view", "diff": f"/{pid}/diff/v1..v2",
             "too-large": f"/{pid}/diff/v1..v3"}[page_kind]
 
-    page = open_page(f"http://127.0.0.1:{server.port}{path}", scheme, viewport=PHONE, extra_http_headers=headers)
+    page = open_page(
+        f"http://127.0.0.1:{server.port}{path}", scheme, viewport={"width": width, "height": 700}, extra_http_headers=headers
+    )
 
     bar = page.evaluate(ONE_ROW)
     assert bar["spread"] < 8, bar
     assert bar["height"] < 56, bar
-    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+@pytest.mark.parametrize("width", [360, 1280])
+@pytest.mark.parametrize("kind", ["view", "diff"])
+def test_the_search_is_an_icon_that_opens_over_the_bar(open_page, client: Client, width: int, kind: str) -> None:
+    pid = client.publish(title=LONG_TITLE, html="<h1>a</h1>")["id"]
+    client.publish(id=pid, title=LONG_TITLE, html="<h1>b</h1>")
+    page = open_page(f"http://127.0.0.1:{client.port}/{pid}/{'view' if kind == 'view' else 'diff/v1..v2'}",
+                     viewport={"width": width, "height": 700})
+    field = page.get_by_role("searchbox", name="Search title and text")
+
+    assert field.bounding_box()["width"] < 2
+    page.locator("h1.bar__title").click()
+    page.keyboard.press("/")
+    box = field.bounding_box()
+    assert box["width"] > 150
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width
+    field.fill("plan")
+    page.keyboard.press("Enter")
+    page.wait_for_url(f"http://127.0.0.1:{client.port}/?q=plan")
 
 
 def test_compare_with_current_shows_for_the_version_viewed_and_on_hover_or_focus(open_page, pergam: str) -> None:

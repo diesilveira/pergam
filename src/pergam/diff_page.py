@@ -14,7 +14,7 @@ from pathlib import Path
 from string import Template
 
 from pergam.diff import DiffLine, Section, TooLargeToDiff
-from pergam.layout import HEAD_ASSETS, top_bar
+from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
 from pergam.static_files import PAGES_SCRIPT_PATH, hashed_url
 from pergam.store import VersionInfo
 
@@ -200,7 +200,7 @@ def render_diff(
         head_assets=HEAD_ASSETS,
         pages_script=hashed_url(PAGES_SCRIPT_PATH),
         css=_CSS,
-        top_bar=top_bar(middle=middle, actions=actions),
+        top_bar=top_bar(middle=middle, actions=actions, search=SearchBox(collapsed=True)),
         page_title=esc(f"{new.title} · v{old.version} → v{new.version} · pergam"),
         old=old.version,
         new=new.version,
