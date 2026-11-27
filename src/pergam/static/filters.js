@@ -8,7 +8,10 @@
  *   still means something). Escape, the close button, a click on the backdrop and
  *   back all discard the draft: the form is put back as the server rendered it.
  * - The page carries an empty dialog: its form comes from `data-src` (/filters/form)
- *   on first open. If that request fails, the link is followed to the /filters page.
+ *   on first open, the button marked busy meanwhile. Only the form element of an HTML
+ *   answer is moved in; if the request fails or brings no form, the link is followed
+ *   to the /filters page (or, when the dialog was reopening by itself after a reload,
+ *   the now useless history entry is stepped back over).
  * - Choices are a draft. Each change asks GET /facets for the draft (debounced) and
  *   updates every count and the apply button in place; values with no result are
  *   dimmed and cannot be ticked, unless already ticked.
@@ -204,11 +207,15 @@
   const open = async (from, push = true) => {
     opener = from.closest('.summary, .empty') ? document.querySelector('.filters-btn') || from : from;
     if (dialog.open) return;
+    from.setAttribute('aria-busy', 'true');
     try {
       await load();
     } catch (error) {
       if (push) window.location.assign(from.href);
+      else if (history.state && history.state.pergamFilters) history.back();
       return;
+    } finally {
+      from.removeAttribute('aria-busy');
     }
     if (dialog.open) return;
     if (push) history.pushState({ pergamFilters: true }, '');

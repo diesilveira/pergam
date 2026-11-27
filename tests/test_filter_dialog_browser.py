@@ -474,3 +474,32 @@ def test_only_the_fetched_form_is_moved_into_the_dialog(browser, site) -> None:
     assert page.evaluate("document.querySelector('[data-filters-dialog]').children.length") == 1
     context.close()
 
+
+def test_the_button_is_busy_while_the_form_loads(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/")
+    pending: list = []
+    page.route("**/filters/form*", lambda route: pending.append(route))
+
+    page.locator(".filters-btn").click()
+    page.wait_for_function("document.querySelector('.filters-btn').getAttribute('aria-busy') === 'true'")
+    pending[0].continue_()
+    page.wait_for_function("document.querySelector('[data-filters-dialog]').open")
+
+    assert page.locator(".filters-btn").get_attribute("aria-busy") is None
+    context.close()
+
+
+def test_a_reopen_after_reload_that_fails_leaves_no_dead_history_entry(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/?tag=shared")
+    open_dialog(page)
+    page.route("**/filters/form*", lambda route: route.abort())
+
+    page.reload()
+    page.wait_for_function("!(history.state && history.state.pergamFilters)")
+
+    assert page.url == site["base"] + "/?tag=shared"
+    assert not is_open(page)
+    context.close()
+
