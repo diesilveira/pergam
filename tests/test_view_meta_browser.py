@@ -89,13 +89,14 @@ def base(client: Client) -> str:
 
 
 def open_menu_over_the_document(page) -> None:
-    """Open the ⋯ menu and let it settle before clicking in it.
+    """Open the ⋯ menu and let two frames render before clicking in it.
 
-    The menu opens over the sandboxed frame, which runs in its own process; a click
-    sent within a frame or two of the menu appearing can still be routed to the frame.
+    The menu opens over the sandboxed frame, which runs in its own process; Chrome's
+    hit-test data for it is one compositor frame behind, so a click sent at once can
+    still reach the frame.
     """
     page.get_by_label("More actions").click()
-    page.wait_for_timeout(250)
+    page.evaluate("() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))")
 
 
 def status_text(page) -> str:
