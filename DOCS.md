@@ -483,6 +483,7 @@ pergam/
 │   ├── routes.py            HTTP routing and request validation
 │   ├── store.py             data access (all SQL)
 │   ├── layout.py            head assets and the top bar shared by every page
+│   ├── icons.py             inline SVG icons for every page
 │   ├── error_page.py        error responses as a page, for browsers only
 │   ├── index_page.py        HTML index renderer
 │   ├── index_links.py       canonical index URLs and author helpers
@@ -525,6 +526,7 @@ pergam/
 ├── Dockerfile               python:3.14-slim, runs as uid 10001
 ├── docker-compose.yml       app + bundled postgres + healthchecks
 ├── Makefile                 up / down / restart / logs / ps / health / clean / test
+├── CHANGELOG.md             what changed in each release, and upgrade notes
 ├── requirements.txt         psycopg[binary], psycopg-pool
 ├── requirements-dev.txt     + pytest (tests only)
 └── .env.example
