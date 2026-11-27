@@ -422,3 +422,31 @@ def test_pinned_row_respects_reduced_motion(browser, pinned_row: str, motion: st
     assert page.evaluate("getComputedStyle(document.querySelector('[data-pins]')).scrollBehavior") == behavior
     page.wait_for_function(f"{ROW_SCROLL} > 0")
     context.close()
+
+
+@pytest.mark.parametrize("scheme", SCHEMES)
+def test_focus_moves_to_the_other_button_at_an_end(browser, pinned_row: str, scheme: str) -> None:
+    context, page = open_page(browser, scheme, viewport=PHONE, reduced_motion="reduce")
+    page.goto(pinned_row)
+    page.locator("[data-pins-next]").focus()
+
+    for _ in range(20):
+        if page.evaluate("document.activeElement.hasAttribute('data-pins-prev')"):
+            break
+        page.keyboard.press("Enter")
+        page.wait_for_function(BUTTONS_SETTLED)
+    else:
+        pytest.fail("focus never left the next button")
+
+    assert page.locator("[data-pins-next]").is_disabled()
+    assert page.evaluate("getComputedStyle(document.activeElement).outlineStyle") == "solid"
+    for _ in range(20):
+        if page.evaluate("document.activeElement.hasAttribute('data-pins-next')"):
+            break
+        page.keyboard.press("Enter")
+        page.wait_for_function(BUTTONS_SETTLED)
+    else:
+        pytest.fail("focus never came back to the next button")
+    assert page.locator("[data-pins-prev]").is_disabled()
+    assert page.evaluate(ROW_SCROLL) == 0
+    context.close()

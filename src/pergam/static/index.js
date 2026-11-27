@@ -5,7 +5,8 @@
  * - below 860px the filter column (details.filters) starts collapsed;
  * - "Load more" ([data-load-more]) appends the next page instead of leaving this one;
  * - the pinned row ([data-pins]) gets previous/next buttons that scroll it by one
- *   view of cards and are disabled at the ends, and a focused card scrolls into view.
+ *   view of cards and are disabled at the ends (focus moves to the other one first,
+ *   so it never drops to the page), and a focused card scrolls into view.
  * Without script the column stays open, rows keep their size, "Load more" is a
  * plain link to the next page and the pinned row scrolls natively.
  */
@@ -111,8 +112,19 @@
     const sync = () => {
       const overflows = row.scrollWidth > row.clientWidth + 1;
       previous.hidden = next.hidden = !overflows;
-      previous.disabled = row.scrollLeft <= 1;
-      next.disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 1;
+      const ends = new Map([
+        [previous, row.scrollLeft <= 1],
+        [next, row.scrollLeft + row.clientWidth >= row.scrollWidth - 1],
+      ]);
+      ends.forEach((atEnd, button) => {
+        if (!atEnd) button.disabled = false;
+      });
+      ends.forEach((atEnd, button) => {
+        if (!atEnd) return;
+        const other = button === previous ? next : previous;
+        if (document.activeElement === button && !other.disabled) other.focus();
+        button.disabled = true;
+      });
     };
     previous.addEventListener('click', () => row.scrollBy({ left: -row.clientWidth, behavior: behavior() }));
     next.addEventListener('click', () => row.scrollBy({ left: row.clientWidth, behavior: behavior() }));
