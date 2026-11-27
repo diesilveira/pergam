@@ -50,8 +50,8 @@ def test_index_filters(client: Client, catalogue: dict[str, str], query: str, ex
 def test_index_filtered_view_reports_partial_count(client: Client, catalogue: dict[str, str]) -> None:
     resp = client.get("/?type=reporte")
 
-    assert "showing 1 of 3" in resp.text
-    assert '<a class="toolbar__clear" href="/">Clear all</a>' in resp.text
+    assert '<span class="summary__count" tabindex="-1" data-results>1 of 3<span class="sr-only"> pergams shown</span></span>' in resp.text
+    assert '<a class="summary__clear" href="/" aria-label="Clear all filters">Clear all</a>' in resp.text
 
 
 def test_empty_index_shows_hint(client: Client) -> None:
@@ -116,27 +116,32 @@ def test_tag_counts_cover_visible_pergams(client: Client, tagged: dict[str, str]
 
 
 @pytest.mark.parametrize(
-    ("query", "note"),
+    ("query", "count"),
     [
-        ("/", "showing 4 of 5 · 1 archived hidden"),
-        ("/?state=all", ""),
-        ("/?tag=ops", "showing 2 of 4"),
-        ("/?tag=ops&state=all", ""),
+        ("/", None),
+        ("/?state=all", "5 of 5"),
+        ("/?state=archived", "1 of 5"),
+        ("/?tag=ops", "2 of 4"),
+        ("/?tag=ops&state=all", "3 of 5"),
+        ("/?q=plan", "2 of 4"),
     ],
 )
-def test_header_counts_follow_the_archived_filter(
-    client: Client, tagged: dict[str, str], query: str, note: str
+def test_the_summary_counts_against_everything_the_status_can_show(
+    client: Client, tagged: dict[str, str], query: str, count: str | None
 ) -> None:
     page = client.get(query).text
 
-    assert f'<p class="index-head__note">{note}</p>' in page
+    if count is None:
+        assert "data-results" not in page
+    else:
+        assert f'<span class="summary__count" tabindex="-1" data-results>{count}<span class="sr-only"> pergams shown</span></span>' in page
 
 
 @pytest.mark.parametrize(("query", "clear"), [("/", False), ("/?state=all", True), ("/?tag=ops", True)])
 def test_clear_all_resets_the_archived_filter_too(
     client: Client, tagged: dict[str, str], query: str, clear: bool
 ) -> None:
-    assert ('<a class="toolbar__clear" href="/">Clear all</a>' in client.get(query).text) is clear
+    assert ('<a class="summary__clear" href="/" aria-label="Clear all filters">Clear all</a>' in client.get(query).text) is clear
 
 
 def test_rows_show_tags_and_flags(client: Client, tagged: dict[str, str]) -> None:

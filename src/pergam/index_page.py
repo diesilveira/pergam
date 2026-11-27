@@ -11,17 +11,16 @@ index.js remembers. The feed and JSON links sit in the footer.
 from __future__ import annotations
 
 import html as html_lib
-import re
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from string import Template
-from urllib.parse import urlencode
 
-from pergam.cursor import DEFAULT_SORT
+from pergam.filters_ui import FORM_CSS, dialog, filter_count, filters_page_link, summary, trigger
+from pergam.index_links import avatar, index_link, query_pairs, short_author, with_value
 from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
-from pergam.states import ACTIVE, ALL, ARCHIVED
-from pergam.static_files import INDEX_SCRIPT_PATH, hashed_url
+from pergam.states import ALL, ARCHIVED
+from pergam.static_files import FILTERS_SCRIPT_PATH, INDEX_SCRIPT_PATH, hashed_url
 from pergam.store import IndexData, IndexFilters, IndexRow
 from pergam.taxonomy import type_rgb
 
@@ -33,43 +32,6 @@ DATE_GROUPS = {"today": "Today", "week": "This week", "month": "This month", "ea
 SORT_LABELS = {"recent": "Recent", "title": "Title A–Z"}
 
 esc = html_lib.escape
-
-
-FACETS = (("types", "type"), ("authors", "author"), ("tags", "tag"))
-
-
-def query_pairs(filters: IndexFilters) -> list[tuple[str, str]]:
-    """The query of `filters` in canonical order, as the filter form submits it: types, authors, tags, state, q, sort, cursor."""
-    pairs = [(key, value) for field_name, key in FACETS for value in getattr(filters, field_name)]
-    if filters.state != ACTIVE:
-        pairs.append(("state", filters.state))
-    if filters.q:
-        pairs.append(("q", filters.q))
-    if filters.sort != DEFAULT_SORT:
-        pairs.append(("sort", filters.sort))
-    if filters.cursor:
-        pairs.append(("cursor", filters.cursor.encode()))
-    return pairs
-
-
-def index_link(filters: IndexFilters, path: str = "/") -> str:
-    """Index URL for `filters`, cursor and sort included; callers reset the cursor with `replace(..., cursor=None)`."""
-    pairs = query_pairs(filters)
-    return f"{path}?{urlencode(pairs)}" if pairs else path
-
-
-def with_value(filters: IndexFilters, field_name: str, value: str) -> IndexFilters:
-    """`filters` with `value` added to one facet (kept once), back on page one."""
-    values = getattr(filters, field_name)
-    return replace(filters, cursor=None, **{field_name: values if value in values else (*values, value)})
-
-
-def without_value(filters: IndexFilters, field_name: str, value: str) -> IndexFilters:
-    return replace(filters, cursor=None, **{field_name: tuple(v for v in getattr(filters, field_name) if v != value)})
-
-
-def short_author(author: str) -> str:
-    return author.split("@")[0] if "@" in author else author
 
 
 def human_age(ts: datetime, now: datetime) -> str:
@@ -98,15 +60,6 @@ def date_group(moment: datetime, now: datetime) -> str:
     if (day.year, day.month) == (today.year, today.month):
         return "month"
     return "earlier"
-
-
-def avatar(author: str) -> str:
-    """Initials on a hue (`--h`, 0-359) picked deterministically from the author string."""
-    h = 0
-    for ch in author:
-        h = (h * 131 + ord(ch)) & 0xFFFFFFFF
-    initials = "".join(p[0] for p in re.split(r"[.\-_+ ]+", short_author(author)) if p)[:2].upper() or "?"
-    return f'<span class="avatar" aria-hidden="true" style="--h:{h % 360}">{esc(initials)}</span>'
 
 
 def type_style(pergam_type: str) -> str:
@@ -225,36 +178,28 @@ def list_groups(rows: list[IndexRow], filters: IndexFilters, now: datetime) -> s
     return "".join(_group(key, DATE_GROUPS[key], items) for key, items in groups)
 
 
-def _named_filters(filters: IndexFilters) -> str:
-    parts = [
-        f"{key} {' or '.join(esc(value) for value in getattr(filters, field_name))}"
-        for field_name, key in FACETS
-        if getattr(filters, field_name)
-    ]
-    return ", ".join(parts)
-
-
-def empty_state(filters: IndexFilters) -> str:
-    """What was looked for and a way out: drop the other filters, or the search, or everything."""
-    if filters.q:
-        narrowed = _named_filters(filters)
-        scope = f" with {narrowed}" if narrowed else ""
-        archived = " (archived pergams not included)" if filters.state == ACTIVE else ""
-        actions = []
-        if narrowed or filters.state != ALL:
-            wide = index_link(IndexFilters(q=filters.q, state=ALL, sort=filters.sort))
-            actions.append(f'<a class="btn btn--primary" href="{esc(wide)}">Search every pergam</a>')
-        actions.append(f'<a class="btn" href="{esc(index_link(IndexFilters(sort=filters.sort)))}">Clear search</a>')
+def empty_state(data: IndexData, filters: IndexFilters) -> str:
+    """What was looked for and a way out: clear the filters (keeping the search) or edit them."""
+    if filter_count(filters):
+        if filters.state == ARCHIVED and not data.stats.total_archived:
+            title = "Nothing is archived yet."
+        elif filters.q:
+            title = f"No pergams match “{esc(filters.q)}” with these filters."
+        else:
+            title = "No pergams match these filters."
+        clear = esc(index_link(IndexFilters(q=filters.q, sort=filters.sort)))
+        edit = esc(filters_page_link(filters))
         return (
-            f'<div class="empty"><p class="empty__title">Nothing matches “{esc(filters.q)}”{scope}{archived}.</p>'
-            '<p class="empty__hint">Search looks at titles and the visible text of the latest version of each pergam.</p>'
-            f'<p class="empty__actions">{"".join(actions)}</p></div>'
+            f'<div class="empty"><p class="empty__title">{title}</p><p class="empty__actions">'
+            f'<a class="btn btn--primary" href="{clear}">Clear filters</a>'
+            f'<a class="btn" href="{edit}" data-filters-open>Edit filters</a></p></div>'
         )
-    if filters.active:
+    if filters.q:
         clear = esc(index_link(IndexFilters(sort=filters.sort)))
         return (
-            f'<div class="empty"><p class="empty__title">No pergams with {_named_filters(filters)}.</p>'
-            f'<p class="empty__actions"><a class="btn btn--primary" href="{clear}">Clear filters</a></p></div>'
+            f'<div class="empty"><p class="empty__title">No pergams match “{esc(filters.q)}”.</p>'
+            '<p class="empty__hint">Search looks at titles and the visible text of the latest version of each pergam.</p>'
+            f'<p class="empty__actions"><a class="btn" href="{clear}">Clear search</a></p></div>'
         )
     return (
         '<div class="empty"><p class="empty__title">No pergams yet.</p>'
@@ -276,30 +221,8 @@ def pager(filters: IndexFilters, data: IndexData) -> str:
     return f'<nav class="pager" aria-label="Pages">{"".join(links)}</nav>{status}' if links else ""
 
 
-def heading(data: IndexData, filters: IndexFilters) -> str:
-    if filters.state == ARCHIVED and not (filters.q or filters.active):
-        return "Archived pergams"
-    if filters.q:
-        return f"{data.matching} result{'s' if data.matching != 1 else ''}"
-    if filters.active:
-        return f"{data.matching} pergam{'s' if data.matching != 1 else ''}"
-    return "All pergams"
-
-
-def showing_note(data: IndexData, filters: IndexFilters) -> str:
-    """Counts relative to what the list can show: archived pergams count only when they are listed."""
-    if filters.q:
-        return f"for “{esc(filters.q)}” · the filters count these results only"
-    stats = data.stats
-    if filters.state != ACTIVE:
-        return ""
-    hidden = stats.total_archived
-    visible = stats.total_pergams - hidden
-    if filters.active and data.matching != visible:
-        return f"showing {data.matching} of {visible}"
-    if hidden:
-        return f"showing {visible} of {stats.total_pergams} · {hidden} archived hidden"
-    return ""
+def heading(filters: IndexFilters) -> str:
+    return "Archived pergams" if filters.state == ARCHIVED else "All pergams"
 
 
 def sort_menu(filters: IndexFilters) -> str:
@@ -328,14 +251,6 @@ def search_box(filters: IndexFilters) -> SearchBox:
     return SearchBox(query=filters.q or "", keep=tuple(keep), compact=False)
 
 
-def clear_link(filters: IndexFilters) -> str:
-    """"Clear all" drops every filter, the status included, and keeps the search and the sort."""
-    if not (filters.active or filters.state != ACTIVE):
-        return ""
-    href = esc(index_link(IndexFilters(q=filters.q, sort=filters.sort)))
-    return f'<a class="toolbar__clear" href="{href}">Clear all</a>'
-
-
 def footer(filters: IndexFilters) -> str:
     json_href = esc(index_link(filters, path="/api/pergams"))
     return (
@@ -347,7 +262,7 @@ def footer(filters: IndexFilters) -> str:
     )
 
 
-def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> str:
+def render_index(data: IndexData, filters: IndexFilters, host_display: str, types: tuple[str, ...] = ()) -> str:
     now = datetime.now(timezone.utc)
     listed = [row for row in data.rows if row.id not in data.pinned_ids]
     cards = pinned_cards(data, filters, now)
@@ -355,15 +270,17 @@ def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> s
     return _PAGE.substitute(
         head_assets=HEAD_ASSETS,
         index_script=hashed_url(INDEX_SCRIPT_PATH),
-        css=_CSS,
+        css=_CSS + FORM_CSS,
+        filters_script=hashed_url(FILTERS_SCRIPT_PATH),
         page_title=esc(f"“{filters.q}” · pergam") if filters.q else "pergam · index",
         top_bar=top_bar(host=host_display, search=search_box(filters)),
-        heading=heading(data, filters),
-        showing_note=showing_note(data, filters),
+        heading=heading(filters),
+        trigger=trigger(filters),
+        summary=summary(data.matching, data.stats, filters),
         sort_menu=sort_menu(filters),
-        clear_link=clear_link(filters),
+        dialog=dialog(data.facets, filters, types) if data.facets else "",
         footer=footer(filters),
         pinned=cards,
-        groups=groups if groups or cards or filters.cursor else empty_state(filters),
+        groups=groups if groups or cards or filters.cursor else empty_state(data, filters),
         pager=pager(filters, data),
     )

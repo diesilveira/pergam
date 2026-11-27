@@ -22,6 +22,7 @@ from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
 from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, single_proxy_user
 from pergam.ids import ID_RE
+from pergam.filters_ui import render_filters_page
 from pergam.index_page import render_index
 from pergam.lint import LINT_CONCURRENCY, LINT_MAX_BODY_BYTES, lint_html
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
@@ -325,6 +326,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if path == "facets":
             self._render_facets(parse_qs(parsed.query))
             return
+        if path == "filters":
+            self._render_filters_page(parse_qs(parsed.query))
+            return
         static = STATIC_FILES.get(parsed.path)
         if static is not None:
             cache_control = IMMUTABLE if static.immutable_for(_first(parse_qs(parsed.query), "v")) else DERIVED
@@ -591,7 +595,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         filters = self._filters(query)
         if filters is None:
             return
-        page = render_index(self.store.index(filters, cards=True), filters, self.public.display)
+        page = render_index(self.store.index(filters, cards=True), filters, self.public.display, self.types)
         self._send_page(page)
 
     def _render_index_json(self, query: dict[str, list[str]]) -> None:
@@ -606,6 +610,13 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if filters is None:
             return
         self._send_json(facets_json(self.store.facets(filters), filters, self.types))
+
+    def _render_filters_page(self, query: dict[str, list[str]]) -> None:
+        """`/filters`: the filter form as a page, what the Filters button opens without script."""
+        filters = self._filters(query)
+        if filters is None:
+            return
+        self._send_page(render_filters_page(self.store.facets(filters), filters, self.types, self.public.display))
 
     def _render_pergam_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)

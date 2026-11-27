@@ -253,8 +253,7 @@ def test_search_counts_cover_the_results_and_archived_matches(client: Client, re
     assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "reporte", "count": 1}]
     assert body["counts"]["tags"] == [{"tag": "ops", "count": 2}, {"tag": "q3", "count": 1}]
     assert body["archived_count"] == 1
-    assert "<h1>3 results</h1>" in page
-    assert "for “needle” · the filters count these results only" in page
+    assert ">3 of 4<" in page
 
 
 def test_facets_apply_the_other_filters_without_a_search(client: Client, results: dict[str, str]) -> None:
@@ -264,22 +263,44 @@ def test_facets_apply_the_other_filters_without_a_search(client: Client, results
     assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "informe", "count": 1}, {"type": "reporte", "count": 1}]
     assert body["counts"]["authors"] == [{"author": "bo@example.com", "count": 1}]
     assert body["archived_count"] == 0
-    assert "showing 1 of 4" in page
+    assert ">1 of 4<" in page
 
 
-def test_an_empty_search_says_what_was_searched_and_offers_to_widen_it(client: Client, results: dict[str, str]) -> None:
-    page = client.get("/?q=%3Cnothing%3E&type=plan").text
+@pytest.mark.parametrize(
+    ("query", "title", "clear", "edit"),
+    [
+        (
+            "/?q=%3Cnothing%3E&type=plan",
+            "No pergams match “&lt;nothing&gt;” with these filters.",
+            "/?q=%3Cnothing%3E",
+            "/filters?type=plan&q=%3Cnothing%3E",
+        ),
+        ("/?type=otro&sort=title", "No pergams match these filters.", "/?sort=title", "/filters?type=otro&sort=title"),
+        ("/?tag=nope", "No pergams match these filters.", "/", "/filters?tag=nope"),
+    ],
+)
+def test_empty_results_say_what_was_searched_and_offer_a_way_out(
+    client: Client, results: dict[str, str], query: str, title: str, clear: str, edit: str
+) -> None:
+    page = client.get(query).text
 
-    assert "Nothing matches “&lt;nothing&gt;” with type plan (archived pergams not included)." in page
-    assert '<a class="btn btn--primary" href="/?state=all&amp;q=%3Cnothing%3E">Search every pergam</a>' in page
+    assert f'<p class="empty__title">{title}</p>' in page
+    assert f'<a class="btn btn--primary" href="{clear.replace("&", "&amp;")}">Clear filters</a>' in page
+    assert f'<a class="btn" href="{edit.replace("&", "&amp;")}" data-filters-open>Edit filters</a>' in page
+    assert 'class="summary"' in page
+
+
+def test_an_empty_search_without_filters_offers_to_clear_it(client: Client, results: dict[str, str]) -> None:
+    page = client.get("/?q=nothing-here").text
+
+    assert '<p class="empty__title">No pergams match “nothing-here”.</p>' in page
     assert '<a class="btn" href="/">Clear search</a>' in page
 
 
-def test_empty_filters_offer_to_clear_them(client: Client, results: dict[str, str]) -> None:
-    page = client.get("/?tag=nope&sort=title").text
+def test_an_empty_archive_says_so(client: Client) -> None:
+    client.publish()
 
-    assert "No pergams with tag nope." in page
-    assert '<a class="btn btn--primary" href="/?sort=title">Clear filters</a>' in page
+    assert '<p class="empty__title">Nothing is archived yet.</p>' in client.get("/?state=archived").text
 
 
 def test_links_keep_the_sort_and_drop_the_cursor(client: Client, results: dict[str, str]) -> None:
@@ -296,7 +317,7 @@ def test_the_index_is_one_column_without_a_filter_column_or_stats_line(client: C
 
     page = client.get("/").text
 
-    assert "<h1>All pergams</h1>" in page
+    assert '<h1 class="index-title">All pergams</h1>' in page
     assert 'class="facets' not in page and "index-stats" not in page and "data-density-toggle" not in page
     assert '<main class="index">' in page
 

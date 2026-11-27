@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Filter pergams · pergam</title>
+${head_assets}
+<style>
+${css}
+  .filters-page { width:min(640px, 100%); margin:0 auto; padding:2rem var(--space-4) 3rem; }
+  .filters-page h1 { margin:0 0 1rem; font-size:1.4rem; letter-spacing:-.01em; }
+  .filters-page .fform { border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:hidden; }
+  .filters-page .fform__actions { display:flex; align-items:center; justify-content:flex-end; gap:var(--space-4);
+                                  padding:14px 24px; border-top:1px solid var(--border); }
+  .filters-page .fform__actions a { color:var(--accent); }
+  .filters-page .fform__actions a:hover { text-decoration:underline; }
+</style></head><body>
+
+${top_bar}
+
+<main class="filters-page">
+  <h1 id="filters-title">Filter pergams</h1>
+  <form class="fform" method="get" action="/" aria-labelledby="filters-title">
+    <div class="fform__body">${body}</div>
+    <div class="fform__actions">
+      <a href="${back}">Cancel</a>
+      <button type="submit" class="btn btn--primary fform__apply">Show results</button>
+    </div>
+  </form>
+</main>
+</body></html>

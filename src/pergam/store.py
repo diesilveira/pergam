@@ -673,7 +673,6 @@ class PergamStore:
         elif isinstance(filters.cursor, IndexCursor):
             page_where += f" AND ({PINNED_SQL}, l.created_at, l.id) < (%(c_pinned)s, %(c_at)s, %(c_id)s)"
             params.update(c_pinned=filters.cursor.pinned, c_at=filters.cursor.created_at, c_id=filters.cursor.id)
-        order = ORDERS[filters.sort][0]
         source = sql.source
         headline = HEADLINE_SQL if filters.q else "NULL"
 

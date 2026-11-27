@@ -5,23 +5,23 @@
 <link rel="alternate" type="application/atom+xml" title="pergam · recent publications" href="/feed.atom">
 ${head_assets}
 <script src="${index_script}"></script>
+<script src="${filters_script}" defer></script>
 <style>
 ${css}</style></head><body>
 
 ${top_bar}
 
 <main class="index">
-  <div class="index-head">
-    <h1>${heading}</h1>
-    <p class="index-head__note">${showing_note}</p>
-  </div>
+  <h1 class="index-title">${heading}</h1>
   <div class="toolbar">
-    ${clear_link}
+    ${trigger}
+    ${summary}
     <div class="toolbar__end">${sort_menu}</div>
   </div>
   ${pinned}
   <div class="groups" data-groups>${groups}</div>
   ${pager}
 </main>
+${dialog}
 ${footer}
 </body></html>

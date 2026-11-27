@@ -113,7 +113,7 @@ def test_searching_from_a_document_lands_on_the_index_with_the_query(browser, si
     page.keyboard.press("Enter")
 
     page.wait_for_url(f"{site['base']}/?q=cutover+window")
-    assert page.locator("h1").inner_text() == "1 result"
+    assert page.locator("[data-results]").inner_text().startswith("1 of ")
     assert page.locator(".row__snippet mark").first.inner_text().lower() in {"cutover", "window"}
     assert page.locator("[data-search]").input_value() == "cutover window"
     context.close()

@@ -28,6 +28,7 @@ THEME_SCRIPT_PATH = "/static/theme.js"
 PAGES_SCRIPT_PATH = "/static/pages.js"
 SHORTCUTS_SCRIPT_PATH = "/static/shortcuts.js"
 INDEX_SCRIPT_PATH = "/static/index.js"
+FILTERS_SCRIPT_PATH = "/static/filters.js"
 STORAGE_SHIM = re.sub(
     r"\A/\*.*?\*/\s*", "", (STATIC_ROOT / "storage-shim.js").read_text(encoding="utf-8"), count=1, flags=re.DOTALL
 ).strip()
@@ -58,6 +59,7 @@ FILES: dict[str, StaticFile] = {
     PAGES_SCRIPT_PATH: _load("pages.js", "text/javascript; charset=utf-8", versioned=False),
     SHORTCUTS_SCRIPT_PATH: _load("shortcuts.js", "text/javascript; charset=utf-8", versioned=False),
     INDEX_SCRIPT_PATH: _load("index.js", "text/javascript; charset=utf-8", versioned=False),
+    FILTERS_SCRIPT_PATH: _load("filters.js", "text/javascript; charset=utf-8", versioned=False),
     BRIDGE_PATH: _load("frame-bridge.js", "text/javascript; charset=utf-8", versioned=False),
     MERMAID_PATH: _load(f"mermaid/{MERMAID_VERSION}/mermaid.min.js", "text/javascript; charset=utf-8", versioned=True),
     f"/static/mermaid/{MERMAID_VERSION}/LICENSE": _load(

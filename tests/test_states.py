@@ -75,7 +75,7 @@ def test_archived_never_returns_an_active_pergam(client: Client, db: psycopg.Con
 def test_the_archived_view_is_titled_and_carries_no_badge(client: Client, shelf: dict[str, str]) -> None:
     archived, everything = client.get("/?state=archived").text, client.get("/?state=all").text
 
-    assert "<h1>Archived pergams</h1>" in archived
+    assert '<h1 class="index-title">Archived pergams</h1>' in archived
     assert 'class="flag flag--archived"' not in archived
     assert '<span class="flag flag--archived">Archived</span>' in everything
     assert everything.count('class="flag flag--archived"') == 1
