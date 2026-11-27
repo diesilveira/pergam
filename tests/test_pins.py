@@ -47,7 +47,7 @@ def test_max_pinned_reads_the_environment(env: dict[str, str], expected: int) ->
     assert max_pinned(env) == expected
 
 
-@pytest.mark.parametrize("raw", ["twelve", "-1", "1.5"])
+@pytest.mark.parametrize("raw", ["twelve", "-1", "1.5", "+3", "３", "٣", "1_0", "0x3"])
 def test_max_pinned_rejects_bad_values(raw: str) -> None:
     with pytest.raises(ValueError, match="PERGAM_MAX_PINNED"):
         max_pinned({"PERGAM_MAX_PINNED": raw})

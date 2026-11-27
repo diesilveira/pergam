@@ -407,7 +407,7 @@ App env vars follow 12-factor conventions; only the pergam-specific knobs carry 
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
 | `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
 
-See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, when `PERGAM_MAX_BODY_MB` is not a positive integer, when `PERGAM_MAX_PINNED` is not a whole number of 0 or more, or when `TRUST_PROXY_USER` is not a recognised on/off value.
+See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, when `PERGAM_MAX_BODY_MB` is not a positive integer, when `PERGAM_MAX_PINNED` is not a whole number of 0 or more in plain ASCII digits (no sign), or when `TRUST_PROXY_USER` is not a recognised on/off value.
 
 ## Schema migrations
 
