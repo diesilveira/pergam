@@ -256,3 +256,29 @@ def test_q_is_capped(client: Client, path: str) -> None:
 
     assert resp.status == 400
     assert f"q must be at most {MAX_QUERY_CHARS} characters" in resp.text
+
+
+def test_hidden_text_is_not_searched_but_raw_and_export_keep_it(client: Client) -> None:
+    html = '<p>shown words</p><div hidden>concealed</div><select><option>dropdownword</select>'
+    pid = client.publish(html=html)["id"]
+
+    assert listed_ids(client.get("/?q=concealed").text, pid) == set()
+    assert listed_ids(client.get("/?q=dropdownword").text, pid) == set()
+    assert listed_ids(client.get("/?q=shown").text, pid) == {pid}
+    assert client.get(f"/{pid}/text").text == "shown words\n"
+    assert client.get(f"/{pid}/raw").text == html
+    assert client.get(f"/{pid}/export").json()["versions"][0]["html"] == html
+
+
+def test_backfill_drops_hidden_text_stored_by_the_previous_extractor(legacy_pool: ConnectionPool) -> None:
+    with legacy_pool.connection() as conn:
+        conn.execute("UPDATE pergams SET html = '<p>plan v2</p><p hidden>stale secret</p>' WHERE id = 'aaaa0001' AND version = 2")
+        conn.execute(
+            "INSERT INTO pergam_text (id, version, body, document, extractor)"
+            " VALUES ('aaaa0001', 2, 'plan v2\nstale secret', '', 2)"
+        )
+
+    backfill_text(legacy_pool)
+
+    assert ("aaaa0001", 2, "plan v2") in text_rows(legacy_pool)
+    assert EXTRACTOR_VERSION > 2
