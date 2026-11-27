@@ -9,7 +9,7 @@ A tiny self-hostable service — or a hosted endpoint — that turns every HTML 
 <br>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/github/v/tag/diesilveira/pergam?label=version&color=brightgreen)](https://github.com/diesilveira/pergam/releases/latest)
+[![Version](https://img.shields.io/github/v/tag/diesilveira/pergam?label=version&color=brightgreen)](CHANGELOG.md)
 [![GitHub stars](https://img.shields.io/github/stars/diesilveira/pergam?style=flat&logo=github)](https://github.com/diesilveira/pergam/stargazers)
 
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -35,22 +35,43 @@ Your AI generates beautiful HTML — reports, dashboards, design docs, plans. Th
 
 ## ✨ Features
 
-- 📦 **Publish HTML** via one `POST`, get a stable URL back.
-- 🕰️ **Versioned** — every logical `id` keeps full history. `v1`, `v2`, … all reachable forever.
-- 🔒 **Immutable** — pergams can't be edited or deleted, only superseded with a new version.
-- 🧭 **Visible versions** — every pergam opens at full width under a calm bar (title, version selector, Pin, History and a menu for the rest), with a history panel one click away (each version's note, author and date, compare with current, then type, tags and details); older versions say when they were published and link to the current one. `/{id}/diff/v2..v5` shows what changed between two versions, section by section, in a centred column, with pickers for the pair and a Sections list.
-- 🤖 **AI-native** — ships with a [Claude Code skill](skills/post-pergam/SKILL.md) so your agent can press "ship" and hand back a link without you babysitting `curl`.
-- 🪞 **Built-in viewer** — on [pergam.dev](https://pergam.dev), a sandboxed iframe with strict CSP: Mermaid + jsDelivr allowed, everything else blocked. A self-hosted server frames each version under its version bar the same way: sandboxed in an opaque origin, with the hosted viewer's CSP, so a published script cannot reach the API.
-- 🏷️ **Typed and tagged** — a `type` per pergam from a configurable list (`PERGAM_TYPES`, five by default) plus free-form tags. Filter the index by several types, authors and tags at once, and by status (active, archived or all), from one dialog that shows how many pergams each choice gives; sort it by date or title; pin what matters (a row of cards on top, a dozen at most by default), archive what doesn't, from the view page or the API.
-- 🧹 **Lint before publishing** — `POST /lint` reports external resources, broken TOC anchors and malformed Mermaid blocks with their line and column, and stores nothing; the skill runs it before every self-hosted publish.
-- 🔎 **Searchable** — the search field in every page's top bar (press `/`) searches titles and the visible text of every pergam, with highlighted snippets.
-- 📡 **Atom feed** — `/feed.atom` follows new publications, filtered by tag or author.
-- 🚚 **Portable** — `/{id}/export` and `POST /import` move a pergam to another server with its id, versions, dates, tags and notes; the skill promotes one between named servers in one command.
-- 🧩 **JSON API** — `/api/pergams` lists, filters, sorts, pages and counts like the index, with a one-line summary per pergam, and `/facets` returns the filter counts; `/api/pergams/{id}` returns one pergam with its versions.
-- 🔐 **Owners behind your proxy** — with `TRUST_PROXY_USER=1` the author comes from an authenticating reverse proxy (`X-Forwarded-User`), and only a pergam's owner and the collaborators they list can add versions or edit it.
-- 🐳 **Self-hostable** — a few small Python modules, one Postgres database, one `docker compose up`.
-- ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares. Zero setup, drag-and-drop.
-- 🪶 **Tiny stack** — Python stdlib + `psycopg` for the server. A tiny edge worker for the hosted variant. No framework, no build step.
+**Publish and version**
+
+- 📦 **Publish HTML** with one `POST` and get a stable URL back.
+- 🕰️ **Versioned** — every `id` keeps its full history, `v1`, `v2`, … reachable forever.
+- 🔒 **Immutable** — a pergam is never edited or deleted, only superseded by a new version.
+- 📝 **Version notes** — an optional one-line note says what each version changes.
+- 🧹 **Lint** — `POST /lint` reports what the sandbox would break, with line and column, and stores nothing.
+- 🤖 **AI-native** — a [Claude Code skill](skills/post-pergam/SKILL.md) publishes for you and hands back the link.
+
+**Organise and find**
+
+- 🏷️ **Types and tags** — a `type` per pergam from a configurable list (`PERGAM_TYPES`), plus free-form tags.
+- 🎛️ **Filter dialog** — filter by several types, authors and tags and by status, with live counts.
+- 📌 **Pinned row** — pin what matters as cards above the list (12 by default); archive what doesn't.
+- 🔎 **Search** — titles and the visible text of every pergam, with highlighted snippets; press `/` anywhere.
+- 📡 **Atom feed** — `/feed.atom` follows new publications, by tag or author.
+
+**Read**
+
+- 🧭 **View page** — the document at full width under one bar: version selector, Pin, History and a menu.
+- 🕓 **History panel** — each version's note, author and date; older versions link to the current one.
+- 🔀 **Diff** — `/{id}/diff/v2..v5` shows what changed between two versions, section by section.
+- 🛡️ **Sandboxed viewer** — documents run in an opaque origin under a strict content policy, so a script cannot reach the API.
+- 🌗 **Light and dark themes** — follows the system, or pick one; system fonts only.
+- 📄 **Text view** — `/{id}/text` returns what a reader sees, as Markdown.
+
+**Integrate and move**
+
+- 🧩 **JSON API** — `/api/pergams` lists, filters, sorts and pages like the index; `/api/pergams/{id}` returns one pergam with its versions.
+- 🚚 **Export and import** — `/{id}/export` and `POST /import` move a pergam, versions and all, to another server.
+- 🔐 **Owners behind your proxy** — with `TRUST_PROXY_USER=1` the author comes from `X-Forwarded-User`, and only the owner and their collaborators can write.
+
+**Run it**
+
+- 🐳 **Self-hostable** — one Python process, one Postgres database, one `docker compose up`.
+- 🪶 **Tiny stack** — Python stdlib and `psycopg`; no framework, no build step, no telemetry.
+- ☁️ **Also hosted** — [pergam.dev](https://pergam.dev) for public 1-year shares, zero setup.
 
 ## ⚡ Quickstart
 
@@ -74,6 +95,14 @@ curl -sS -X POST http://localhost:1111/pergam \
 ```
 
 You'll get a `view_url` back — open it in a browser. That's the whole loop. ✨
+
+Prefer not to build? Run the published multi-arch image (`linux/amd64`, `linux/arm64`) with the same compose file:
+
+```bash
+PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2 docker compose up -d
+```
+
+Put the variable in `.env` to keep it for later `docker compose` commands. Tags are `2.0.0` (exact), `2.0`, `2` and `latest`. Pin `2.0.0` in production and upgrade on purpose. Without compose, [`docker run` works too](DOCS.md#published-image).
 
 ### ☁️ Hosted (zero setup, 1-year TTL)
 
@@ -112,16 +141,21 @@ See [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) for the full co
 ```
 ┌─────────────┐      ┌──────────────────┐      ┌──────────────┐
 │   Client    │ ───→ │      pergam      │ ───→ │   Postgres   │
-│ (AI / curl) │      │ (Python, stdlib) │      │  (4 tables)  │
+│ (AI / curl) │      │ (Python, stdlib) │      │  (5 tables)  │
 └─────────────┘      └──────────────────┘      └──────────────┘
 ```
 
-- **One Python process**, no framework — just `http.server` + `psycopg`.
-- **Four Postgres tables**: immutable `pergams (id, version, …)` with a composite key, `pergam_meta (id, tags, archived, pinned, origin, collaborators)` for what belongs to the id rather than to a version, `pergam_text` with each version's extracted text and full-text search document, and `pergam_note` with the optional note of each version. Latest version per `id` resolved on read through the `pergams_latest` view.
-- **Framed documents**: the view page loads each version in an iframe from `/{id}/v{n}/content` and talks to it only through a `postMessage` bridge, so the frame is sandboxed without `allow-same-origin` and `/content` carries the hosted viewer's CSP (no connection, form or frame to the API, `frame-ancestors` limited to the server), with a CSP `sandbox` directive for when it is opened on its own.
+- **One Python process**, no framework — `http.server` and `psycopg`. Pages, scripts and Mermaid are served by the process itself.
+- **Five Postgres tables**: `pergams` (immutable, keyed by `id` and `version`), `pergam_meta` (tags, archived, pinned, origin, collaborators: what belongs to the id), `pergam_text` (each version's text and search document), `pergam_note` and `schema_migrations`. The latest version per `id` is read through the `pergams_latest` view.
+- **Numbered migrations** in `db/migrations/` are applied when the server starts.
+- **Framed documents**: the view page loads each version in a sandboxed iframe from `/{id}/v{n}/content` and talks to it only through `postMessage`.
 - **Hosted side** is a separate ~200 LOC subset: token-based, TTL-bound, no versioning. See [`web/worker/`](web/worker/) for a reference deployment on Cloudflare Workers + KV.
 
 Full schema, request flow, and config knobs → [DOCS.md](DOCS.md).
+
+## ⬆️ Upgrading from 1.x
+
+Migrations apply on their own at startup, but 2.0 changes how published HTML is served and renames the compose service. Read the [upgrade notes](CHANGELOG.md#upgrade-notes) in the [changelog](CHANGELOG.md) before you pull.
 
 ## 📖 Docs
 
@@ -130,6 +164,7 @@ Full schema, request flow, and config knobs → [DOCS.md](DOCS.md).
 | 🔌 Full API reference | [DOCS.md § API](DOCS.md) |
 | 🕰️ Versioning model | [DOCS.md § Versioning](DOCS.md) |
 | ⚙️ Configuration | [DOCS.md § Configuration](DOCS.md) |
+| 📋 Changelog and upgrade notes | [CHANGELOG.md](CHANGELOG.md) |
 | 🚢 Deployment guide | [DOCS.md § Deployment](DOCS.md) |
 | 🤖 Claude Code skill | [`skills/post-pergam/SKILL.md`](skills/post-pergam/SKILL.md) |
 | ☁️ Hosted variant (example: Cloudflare) | [`web/worker/`](web/worker/) |
@@ -149,6 +184,6 @@ If pergam is the shape of what you wanted, **starring the repo** is the highest-
 
 <div align="center">
 
-Built by [diesilveira.dev](https://diesilveira.dev) · Live at [pergam.dev](https://pergam.dev) · v1.0.0
+Built by [diesilveira.dev](https://diesilveira.dev) · Live at [pergam.dev](https://pergam.dev)
 
 </div>

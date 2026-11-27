@@ -53,7 +53,7 @@
     "url": "https://pergam.dev",
     "codeRepository": "https://github.com/diesilveira/pergam",
     "license": "https://opensource.org/licenses/MIT",
-    "softwareVersion": "1.0.0",
+    "softwareVersion": "2.0.0",
     "author": {
       "@type": "Person",
       "name": "Diego Silveira",
@@ -100,7 +100,7 @@
         <div>
           <span class="chip">
             <span class="chip__dot" aria-hidden="true"></span>
-            MIT · v1.0 · self-hostable
+            MIT · v2.0 · self-hostable
           </span>
 
           <h1 id="hero-title" class="hero__title">
@@ -132,7 +132,7 @@
             </span></li>
             <li><span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M20 7L9 18l-5-5"/></svg>
-              Single binary
+              One container image
             </span></li>
             <li><span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -172,7 +172,7 @@
                 </div>
                 <div class="mock-response__urlbar">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                  <code>pergam.dev/a1b2c3d4/view</code>
+                  <code>pergam.example.com/a1b2c3d4/view</code>
                   <span class="copy">copied ✓</span>
                 </div>
               </div>
@@ -185,7 +185,7 @@
     <!-- ─── Trust strip ──────────────────────────────────── -->
     <aside class="trust" aria-label="Project stats">
       <div class="container trust__row">
-        <div class="trust__item"><div class="trust__k">0<span class="unit">deps</span></div><div class="trust__l">Outside stdlib</div></div>
+        <div class="trust__item"><div class="trust__k">2<span class="unit">deps</span></div><div class="trust__l">psycopg + its pool</div></div>
         <div class="trust__item"><div class="trust__k">∞<span class="unit">versions</span></div><div class="trust__l">Per pergam id</div></div>
         <div class="trust__item"><div class="trust__k">MIT</div><div class="trust__l">License</div></div>
       </div>
@@ -249,7 +249,7 @@
           <article class="how-card">
             <div class="how-card__num">STEP · 03</div>
             <h3>Get a versioned URL</h3>
-            <p>Receive a stable URL like <code>pergam.dev/a1b2c3d4/view</code>. Re-publish the same id and you get <code>v2</code>, <code>v3</code>… latest always wins, history is preserved.</p>
+            <p>Receive a stable URL like <code>pergam.example.com/a1b2c3d4/view</code>. On a self-hosted server, re-publish the same id and you get <code>v2</code>, <code>v3</code>… latest always wins, history is preserved. Hosted shares are single links that last a year.</p>
             <div class="how-card__illu">
               <svg viewBox="0 0 240 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <line x1="40" y1="65" x2="210" y2="65" stroke="#1e2333"/>
@@ -274,7 +274,7 @@
       <div class="container">
         <p class="section__eyebrow">Why pergam vs. a generic HTML pastebin</p>
         <h2 id="why-title" class="section__title">Built for the case where the AI <span class="serif">makes</span> the artifact.</h2>
-        <p class="section__lead">Anonymous HTML hosts are fine for one-shot shares. pergam is for the workflow: your AI iterates, your team revisits, your infra stays private.</p>
+        <p class="section__lead">Anonymous HTML hosts are fine for one-shot shares. pergam is for the workflow: your AI iterates, your team revisits, your infra stays private. Everything below is the self-hosted server; the hosted service at pergam.dev is the quick public share.</p>
 
         <div class="feat-grid">
 
@@ -291,15 +291,15 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
             </div>
             <h4>Claude Code skill, native</h4>
-            <p>AI posts directly to your instance. No file upload step, no copy-paste, no leaving the terminal.</p>
+            <p>AI posts directly to your instance, with a version note and a lint pass first. No file upload step, no copy-paste, no leaving the terminal.</p>
           </article>
 
           <article class="feat">
             <div class="feat__ic">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             </div>
-            <h4>Documented API</h4>
-            <p>A handful of clean HTTP endpoints. Curl-friendly, library-free, easy to wrap from any agent runtime.</p>
+            <h4>JSON API and Atom feed</h4>
+            <p>List, filter and page the index as JSON, read one pergam with all its versions, follow new publications in a feed reader. Curl-friendly, library-free, easy to wrap from any agent runtime.</p>
           </article>
 
           <article class="feat">
@@ -307,23 +307,39 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
             </div>
             <h4>Self-host in minutes</h4>
-            <p><code>docker compose up</code> behind your VPN. Your team's network is the trust boundary.</p>
+            <p><code>docker compose up</code> behind your VPN, or run the published image for <code>amd64</code> and <code>arm64</code>. Your team's network is the trust boundary, or put an authenticating proxy in front for owners.</p>
           </article>
 
           <article class="feat">
             <div class="feat__ic">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M3 12a9 9 0 1 0 18 0 9 9 0 1 0-18 0M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </div>
-            <h4>Versioned, immutable</h4>
-            <p>Re-POST to the same id → new version. History is forever. <code>/view</code> is always latest. Nothing gets clobbered.</p>
+            <h4>Versions you can read</h4>
+            <p>Re-POST to the same id → new version, never an overwrite. Each carries a note, a history panel shows who changed what and when, and a diff compares any two versions section by section.</p>
           </article>
 
           <article class="feat">
             <div class="feat__ic">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><line x1="21" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             </div>
-            <h4>Filterable index</h4>
-            <p>Find your pergams by author, type, or title substring. The index is just another HTML page — opinionated, fast, no JS framework.</p>
+            <h4>Search, tags, filters</h4>
+            <p>Search titles and the text inside every pergam. Tag them, filter by several types, authors and tags at once, pin the ones that matter above the list and archive the rest.</p>
+          </article>
+
+          <article class="feat">
+            <div class="feat__ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            </div>
+            <h4>Move between servers</h4>
+            <p>Export a pergam as one JSON document and import it on another server with its id, versions, dates, tags and notes. Promote from local to team in one command.</p>
+          </article>
+
+          <article class="feat">
+            <div class="feat__ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h4>Sandboxed viewer</h4>
+            <p>Every document runs in an opaque origin under a strict content policy, so a script inside it cannot reach the API. The interface follows your system into light or dark.</p>
           </article>
 
           <article class="feat">
@@ -331,7 +347,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a14 14 0 0 1 0 20M12 2a14 14 0 0 0 0 20"/></svg>
             </div>
             <h4>Open source · MIT</h4>
-            <p>One Python file. One schema. Audit it in 10 minutes. Fork it. No vendor account, no telemetry, no surprise pricing.</p>
+            <p>A few small Python modules and one Postgres database. Audit it in an afternoon. Fork it. No vendor account, no telemetry, no surprise pricing.</p>
           </article>
 
         </div>
@@ -629,6 +645,8 @@ git <span class="tok-cmd">clone</span> https://github.com/diesilveira/pergam
 
 <span class="tok-com"># 2. Bring up the stack</span>
 docker <span class="tok-cmd">compose</span> up -d --build
+<span class="tok-com">#    or skip the build and run the published image:</span>
+<span class="tok-com">#    PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2 docker compose up -d</span>
 
 <span class="tok-com"># 3. Verify and open</span>
 curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</span>
@@ -687,6 +705,10 @@ curl http://localhost:1111/healthz   <span class="tok-com"># → {"ok":true}</sp
           <details>
             <summary>Is the public service safe? What about the embedded HTML?</summary>
             <p>Pergams are served from a sandboxed iframe on a different origin (<code>api.pergam.dev</code>) with a strict CSP that blocks everything except inline CSS and Mermaid from jsDelivr. Visitors are isolated. Rate limits and a 1 MB size cap keep any abuse cheap to contain.</p>
+          </details>
+          <details>
+            <summary>Is a self-hosted server sandboxed too?</summary>
+            <p>Yes. It frames each document in an iframe with an opaque origin and a strict content policy: inline scripts and styles, the server itself and jsDelivr, images only as <code>data:</code>. A script in a pergam cannot read the index, publish a version or submit a form to the server.</p>
           </details>
           <details>
             <summary>Can I keep pergams forever?</summary>

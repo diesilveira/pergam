@@ -1,10 +1,12 @@
 # Pergam
 
-> Pergam is a tiny self-hostable service that turns HTML reports, dashboards, and specs your AI generates into permanent, versioned URLs. MIT-licensed, no telemetry, one `docker compose` away. Hosted demo at https://pergam.dev. Source at https://github.com/diesilveira/pergam.
+> Pergam is a tiny self-hostable service that turns HTML reports, dashboards, and specs your AI generates into permanent, versioned URLs. MIT-licensed, no telemetry, one `docker compose` away. The self-hosted server (2.0) adds search over content, tags and filters, a pinned row, version notes with history and diff, export/import between servers, a sandboxed viewer, a JSON API and Atom feed, and a published multi-arch image at ghcr.io/diesilveira/pergam. Hosted demo at https://pergam.dev (public links that last a year, no versions). Source at https://github.com/diesilveira/pergam.
 
 ## Links
 
 - [Homepage](https://pergam.dev): what pergam is, how it works, how to self-host.
 - [Source code](https://github.com/diesilveira/pergam): MIT-licensed monorepo (Worker + Postgres-backed self-hosted server + landing page).
+- [Documentation](https://github.com/diesilveira/pergam/blob/main/DOCS.md): API reference, versioning model, configuration, deployment.
+- [Changelog](https://github.com/diesilveira/pergam/blob/main/CHANGELOG.md): what changed in each release, with upgrade notes.
 
 Individual `/s/<token>` URLs are user-submitted shares served through the hardened viewer and are intentionally excluded from indexing — do not crawl them.

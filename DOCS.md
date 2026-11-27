@@ -286,7 +286,7 @@ URLs list the keys in the order the form submits them and the values of each key
 
 ## Pages and theme
 
-The index, view and diff pages share one stylesheet, `/static/pergam.css`, and two scripts, `/static/theme.js` and `/static/shortcuts.js`; the index adds `/static/index.js` (the sort menu and its "Show summaries" switch, "Load more", the pinned row's buttons) and `/static/filters.js` (the filter dialog), and the view and diff pages add `/static/pages.js`, their progressive enhancements (the history panel, dropdowns, the pin, archive and tag controls). Every script they add is a same-origin static file; the only inline script is the view page's frame bridge listener (see [View](#view)), and `/content` inlines the [storage stand-in](#sandbox). Pages link them as `…?v=<content digest>` (`layout.HEAD_ASSETS`, `static_files.hashed_url`) and that exact URL is served `public, max-age=31536000, immutable`; pages themselves are never cached, so an upgrade changes the URLs and readers never pair new markup with an old stylesheet. The plain paths stay served, with `max-age=300`. They use system fonts only and load nothing from elsewhere. The colour tokens use `light-dark()` and `color-mix()`, so the floor is a browser from 2024: Chrome 123, Firefox 120, Safari 17.5; older ones show the pages without colours. The published document inside the view page keeps its own look.
+The index, view and diff pages share one stylesheet, `/static/pergam.css`, and two scripts, `/static/theme.js` and `/static/shortcuts.js`; the index adds `/static/index.js` (the sort menu and its "Show summaries" switch, "Load more", the pinned row's buttons) and `/static/filters.js` (the filter dialog), and the view and diff pages add `/static/pages.js`, their progressive enhancements (the history panel, dropdowns, the pin, archive and tag controls). Every script they add is a same-origin static file; the only inline script is the view page's frame bridge listener (see [View](#view)), and `/content` inlines the [storage stand-in](#sandbox). Pages link them as `…?v=<content digest>` (`layout.HEAD_ASSETS`, `static_files.hashed_url`) and that exact URL is served `public, max-age=31536000, immutable`; pages themselves are never cached, so an upgrade changes the URLs and readers never pair new markup with an old stylesheet. The plain paths stay served, with `max-age=300`. They use system fonts only and load nothing from elsewhere. The colour tokens use `light-dark()` and `color-mix()`, and the filter and row styles `:has()`, so the floor is a browser from 2024: Chrome 123, Firefox 121, Safari 17.5; older ones show the pages without colours. The published document inside the view page keeps its own look.
 
 **Framing.** Every page the server renders (index, view, diff, and errors on their routes, page or not) is sent with `Content-Security-Policy: frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`, so only this server may frame it and another site cannot overlay its controls (clickjacking). `/content` keeps its own policy (see [Sandbox](#sandbox)), and JSON, feed, text, static and write responses carry neither header.
 
@@ -449,6 +449,7 @@ App env vars follow 12-factor conventions; only the pergam-specific knobs carry 
 | `TRUST_PROXY_USER`  | off                    | `1` takes the author of every write from `X-Forwarded-User`, set by an authenticating reverse proxy (see [Identity](#identity)). |
 | `POSTGRES_PASSWORD` | `pergam`               | Password for the bundled `db` service.       |
 | `PERGAM_PORT`       | `1111`                 | Host-side published port (compose only).     |
+| `PERGAM_IMAGE`      | `pergam:latest`        | Image the compose service runs (compose only). Unset builds it from the checkout; set it to run a [published image](#published-image). |
 | `MIGRATIONS_DIR`    | `/app/db/migrations`   | Directory of `NNN_*.sql` migrations (the image sets it; from a checkout it defaults to `db/migrations`). |
 
 See `.env.example` for the full set. The server refuses to start when `PUBLIC_URL` is not an absolute `http(s)` URL, carries credentials, a query or fragment marker (`?`, `#`) or a non-numeric port, when `PUBLIC_PORT` is not a number, when `PERGAM_MAX_BODY_MB` is not a positive integer, when `PERGAM_MAX_PINNED` is not a whole number of 0 or more in plain ASCII digits (no sign), or when `TRUST_PROXY_USER` is not a recognised on/off value.
@@ -483,6 +484,7 @@ pergam/
 │   ├── routes.py            HTTP routing and request validation
 │   ├── store.py             data access (all SQL)
 │   ├── layout.py            head assets and the top bar shared by every page
+│   ├── icons.py             inline SVG icons for every page
 │   ├── error_page.py        error responses as a page, for browsers only
 │   ├── index_page.py        HTML index renderer
 │   ├── index_links.py       canonical index URLs and author helpers
@@ -521,10 +523,11 @@ pergam/
 │   └── migrate_from_fs.py   import legacy ./data/*.html files
 ├── skills/post-pergam/      Claude Code skill, server profiles and promote helper (see below)
 ├── web/                     public landing + example hosted worker (Cloudflare)
-├── .github/workflows/       CI: test suite + image build on every pull request
+├── .github/workflows/       CI: test suite + image build on every pull request; release-image.yml publishes the image on a version tag
 ├── Dockerfile               python:3.14-slim, runs as uid 10001
 ├── docker-compose.yml       app + bundled postgres + healthchecks
 ├── Makefile                 up / down / restart / logs / ps / health / clean / test
+├── CHANGELOG.md             what changed in each release, and upgrade notes
 ├── requirements.txt         psycopg[binary], psycopg-pool
 ├── requirements-dev.txt     + pytest (tests only)
 └── .env.example
@@ -553,6 +556,41 @@ For a single internal team, the easiest path is:
 3. Optionally put [Caddy](https://caddyserver.com/) in front for TLS and auth — pergam itself has no auth and assumes the network is a trust boundary.
 
 For larger teams, swap `tls internal` for an OIDC sidecar (e.g. `oauth2-proxy`) that sets `X-Forwarded-User`, and start pergam with `TRUST_PROXY_USER=1` so authors come from that header (see [Identity](#identity)). Publish pergam's port only to the proxy, never directly, or anyone could send the header themselves.
+
+### Published image
+
+Every release is published as a multi-arch image (`linux/amd64`, `linux/arm64`) at `ghcr.io/diesilveira/pergam`, built from the repository's `Dockerfile`. Tags for release `2.0.0`: `2.0.0`, `2.0`, `2` and `latest`. Use the exact version in production, or `2` / `2.0` to follow minor and patch releases. The image carries the OCI labels `source`, `version`, `revision` and `licenses`.
+
+With compose, set `PERGAM_IMAGE` and start without `--build`. Put it in `.env` so every `docker compose` command sees it; a variable set in front of one command applies to that command only:
+
+```bash
+echo 'PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2.0.0' >> .env
+docker compose up -d                 # pulls the image and starts it
+```
+
+To move to a newer release, change the tag in `.env` and run `docker compose up -d` again: compose pulls the new image and recreates the container. With a floating tag (`:2`, `:2.0`, `:latest`), `docker compose pull && docker compose up -d` fetches what the tag now points to.
+
+Compose pulls an image it does not have; `--build` (and `make up`) builds from source and tags the result with that name instead. With `PERGAM_IMAGE` unset nothing changes: the service builds `pergam:latest` from the checkout.
+
+Without compose, run the image against any Postgres, with the same environment variables (see [Configuration](#configuration)). The server applies its migrations on start:
+
+```bash
+docker network create pergam
+docker run -d --name pergam-db --network pergam --restart unless-stopped \
+  -e POSTGRES_DB=pergam -e POSTGRES_USER=pergam -e POSTGRES_PASSWORD=CHANGE_ME \
+  -v pergam_db:/var/lib/postgresql/data postgres:15-alpine
+docker run -d --name pergam --network pergam --restart unless-stopped -p 1111:1111 \
+  -e DATABASE_URL=postgresql://pergam:CHANGE_ME@pergam-db:5432/pergam \
+  -e PUBLIC_URL=http://localhost:1111 \
+  ghcr.io/diesilveira/pergam:2.0.0
+curl http://localhost:1111/healthz   # → {"ok":true}
+```
+
+The server waits ten seconds for the database and exits if it is not there, so keep the restart policy: it brings the server back when the database starts later than it. The container runs as uid 10001 and needs nothing else mounted.
+
+### Releasing
+
+The version lives in one place, `__version__` in `src/pergam/__init__.py`; the HTTP `Server` header (`pergam/<version> Python/…`) comes from it. To release: bump `__version__`, add the version to [CHANGELOG.md](CHANGELOG.md), merge, then push the tag `v<version>` (`v2.0.0`). The `release-image` workflow runs on that tag only: it fails unless the tag is `vMAJOR.MINOR.PATCH` and equals `v` + `__version__`, runs the test suite, then builds and pushes the image with the built-in `GITHUB_TOKEN`. It never runs on pull requests; the `docker-build` job in `test.yml` builds the image on every pull request without pushing it.
 
 ## Testing
 

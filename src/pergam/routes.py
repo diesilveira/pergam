@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse
 
+from pergam import __version__
 from pergam.access import Access, CollaboratorError, Forbidden, parse_collaborators
 from pergam.api import facets_json, index_json, pergam_json
 from pergam.cursor import CursorError, SortError, decode_cursor, parse_sort
@@ -109,7 +110,7 @@ def parse_filters(query: dict[str, list[str]]) -> IndexFilters:
 
 
 class PergamHandler(http.server.BaseHTTPRequestHandler):
-    server_version = "pergam/2.0"
+    server_version = f"pergam/{__version__}"
     store: PergamStore
     public: PublicAddress
     types: tuple[str, ...] = DEFAULT_TYPES
