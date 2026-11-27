@@ -13,7 +13,9 @@
  *   updates every count and the apply button in place; values with no result are
  *   dimmed and cannot be ticked, unless already ticked.
  * - Apply navigates once, replacing the dialog's history entry, to the canonical URL
- *   the form describes; the new page then focuses the "N of M" summary and says it.
+ *   the form describes (values sorted within each key, as the server's links are);
+ *   the new page then focuses the "N of M" summary and says it. Enter in a find
+ *   field does not apply.
  * - Long lists expand in place; a find field filters a long author or tag list, and
  *   the first Escape in it clears it instead of closing the dialog.
  */
@@ -62,11 +64,17 @@
   let pending = null;
 
   const query = () => {
-    const pairs = [];
+    const values = new Map();
     for (const [key, value] of new FormData(form)) {
       if (['state', 'q', 'sort'].includes(key) && !value) continue;
-      pairs.push([key, value]);
+      if (!values.has(key)) values.set(key, []);
+      values.get(key).push(value);
     }
+    const pairs = [];
+    values.forEach((list, key) => {
+      if (['type', 'author', 'tag'].includes(key)) list.sort();
+      list.forEach((value) => pairs.push([key, value]));
+    });
     return new URLSearchParams(pairs).toString();
   };
 

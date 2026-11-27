@@ -48,7 +48,7 @@ def section(text: str, key: str) -> str:
 
 @pytest.mark.parametrize(
     ("query", "count"),
-    [("", 0), ("?q=plan&sort=title", 0), ("?type=plan&type=otro&tag=ops", 3), ("?state=archived", 1), ("?author=ana@example.com&state=all", 2)],
+    [("", 0), ("?q=plan&sort=title", 0), ("?type=otro&type=plan&tag=ops", 3), ("?state=archived", 1), ("?author=ana@example.com&state=all", 2)],
 )
 def test_the_filters_button_counts_values_and_a_status_but_never_search_or_sort(
     client: Client, library: dict[str, str], query: str, count: int
@@ -73,7 +73,7 @@ def test_each_active_value_is_a_chip_whose_cross_removes_only_it(client: Client,
     assert 'href="/?type=otro&amp;author=ana%40example.com&amp;state=all&amp;q=x&amp;sort=title" aria-label="Remove filter Type: plan"' in text
     assert 'aria-label="Remove filter Author: ana"' in text and 'title="ana@example.com"' in text
     assert '<span class="fchip__value">Active and archived</span>' in text
-    assert 'href="/?type=plan&amp;type=otro&amp;author=ana%40example.com&amp;q=x&amp;sort=title" aria-label="Remove filter Active and archived"' in text
+    assert 'href="/?type=otro&amp;type=plan&amp;author=ana%40example.com&amp;q=x&amp;sort=title" aria-label="Remove filter Active and archived"' in text
     assert '<a class="summary__clear" href="/?q=x&amp;sort=title" aria-label="Clear all filters">Clear all</a>' in text
 
 

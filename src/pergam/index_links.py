@@ -22,8 +22,12 @@ FACETS = (("types", "type"), ("authors", "author"), ("tags", "tag"))
 
 
 def query_pairs(filters: IndexFilters) -> list[tuple[str, str]]:
-    """The query of `filters` in canonical order, as the filter form submits it: types, authors, tags, state, q, sort, cursor."""
-    pairs = [(key, value) for field_name, key in FACETS for value in getattr(filters, field_name)]
+    """The canonical query of `filters`: types, authors, tags (each sorted), state, q, sort, cursor.
+
+    The filter dialog builds the same order, so one selection has one URL whether it
+    comes from a chip, a link or the dialog.
+    """
+    pairs = [(key, value) for field_name, key in FACETS for value in sorted(getattr(filters, field_name))]
     if filters.state != ACTIVE:
         pairs.append(("state", filters.state))
     if filters.q:

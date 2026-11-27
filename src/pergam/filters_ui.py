@@ -78,10 +78,12 @@ class Chip:
 
 
 def chips(filters: IndexFilters) -> list[Chip]:
-    """One chip per active value, in the order of the form; removing one keeps everything else."""
-    out = [Chip("Type", value, value, without_value(filters, "types", value)) for value in filters.types]
-    out += [Chip("Author", short_author(value), value, without_value(filters, "authors", value)) for value in filters.authors]
-    out += [Chip("Tag", value, value, without_value(filters, "tags", value)) for value in filters.tags]
+    """One chip per active value, in the order of the URL; removing one keeps everything else."""
+    out = [Chip("Type", value, value, without_value(filters, "types", value)) for value in sorted(filters.types)]
+    out += [
+        Chip("Author", short_author(value), value, without_value(filters, "authors", value)) for value in sorted(filters.authors)
+    ]
+    out += [Chip("Tag", value, value, without_value(filters, "tags", value)) for value in sorted(filters.tags)]
     if filters.state != ACTIVE:
         out.append(Chip("", STATE_CHIPS[filters.state], STATE_CHIPS[filters.state], replace(filters, state=ACTIVE, cursor=None)))
     return out
