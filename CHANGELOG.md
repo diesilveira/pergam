@@ -59,7 +59,7 @@ All notable changes to the self-hosted server are recorded here. The format foll
 
 ### Upgrade notes
 
-For anyone running 1.x. The `POST /pergam` contract is unchanged: `{title, html, type, author, id?}` still returns `{id, version, view_url, title, type, author}`. `tags` and `note` are optional additions, and the response carries them only when the request sent them. Clients and the skill that worked against 1.x keep working.
+For anyone running 1.x. The `POST /pergam` request and response shapes are unchanged: `{title, html, type, author, id?}` still returns `{id, version, view_url, title, type, author}`. `tags` and `note` are optional additions, and the response carries them only when the request sent them. Clients and the skill that worked against 1.x keep working. What a client can now be refused with: **413** above `PERGAM_MAX_BODY_MB`, **400** for a control character in `author` or an invalid `tags` or `note`, **400** for a `type` outside `PERGAM_TYPES`, and, with `TRUST_PROXY_USER` on, **401** and **403**.
 
 **Migrations.** Migrations `001` to `008` apply by themselves, in order, when the server starts, and the server listens only after they succeed. They are additive: none drops or rewrites an existing row, and the 1.x tables, indexes and view stay as they are. `001` records the 1.x schema without running DDL; `002` to `008` add `pergam_meta`, `pergam_text`, `pergam_note` and columns on them. The applied ones are listed in `schema_migrations`. A failed migration rolls back, logs `migrations failed` and exits non-zero. Back up the database before the first start all the same.
 
@@ -83,7 +83,7 @@ For anyone running 1.x. The `POST /pergam` contract is unchanged: `{title, html,
 
 `POST /lint` tells you which of these a document hits before you publish it. Posted bytes are untouched: `/raw` and `/export` return exactly what was posted. In 1.x a document was served as the page itself, on the server's own origin; in 2.0 it never runs there. `/{id}/v{n}/content`, the route the view page frames, is cached for five minutes (`public, max-age=300`).
 
-**Archived pergams and `?archived=1`.** The index shows active pergams by default. `?state=active|archived|all` chooses the status: `state=archived` lists only archived pergams and `state=all` both. `/?archived=1` is answered with a **301** to the same URL with `state=all`, so links that used it keep their meaning; on `/api/pergams` it reads as `state=all` with no redirect. Any other `state` is **400**.
+**Archived pergams.** Archiving is new in 2.0: an archived pergam is left out of the index and the feed but stays reachable by URL. The index shows active pergams by default, and `?state=active|archived|all` chooses the status: `state=archived` lists only archived pergams and `state=all` both. `/?archived=1` is also accepted and answered with a **301** to the same URL with `state=all`; on `/api/pergams` it reads as `state=all` with no redirect. Any other `state` is **400**.
 
 **New environment variables.** None is required; the compose file passes each one through.
 
@@ -97,6 +97,6 @@ For anyone running 1.x. The `POST /pergam` contract is unchanged: `{title, html,
 
 The server refuses to start on a value it cannot read, such as a `PUBLIC_URL` that is not an absolute `http(s)` URL or a `TRUST_PROXY_USER` that is neither on nor off.
 
-**Browsers.** The interface uses `light-dark()` and `color-mix()`: Chrome 123, Firefox 120 or Safari 17.5 and later. Older browsers show the pages without colours. Documents keep their own look in any browser.
+**Browsers.** The interface uses `light-dark()`, `color-mix()` and `:has()`: Chrome 123, Firefox 121 or Safari 17.5 and later. Older browsers show the pages without colours. Documents keep their own look in any browser.
 
 [2.0.0]: https://github.com/diesilveira/pergam/compare/v1.0.0...v2.0.0
