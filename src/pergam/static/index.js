@@ -1,62 +1,62 @@
 /*
  * The index page's own behaviour. Loaded synchronously in <head>, so a remembered
- * density and a collapsed filter column are on <html> before first paint.
- * - [data-density-toggle] switches compact rows and remembers the choice;
- * - below 860px the filter column (details.filters) starts collapsed;
+ * "Show summaries" choice is on <html data-summaries="on"> before first paint.
+ * - the sort menu (details[data-sortmenu]) closes on Escape and on a click elsewhere,
+ *   and holds the "Show summaries" switch, which this script reveals and remembers;
  * - "Load more" ([data-load-more]) appends the next page instead of leaving this one;
  * - the pinned row ([data-pins]) gets previous/next buttons that scroll it by one
  *   view of cards and are disabled at the ends (focus moves to the other one first,
  *   so it never drops to the page), and a focused card scrolls into view.
- * Without script the column stays open, rows keep their size, "Load more" is a
- * plain link to the next page and the pinned row scrolls natively.
+ * Without script rows stay on one line, the sort menu still opens and links, "Load
+ * more" is a plain link to the next page and the pinned row scrolls natively.
  */
 (() => {
-  const KEY = 'pergam-density';
+  const KEY = 'pergam-summaries';
   const root = document.documentElement;
-  const narrow = matchMedia('(max-width: 860px)');
 
   const remembered = () => {
     try {
-      return localStorage.getItem(KEY) === 'compact';
+      return localStorage.getItem(KEY) === 'on';
     } catch (error) {
       return false;
     }
   };
-  const remember = (compact) => {
+  const remember = (on) => {
     try {
-      localStorage.setItem(KEY, compact ? 'compact' : 'comfortable');
+      localStorage.setItem(KEY, on ? 'on' : 'off');
     } catch (error) {
       /* private mode: the choice lasts for this page only */
     }
   };
 
-  if (remembered()) root.dataset.density = 'compact';
-  if (narrow.matches) root.dataset.filters = 'collapsed';
+  if (remembered()) root.dataset.summaries = 'on';
 
-  const density = () => {
-    const button = document.querySelector('[data-density-toggle]');
+  const summaries = () => {
+    const button = document.querySelector('[data-summaries-toggle]');
     if (!button) return;
-    const show = () => button.setAttribute('aria-pressed', String(root.dataset.density === 'compact'));
-    button.hidden = false;
+    const show = () => button.setAttribute('aria-checked', String(root.dataset.summaries === 'on'));
+    button.closest('[data-summaries-item]').hidden = false;
     show();
     button.addEventListener('click', () => {
-      const compact = root.dataset.density !== 'compact';
-      if (compact) root.dataset.density = 'compact';
-      else delete root.dataset.density;
-      remember(compact);
+      const on = root.dataset.summaries !== 'on';
+      if (on) root.dataset.summaries = 'on';
+      else delete root.dataset.summaries;
+      remember(on);
       show();
     });
   };
 
-  const filters = () => {
-    const column = document.querySelector('details.filters');
-    delete root.dataset.filters;
-    if (!column) return;
-    const fit = () => {
-      column.open = !narrow.matches;
-    };
-    fit();
-    narrow.addEventListener('change', fit);
+  const sortMenu = () => {
+    const menu = document.querySelector('[data-sortmenu]');
+    if (!menu) return;
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !menu.open) return;
+      menu.open = false;
+      menu.querySelector('summary').focus();
+    });
+    document.addEventListener('click', (event) => {
+      if (menu.open && !menu.contains(event.target)) menu.open = false;
+    });
   };
 
   const append = (next) => {
@@ -138,8 +138,8 @@
   };
 
   document.addEventListener('DOMContentLoaded', () => {
-    density();
-    filters();
+    summaries();
+    sortMenu();
     loadMore();
     pins();
   });

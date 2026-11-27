@@ -92,4 +92,4 @@ def test_stored_types_no_longer_listed_still_render_and_filter(custom: tuple[Cli
     assert client.get("/0dd00001/v1/raw").text == "<p>old</p>"
     assert "0dd00001" in listed_order(page)
     assert re.search(r'class="badge" style="--type-rgb:86,211,100"[^>]*>informe</a>', page)
-    assert re.search(r'>informe<span class="facet__count">1</span>', page)
+    assert client.get("/api/pergams?type=informe").json()["counts"]["types"] == [{"type": "informe", "count": 1}]

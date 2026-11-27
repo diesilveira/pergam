@@ -26,7 +26,6 @@ def test_index_lists_latest_version_of_every_pergam(client: Client, catalogue: d
     assert listed_ids(resp.text, *catalogue.values()) == set(catalogue.values())
     assert "Release notes v2" in resp.text
     assert 'title="2 versions">v2</span>' in resp.text
-    assert "3 pergams · 2 authors · 4 versions" in resp.text
 
 
 @pytest.mark.parametrize(
@@ -52,7 +51,7 @@ def test_index_filtered_view_reports_partial_count(client: Client, catalogue: di
     resp = client.get("/?type=reporte")
 
     assert "showing 1 of 3" in resp.text
-    assert 'href="/">clear all</a>' in resp.text
+    assert '<a class="toolbar__clear" href="/">Clear all</a>' in resp.text
 
 
 def test_empty_index_shows_hint(client: Client) -> None:
@@ -108,21 +107,12 @@ def test_tag_filter_composes_and_archived_stay_hidden(
     assert listed_ids(resp.text, *tagged.values()) == {tagged[k] for k in expected}
 
 
-def test_tag_pills_count_visible_pergams(client: Client, tagged: dict[str, str]) -> None:
-    hidden, shown = client.get("/").text, client.get("/?archived=1").text
+def test_tag_counts_cover_visible_pergams(client: Client, tagged: dict[str, str]) -> None:
+    hidden, shown = client.get("/api/pergams").json(), client.get("/api/pergams?archived=1").json()
 
-    assert re.search(r'href="/\?tag=ops"><span class="facet__hash" aria-hidden="true">#</span>ops<span class="facet__count">2</span>', hidden)
-    assert re.search(r'href="/\?tag=q3"><span[^>]*>#</span>q3<span class="facet__count">2</span>', hidden)
-    assert re.search(r'href="/\?tag=ops&amp;archived=1"><span[^>]*>#</span>ops<span class="facet__count">3</span>', shown)
-    assert '<a class="facet" href="/?archived=1">Archived<span class="facet__count">1</span>' in hidden
-    assert '<a class="facet is-on" href="/" aria-current="true">Archived' in shown
-
-
-def test_active_tag_pill_links_back_to_unfiltered(client: Client, tagged: dict[str, str]) -> None:
-    resp = client.get("/?tag=ops&type=plan")
-
-    assert re.search(r'<a class="facet is-on" href="/\?type=plan" aria-current="true"><span[^>]*>#</span>ops<', resp.text)
-    assert "showing 1 of 4" in resp.text
+    assert hidden["counts"]["tags"] == [{"tag": "ops", "count": 2}, {"tag": "q3", "count": 2}]
+    assert shown["counts"]["tags"][0] == {"tag": "ops", "count": 3}
+    assert (hidden["archived_count"], shown["archived_count"]) == (1, 1)
 
 
 @pytest.mark.parametrize(
@@ -140,14 +130,13 @@ def test_header_counts_follow_the_archived_filter(
     page = client.get(query).text
 
     assert f'<p class="index-head__note">{note}</p>' in page
-    assert '<p class="index-stats">5 pergams · 2 authors · 5 versions · ' in page
 
 
 @pytest.mark.parametrize(("query", "clear"), [("/", False), ("/?archived=1", True), ("/?tag=ops", True)])
 def test_clear_all_resets_the_archived_filter_too(
     client: Client, tagged: dict[str, str], query: str, clear: bool
 ) -> None:
-    assert ('href="/">clear all</a>' in client.get(query).text) is clear
+    assert ('<a class="toolbar__clear" href="/">Clear all</a>' in client.get(query).text) is clear
 
 
 def test_rows_show_tags_and_flags(client: Client, tagged: dict[str, str]) -> None:
@@ -158,8 +147,8 @@ def test_rows_show_tags_and_flags(client: Client, tagged: dict[str, str]) -> Non
     assert '<a class="tag" href="/?tag=q3&amp;archived=1"' in resp.text
     assert f'<li class="pin" data-href="/{tagged["q3_plan"]}/view"><a class="pin__title" href="/{tagged["q3_plan"]}/view">' in resp.text
     assert re.search(
-        rf'<li class="row row--archived" data-href="/{tagged["archived"]}/view">.*?<span class="flag flag--archived">archived</span>'
-        rf'<a class="row__title" href="/{tagged["archived"]}/view">',
+        rf'<li class="row row--archived" data-href="/{tagged["archived"]}/view">.*?'
+        rf'<a class="row__title" href="/{tagged["archived"]}/view">Old ops plan</a><span class="flag flag--archived">Archived</span>',
         resp.text,
     )
 

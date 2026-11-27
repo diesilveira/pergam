@@ -14,7 +14,7 @@ import pytest
 from psycopg_pool import ConnectionPool
 
 from pergam.cursor import IndexCursor, TitleCursor
-from pergam.index_page import TAGS_SHOWN, date_group
+from pergam.index_page import date_group
 from pergam.search import HEADLINE_SQL, MATCHES_SQL, search_params
 from pergam.store import SEARCHED, IndexFilters, PergamStore, page_query, save_text
 from pergam.summary import SUMMARY_CHARS, SOURCE_CHARS, summarise
@@ -241,12 +241,10 @@ def test_each_facet_counts_what_choosing_it_would_give(client: Client, results: 
 
 
 def test_other_values_of_a_facet_stay_listed_within_a_search(client: Client, results: dict[str, str]) -> None:
-    page = client.get("/?q=needle&type=plan").text
+    body = client.get("/api/pergams?q=needle&type=plan").json()
 
-    assert '<a class="facet" href="/?type=reporte&amp;q=needle"><span class="type-dot"' in page
-    assert re.search(r'>reporte<span class="facet__count">1</span>', page)
-    assert re.search(r'>All<span class="facet__count">3</span>', page)
-    assert "<h1>2 results</h1>" in page
+    assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "reporte", "count": 1}]
+    assert body["matching"] == 2
 
 
 def test_search_counts_cover_the_results_and_archived_matches(client: Client, results: dict[str, str]) -> None:
@@ -256,7 +254,6 @@ def test_search_counts_cover_the_results_and_archived_matches(client: Client, re
     assert body["counts"]["types"] == [{"type": "plan", "count": 2}, {"type": "reporte", "count": 1}]
     assert body["counts"]["tags"] == [{"tag": "ops", "count": 2}, {"tag": "q3", "count": 1}]
     assert body["archived_count"] == 1
-    assert re.search(r'>All<span class="facet__count">3</span>', page)
     assert "<h1>3 results</h1>" in page
     assert "for “needle” · the filters count these results only" in page
 
@@ -284,46 +281,66 @@ def test_empty_filters_offer_to_clear_them(client: Client, results: dict[str, st
 
     assert "No pergams with tag nope." in page
     assert '<a class="btn btn--primary" href="/?sort=title">Clear filters</a>' in page
-    assert '<a class="facet is-on" href="/?sort=title" aria-current="true"><span' in page
 
 
 def test_links_keep_the_sort_and_drop_the_cursor(client: Client, results: dict[str, str]) -> None:
     page = client.get("/?sort=title&type=plan").text
 
     assert 'href="/?type=plan&amp;tag=ops&amp;sort=title"' in page
-    assert '<a class="chip" href="/?type=plan" title="Most recent first">Recent</a>' in page
-    assert '<a class="chip is-on" href="/?type=plan&amp;sort=title" aria-current="true"' in page
+    assert '<li><a href="/?type=plan">Recent</a></li>' in page
+    assert '<li><a href="/?type=plan&amp;sort=title" aria-current="true">Title A–Z</a></li>' in page
 
 
-def test_long_tag_lists_fold_but_keep_the_active_tag_in_view(client: Client) -> None:
-    for n in range(TAGS_SHOWN + 4):
-        client.publish(title=f"Doc {n}", tags=[f"tag{m:02d}" for m in range(n + 1)])
-    rarest = f"tag{TAGS_SHOWN + 3:02d}"
-
-    plain = client.get("/").text
-    active = client.get(f"/?tag={rarest}").text
-
-    assert f"Show all {TAGS_SHOWN + 4}</summary>" in plain
-    shown = active.split('<details class="facets__more">')[0]
-    assert f'<a class="facet is-on" href="/" aria-current="true"><span class="facet__hash" aria-hidden="true">#</span>{rarest}' in shown
-
-
-def test_stats_are_one_line_under_the_heading(client: Client) -> None:
-    pid = client.publish(html="<p>x</p>")["id"]
+def test_the_index_is_one_column_without_a_filter_column_or_stats_line(client: Client) -> None:
+    pid = client.publish(html="<p>x</p>", tags=["ops"])["id"]
     client.publish(id=pid, html="<p>y</p>")
 
     page = client.get("/").text
 
     assert "<h1>All pergams</h1>" in page
-    assert '<p class="index-stats">1 pergams · 1 authors · 2 versions · 1 new this week · 16 B</p>' in page
-    assert "stats-grid" not in page
+    assert 'class="facets' not in page and "index-stats" not in page and "data-density-toggle" not in page
+    assert '<main class="index">' in page
 
 
-def test_the_density_toggle_is_hidden_until_the_script_runs(client: Client) -> None:
+def test_feed_and_json_links_move_to_the_footer(client: Client) -> None:
+    client.publish()
+
+    page = client.get("/?tag=ops&sort=title").text
+    footer = page[page.index('<footer class="index-foot">'):]
+    top_bar = page[page.index('<header class="topbar">'):page.index("</header>")]
+
+    assert '<a href="/feed.atom">Atom feed</a>' in footer
+    assert '<a href="/api/pergams?tag=ops&amp;sort=title">This list as JSON</a>' in footer
+    assert "feed.atom" not in top_bar and "/api/pergams" not in top_bar
+    assert "data-theme-toggle" in top_bar and 'class="topbar__search' in top_bar
+
+
+def test_the_sort_menu_links_each_order_and_keeps_the_filters(client: Client) -> None:
+    client.publish()
+
+    menu = re.search(r'<details class="dropdown sortmenu".*?</details>', client.get("/?tag=ops&sort=title").text).group(0)
+
+    assert '<summary class="btn sortmenu__toggle" aria-label="Sort: Title A–Z">Title A–Z' in menu
+    assert '<li><a href="/?tag=ops">Recent</a></li>' in menu
+    assert '<li><a href="/?tag=ops&amp;sort=title" aria-current="true">Title A–Z</a></li>' in menu
+
+
+def test_the_summaries_switch_is_hidden_until_the_script_runs(client: Client) -> None:
     page = client.get("/").text
 
-    assert '<button type="button" class="chip" data-density-toggle aria-pressed="false" hidden>Compact</button>' in page
+    assert re.search(r'<li class="sortmenu__switch" data-summaries-item hidden><button type="button" role="switch" aria-checked="false" data-summaries-toggle>', page)
     assert re.search(r'<script src="/static/index.js\?v=[0-9a-f]{12}"></script>', page)
+
+
+def test_rows_keep_their_details_in_the_markup_for_the_summaries_switch(client: Client) -> None:
+    pid = client.publish(title="Plan", html="<p>The first sentence is long enough.</p>", tags=["ops"])["id"]
+
+    row = re.search(rf'<li class="row" data-href="/{pid}/view">.*?</li>', client.get("/").text).group(0)
+
+    assert '<span class="row__summary">The first sentence is long enough.</span>' in row
+    assert '<a class="tag" href="/?tag=ops"' in row
+    assert 'title="1 version">v1</span>' in row
+    assert 'aria-label="Filter by author: you@example.com"' in row
 
 
 @pytest.mark.parametrize("path", ["/static/shortcuts.js", "/static/index.js"])

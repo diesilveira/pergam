@@ -10,20 +10,18 @@ ${css}</style></head><body>
 
 ${top_bar}
 
-<div class="index">
-  ${sidebar}
-  <main class="index__main">
-    <div class="index-head">
-      <div class="index-head__text">
-        <h1>${heading}</h1>
-        <p class="index-head__note">${showing_note}</p>
-      </div>
-      <div class="index-head__controls">${controls}</div>
-    </div>
-    <p class="index-stats">${stats_line}</p>
-    ${pinned}
-    <div class="groups" data-groups>${groups}</div>
-    ${pager}
-  </main>
-</div>
+<main class="index">
+  <div class="index-head">
+    <h1>${heading}</h1>
+    <p class="index-head__note">${showing_note}</p>
+  </div>
+  <div class="toolbar">
+    ${clear_link}
+    <div class="toolbar__end">${sort_menu}</div>
+  </div>
+  ${pinned}
+  <div class="groups" data-groups>${groups}</div>
+  ${pager}
+</main>
+${footer}
 </body></html>

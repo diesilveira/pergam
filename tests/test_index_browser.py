@@ -130,69 +130,14 @@ def test_a_search_from_the_index_keeps_the_active_filters(browser, site) -> None
     context.close()
 
 
-def test_filter_counts_on_a_search_add_up_to_the_results(browser, site) -> None:
-    context, page = open_page(browser)
-    page.goto(f"{site['base']}/?q=note")
-
-    results = int(page.locator("h1").inner_text().split()[0])
-    every, *counts = [int(text) for text in page.locator("section[aria-labelledby=facets-type] .facet__count").all_inner_texts()]
-
-    assert results == every == 12
-    assert sum(counts) == results
-    context.close()
-
-
-@pytest.mark.parametrize("scheme", SCHEMES)
-def test_density_toggle_switches_and_is_remembered(browser, site, scheme: str) -> None:
-    context, page = open_page(browser, scheme)
-    page.goto(site["index"])
-    toggle = page.get_by_role("button", name="Compact")
-    row = page.locator(".list .row").first
-    comfortable = row.bounding_box()["height"]
-
-    toggle.click()
-
-    assert toggle.get_attribute("aria-pressed") == "true"
-    assert row.bounding_box()["height"] < comfortable
-    page.reload()
-    assert page.evaluate("document.documentElement.dataset.density") == "compact"
-    assert page.get_by_role("button", name="Compact").get_attribute("aria-pressed") == "true"
-    context.close()
-
-
-@pytest.mark.parametrize("scheme", SCHEMES)
-def test_the_filter_column_collapses_on_a_phone(browser, site, scheme: str) -> None:
-    context, page = open_page(browser, scheme, viewport=PHONE)
-    page.goto(site["index"])
-    tag = page.locator(".facet", has_text="roadmap")
-
-    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
-    assert page.evaluate("document.querySelector('details.filters').open") is False
-    assert tag.is_hidden()
-    page.get_by_text("Filters", exact=True).click()
-    assert tag.is_visible()
-    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
-    context.close()
-
-
 @pytest.mark.parametrize("query", ["/", "/?q=note", "/?q=nothing-at-all&type=plan", "/?sort=title"])
 @pytest.mark.parametrize("scheme", SCHEMES)
 def test_index_states_fit_a_phone(browser, site, scheme: str, query: str) -> None:
+    """No horizontal scroll at 360px, with rows on one line or with summaries on."""
     context, page = open_page(browser, scheme, viewport=PHONE)
 
     page.goto(site["base"] + query)
 
-    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
-    context.close()
-
-
-def test_without_script_the_column_stays_open_and_the_toggle_hidden(browser, site) -> None:
-    context, page = open_page(browser, java_script_enabled=False, viewport=PHONE)
-
-    page.goto(site["index"])
-
-    assert page.locator(".facet", has_text="roadmap").is_visible()
-    assert page.locator("[data-density-toggle]").is_hidden()
     assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
     context.close()
 
@@ -231,9 +176,9 @@ def test_clicking_anywhere_on_a_row_opens_it_but_its_links_still_filter(browser,
     page.mouse.click(date["x"] + date["width"] / 2, date["y"] + date["height"] / 2)
     page.wait_for_url(site["view"])
     page.go_back()
-    row.locator(".tag", has_text="roadmap").click()
+    row.locator(".badge").click()
 
-    page.wait_for_url(f"{site['base']}/?tag=roadmap")
+    page.wait_for_url(f"{site['base']}/?type=plan")
     context.close()
 
 
@@ -449,4 +394,85 @@ def test_focus_moves_to_the_other_button_at_an_end(browser, pinned_row: str, sch
         pytest.fail("focus never came back to the next button")
     assert page.locator("[data-pins-prev]").is_disabled()
     assert page.evaluate(ROW_SCROLL) == 0
+    context.close()
+
+
+ROW_LINES = """() => Array.from(document.querySelectorAll('.list .row')).map((row) => {
+  const title = row.querySelector('.row__title').getBoundingClientRect();
+  return Math.round(row.getBoundingClientRect().height / title.height);
+})"""
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, PHONE], ids=["desktop", "phone"])
+@pytest.mark.parametrize("scheme", SCHEMES)
+def test_rows_are_one_line_by_default(browser, site, scheme: str, viewport: dict) -> None:
+    context, page = open_page(browser, scheme, viewport=viewport)
+    page.goto(site["index"])
+
+    assert set(page.evaluate(ROW_LINES)) == {2}
+    assert page.locator(".list .row__summary").first.is_hidden()
+    assert page.locator(".list .row__version").first.is_hidden()
+    assert page.evaluate("document.documentElement.scrollWidth") <= viewport["width"]
+    context.close()
+
+
+@pytest.mark.parametrize("scheme", SCHEMES)
+def test_show_summaries_restores_detailed_rows_and_survives_a_reload(browser, site, scheme: str) -> None:
+    context, page = open_page(browser, scheme)
+    page.goto(site["index"])
+
+    page.locator('summary[aria-label="Sort: Recent"]').click()
+    switch = page.get_by_role("switch", name="Show summaries")
+    switch.click()
+
+    assert switch.get_attribute("aria-checked") == "true"
+    assert page.locator(".list .row__summary").first.is_visible()
+    assert page.locator(".list .row__version").first.is_visible()
+    page.reload()
+    assert page.evaluate("document.documentElement.dataset.summaries") == "on"
+    assert page.locator(".list .row__summary").first.is_visible()
+    page.locator('summary[aria-label="Sort: Recent"]').click()
+    page.get_by_role("switch", name="Show summaries").click()
+    assert page.locator(".list .row__summary").first.is_hidden()
+    context.close()
+
+
+def test_the_sort_menu_works_from_the_keyboard(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["index"])
+    toggle = page.locator('summary[aria-label="Sort: Recent"]')
+
+    toggle.focus()
+    page.keyboard.press("Enter")
+    assert page.evaluate("document.querySelector('[data-sortmenu]').open") is True
+    page.keyboard.press("Escape")
+    assert page.evaluate("document.querySelector('[data-sortmenu]').open") is False
+    assert page.evaluate("document.activeElement.classList.contains('sortmenu__toggle')")
+    page.keyboard.press("Enter")
+    page.get_by_role("link", name="Title A–Z").focus()
+    page.keyboard.press("Enter")
+    page.wait_for_url(f"{site['base']}/?sort=title")
+    assert page.locator('summary[aria-label="Sort: Title A–Z"]').is_visible()
+    context.close()
+
+
+def test_without_script_rows_stay_on_one_line_and_the_menu_still_sorts(browser, site) -> None:
+    context, page = open_page(browser, java_script_enabled=False, viewport=PHONE)
+    page.goto(site["index"])
+
+    assert page.locator("[data-summaries-item]").is_hidden()
+    assert set(page.evaluate(ROW_LINES)) == {2}
+    page.locator('summary[aria-label="Sort: Recent"]').click()
+    page.get_by_role("link", name="Title A–Z").click()
+    page.wait_for_url(f"{site['base']}/?sort=title")
+    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
+    context.close()
+
+
+def test_the_footer_keeps_the_feed_and_json_links(browser, site) -> None:
+    context, page = open_page(browser, viewport=PHONE)
+    page.goto(f"{site['base']}/?type=plan")
+
+    assert page.get_by_role("link", name="Atom feed").get_attribute("href") == "/feed.atom"
+    assert page.get_by_role("link", name="This list as JSON").get_attribute("href") == "/api/pergams?type=plan"
     context.close()

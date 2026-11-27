@@ -1,9 +1,11 @@
 """The HTML index page, rendered from `templates/index.html` and `templates/index.css`.
 
-A left column filters by type, tag, author and archived state, with counts. On the
-first page, pinned pergams that match show as cards above the list and are left
-out of the list on every page, so paging still visits each pergam once. The list
-is grouped by the UTC date of each latest version when sorted by recent.
+One centred column. On the first page, pinned pergams that match show as a row of
+cards above the list and are left out of the list on every page, so paging still
+visits each pergam once. The list is grouped by the UTC date of each latest
+version when sorted by recent. A row is one line (title, type, author, date);
+"Show summaries" in the sort menu adds the summary, tags and version, a choice
+index.js remembers. The feed and JSON links sit in the footer.
 """
 
 from __future__ import annotations
@@ -26,9 +28,8 @@ _TEMPLATES = Path(__file__).resolve().parent / "templates"
 _PAGE = Template((_TEMPLATES / "index.html").read_text(encoding="utf-8").rstrip("\n"))
 _CSS = (_TEMPLATES / "index.css").read_text(encoding="utf-8")
 
-TAGS_SHOWN = 8
 DATE_GROUPS = {"today": "Today", "week": "This week", "month": "This month", "earlier": "Earlier"}
-SORT_LABELS = (("recent", "Recent", "Most recent first"), ("title", "A–Z", "By title, A to Z"))
+SORT_LABELS = {"recent": "Recent", "title": "Title A–Z"}
 
 esc = html_lib.escape
 
@@ -57,16 +58,6 @@ def toggle_link(filters: IndexFilters, **change: str | None) -> str:
 
 def short_author(author: str) -> str:
     return author.split("@")[0] if "@" in author else author
-
-
-def human_bytes(n: int) -> str:
-    if n < 1024:
-        return f"{n} B"
-    if n < 1024 * 1024:
-        return f"{n / 1024:.0f} KB"
-    if n < 1024**3:
-        return f"{n / (1024 * 1024):.1f} MB"
-    return f"{n / (1024**3):.2f} GB"
 
 
 def human_age(ts: datetime, now: datetime) -> str:
@@ -110,111 +101,6 @@ def type_style(pergam_type: str) -> str:
     return f'style="--type-rgb:{",".join(map(str, type_rgb(pergam_type)))}"'
 
 
-def _facet(href: str, label: str, count: int, active: bool, title: str | None = None) -> str:
-    current = ' aria-current="true"' if active else ""
-    hint = f' title="{esc(title)}"' if title else ""
-    return (
-        f'<li><a class="facet{" is-on" if active else ""}" href="{esc(href)}"{current}{hint}>'
-        f'{label}<span class="facet__count">{count}</span></a></li>'
-    )
-
-
-def _with_active(counts: list[tuple[str, int]], active: str | None) -> list[tuple[str, int]]:
-    """`counts`, plus the active value at zero when nothing matches it, so it can still be cleared."""
-    if active is None or any(value == active for value, _ in counts):
-        return counts
-    return [*counts, (active, 0)]
-
-
-def _facet_group(slug: str, title: str, items: list[str], more: list[str] | None = None) -> str:
-    if not items:
-        return ""
-    extra = (
-        f'<details class="facets__more"><summary>Show all {len(items) + len(more)}</summary>'
-        f'<ul class="facets__list">{"".join(more)}</ul></details>'
-        if more
-        else ""
-    )
-    return (
-        f'<section class="facets" aria-labelledby="facets-{slug}"><h2 class="facets__title" id="facets-{slug}">{title}</h2>'
-        f'<ul class="facets__list">{"".join(items)}</ul>{extra}</section>'
-    )
-
-
-def type_facets(data: IndexData, filters: IndexFilters) -> str:
-    counts = _with_active(data.type_counts, filters.type)
-    every = _facet(
-        index_link(replace(filters, type=None, cursor=None)),
-        '<span class="type-dot" aria-hidden="true"></span>All',
-        sum(count for _, count in data.type_counts),
-        filters.type is None,
-    )
-    items = [
-        _facet(
-            toggle_link(filters, type=name),
-            f'<span class="type-dot" aria-hidden="true" {type_style(name)}></span>{esc(name)}',
-            count,
-            filters.type == name,
-        )
-        for name, count in counts
-    ]
-    return _facet_group("type", "Type", [every, *items] if items else [])
-
-
-def tag_facets(data: IndexData, filters: IndexFilters) -> str:
-    """The most used tags first; the rest fold into "Show all", the active one always in view."""
-    counts = _with_active(data.tag_counts, filters.tag)
-    shown, folded = counts[:TAGS_SHOWN], counts[TAGS_SHOWN:]
-    if filters.tag and all(name != filters.tag for name, _ in shown):
-        active = next(item for item in folded if item[0] == filters.tag)
-        shown, folded = [*shown, active], [item for item in folded if item != active]
-
-    def item(name: str, count: int) -> str:
-        label = f'<span class="facet__hash" aria-hidden="true">#</span>{esc(name)}'
-        return _facet(toggle_link(filters, tag=name), label, count, filters.tag == name)
-
-    return _facet_group("tag", "Tags", [item(*pair) for pair in shown], [item(*pair) for pair in folded])
-
-
-def author_facets(data: IndexData, filters: IndexFilters) -> str:
-    items = [
-        _facet(
-            toggle_link(filters, author=name),
-            f'{avatar(name)}<span class="facet__name">{esc(short_author(name))}</span>',
-            count,
-            filters.author == name,
-            title=name,
-        )
-        for name, count in _with_active(data.author_counts, filters.author)
-    ]
-    return _facet_group("author", "Author", items)
-
-
-def state_facets(data: IndexData, filters: IndexFilters) -> str:
-    if not filters.archived and data.archived_count == 0:
-        return ""
-    href = index_link(replace(filters, archived=not filters.archived, cursor=None))
-    return _facet_group("state", "State", [_facet(href, "Archived", data.archived_count, filters.archived)])
-
-
-def sidebar(data: IndexData, filters: IndexFilters) -> str:
-    """A `<details>` that index.js closes below 860px; without script it stays open."""
-    active = sum(bool(value) for value in (filters.type, filters.author, filters.tag, filters.archived))
-    badge = f' <span class="filters__active">{active} active</span>' if active else ""
-    clear = (
-        f'<a class="filters__clear" href="{esc(index_link(IndexFilters(sort=filters.sort)))}">clear all</a>'
-        if filters.active or filters.archived
-        else ""
-    )
-    return (
-        '<details class="filters" open>'
-        f'<summary class="filters__toggle">Filters{badge}</summary>'
-        f'<div class="filters__body">{clear}'
-        f"{type_facets(data, filters)}{tag_facets(data, filters)}{author_facets(data, filters)}{state_facets(data, filters)}"
-        "</div></details>"
-    )
-
-
 def _tag_links(row: IndexRow, filters: IndexFilters) -> str:
     return "".join(
         f'<a class="tag" href="{esc(index_link(replace(filters, tag=tag, cursor=None)))}" title="filter by tag">'
@@ -248,24 +134,27 @@ def _time(row: IndexRow, now: datetime) -> str:
 
 
 def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
-    """One list row. The title link covers the row; tags, type and author stay their own links above it.
+    """One list row: title, type, author and date on one line; summaries add a second line, the version and the name.
 
+    The title link covers the row; type, author and tags stay their own filter links
+    above it. A search snippet always shows, since it says why the row matched.
     `data-href` names the pergam the row opens, for scripts and tests that look rows up by it.
     """
     flags = ('<span class="flag flag--pinned">pinned</span>' if row.pinned else "") + (
-        '<span class="flag flag--archived">archived</span>' if row.archived else ""
+        '<span class="flag flag--archived">Archived</span>' if row.archived else ""
     )
     author_href = esc(index_link(replace(filters, author=row.author, cursor=None)))
+    classes = "row" + (" row--archived" if row.archived else "") + (" row--snippet" if row.snippet else "")
     return (
-        f'<li class="row{" row--archived" if row.archived else ""}" data-href="/{row.id}/view">'
+        f'<li class="{classes}" data-href="/{row.id}/view">'
         f'<div class="row__main">'
-        f'<div class="row__head">{flags}<a class="row__title" href="/{row.id}/view">{esc(row.title)}</a></div>'
+        f'<div class="row__head"><a class="row__title" href="/{row.id}/view">{esc(row.title)}</a>{flags}</div>'
         f'<div class="row__line">{_tag_links(row, filters)}{_line(row)}</div>'
         f"</div>"
-        f"{_badge(row, filters)}"
-        f'<a class="row__author" href="{author_href}" title="filter by author: {esc(row.author)}">'
-        f'{avatar(row.author)}<span class="row__author-name">{esc(short_author(row.author))}</span></a>'
         f'<span class="row__version">{_version(row)}</span>'
+        f"{_badge(row, filters)}"
+        f'<a class="row__author" href="{author_href}" aria-label="Filter by author: {esc(row.author)}" title="{esc(row.author)}">'
+        f'{avatar(row.author)}<span class="row__author-name" aria-hidden="true">{esc(short_author(row.author))}</span></a>'
         f'<span class="row__date">{_time(row, now)}</span>'
         f"</li>"
     )
@@ -393,30 +282,23 @@ def showing_note(data: IndexData, filters: IndexFilters) -> str:
     return ""
 
 
-def stats_line(data: IndexData) -> str:
-    stats = data.stats
-    parts = [
-        f"{stats.total_pergams} pergams",
-        f"{stats.total_authors} authors",
-        f"{stats.total_versions} versions",
-    ]
-    if stats.new_pergams_7d:
-        parts.append(f"{stats.new_pergams_7d} new this week")
-    parts.append(human_bytes(stats.total_bytes))
-    return " · ".join(parts)
-
-
-def controls(filters: IndexFilters) -> str:
-    def chip(sort: str, label: str, hint: str) -> str:
+def sort_menu(filters: IndexFilters) -> str:
+    """The sort menu: a `<details>` of links, so it works without script, plus the "Show summaries" switch index.js reveals."""
+    def option(sort: str, label: str) -> str:
         href = esc(index_link(replace(filters, sort=sort, cursor=None)))
-        on = filters.sort == sort
-        current = ' aria-current="true"' if on else ""
-        return f'<a class="chip{" is-on" if on else ""}" href="{href}"{current} title="{hint}">{label}</a>'
+        current = ' aria-current="true"' if filters.sort == sort else ""
+        return f'<li><a href="{href}"{current}>{label}</a></li>'
 
-    chips = "".join(chip(*labels) for labels in SORT_LABELS)
+    label = SORT_LABELS[filters.sort]
     return (
-        f'<nav class="chips" aria-label="Sort">{chips}</nav>'
-        '<button type="button" class="chip" data-density-toggle aria-pressed="false" hidden>Compact</button>'
+        '<details class="dropdown sortmenu" data-sortmenu>'
+        f'<summary class="btn sortmenu__toggle" aria-label="Sort: {label}">{label}<span aria-hidden="true"> ▾</span></summary>'
+        '<ul class="dropdown__menu dropdown__menu--end sortmenu__menu">'
+        f'{"".join(option(sort, text) for sort, text in SORT_LABELS.items())}'
+        '<li class="sortmenu__switch" data-summaries-item hidden>'
+        '<button type="button" role="switch" aria-checked="false" data-summaries-toggle>'
+        '<span class="switch" aria-hidden="true"></span>Show summaries</button></li>'
+        "</ul></details>"
     )
 
 
@@ -430,12 +312,22 @@ def search_box(filters: IndexFilters) -> SearchBox:
     return SearchBox(query=filters.q or "", keep=tuple(keep), compact=False)
 
 
-def top_actions(filters: IndexFilters) -> str:
+def clear_link(filters: IndexFilters) -> str:
+    """"Clear all" drops every filter, the archived one included, and keeps the search and the sort."""
+    if not (filters.active or filters.archived):
+        return ""
+    href = esc(index_link(IndexFilters(q=filters.q, sort=filters.sort)))
+    return f'<a class="toolbar__clear" href="{href}">Clear all</a>'
+
+
+def footer(filters: IndexFilters) -> str:
     json_href = esc(index_link(filters, path="/api/pergams"))
     return (
-        '<a class="icon-btn" href="/feed.atom" aria-label="Atom feed" title="Atom feed"><span aria-hidden="true">◉</span></a>'
-        f'<a class="icon-btn" href="{json_href}" aria-label="This list as JSON" title="This list as JSON">'
-        '<span aria-hidden="true">{ }</span></a>'
+        '<footer class="index-foot"><nav aria-label="Feeds and API">'
+        '<a href="/feed.atom">Atom feed</a>'
+        f'<a href="{json_href}">This list as JSON</a>'
+        '<a href="https://github.com/diesilveira/pergam" rel="noopener">About pergam</a>'
+        "</nav></footer>"
     )
 
 
@@ -449,12 +341,12 @@ def render_index(data: IndexData, filters: IndexFilters, host_display: str) -> s
         index_script=hashed_url(INDEX_SCRIPT_PATH),
         css=_CSS,
         page_title=esc(f"“{filters.q}” · pergam") if filters.q else "pergam · index",
-        top_bar=top_bar(host=host_display, actions=top_actions(filters), search=search_box(filters)),
-        sidebar=sidebar(data, filters),
+        top_bar=top_bar(host=host_display, search=search_box(filters)),
         heading=heading(data, filters),
         showing_note=showing_note(data, filters),
-        stats_line=stats_line(data),
-        controls=controls(filters),
+        sort_menu=sort_menu(filters),
+        clear_link=clear_link(filters),
+        footer=footer(filters),
         pinned=cards,
         groups=groups if groups or cards or filters.cursor else empty_state(filters),
         pager=pager(filters, data),
