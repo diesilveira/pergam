@@ -313,3 +313,103 @@ def test_the_pinned_row_keeps_the_pinned_pergams_that_match(browser, site) -> No
     page.goto(site["base"] + "/?type=reporte")
     assert page.locator(".pin__title").count() == 0
     context.close()
+
+
+def test_the_dialog_form_is_fetched_once_on_first_open(browser, site) -> None:
+    context, page = open_page(browser)
+    fetched: list[str] = []
+    page.on("request", lambda request: fetched.append(request.url) if "/filters/form" in request.url else None)
+    page.goto(site["base"] + "/?tag=shared")
+
+    assert page.locator("[data-filters-dialog] form").count() == 0
+    open_dialog(page)
+    page.keyboard.press("Escape")
+    page.wait_for_function("!document.querySelector('[data-filters-dialog]').open")
+    open_dialog(page)
+
+    assert fetched == [site["base"] + "/filters/form?tag=shared"]
+    context.close()
+
+
+def test_when_the_form_cannot_be_fetched_the_button_leads_to_the_filters_page(browser, site) -> None:
+    context, page = open_page(browser)
+    page.route("**/filters/form*", lambda route: route.abort())
+    page.goto(site["base"] + "/?tag=shared")
+
+    page.locator(".filters-btn").click()
+
+    page.wait_for_url(site["base"] + "/filters?tag=shared")
+    assert page.locator("h1").inner_text() == "Filter pergams"
+    context.close()
+
+
+def test_enter_in_a_find_field_does_not_apply(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/")
+    open_dialog(page)
+    page.locator(".pill", has_text="plan").first.click()
+
+    page.get_by_role("searchbox", name="Find a tag").fill("tag0")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(300)
+
+    assert page.url == site["base"] + "/" and is_open(page)
+    context.close()
+
+
+def test_applying_gives_the_same_url_whatever_the_order_values_were_ticked(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/")
+    open_dialog(page)
+
+    page.locator(".pill", has_text="tag07").click()
+    page.locator(".pill", has_text="tag03").click()
+    page.locator(".pill", has_text="reporte").click()
+    page.locator(".pill", has_text="plan").first.click()
+    wait_for_label(page, "Show 3 pergams")
+    page.locator("[data-filters-apply]").click()
+
+    page.wait_for_url(site["base"] + "/?type=plan&type=reporte&tag=tag03&tag=tag07")
+    context.close()
+
+
+def test_reloading_with_the_dialog_open_opens_it_again_and_back_still_closes_it(browser, site) -> None:
+    context, page = open_page(browser)
+    page.goto(site["base"] + "/?tag=shared")
+    open_dialog(page)
+    history = page.evaluate("history.length")
+
+    page.reload()
+    page.wait_for_function("document.querySelector('[data-filters-dialog]').open")
+    page.go_back()
+    page.wait_for_function("!document.querySelector('[data-filters-dialog]').open")
+
+    assert page.url == site["base"] + "/?tag=shared"
+    assert page.evaluate("history.length") == history
+    context.close()
+
+
+@pytest.mark.parametrize("scheme", SCHEMES)
+def test_on_a_phone_rows_keep_their_type_and_dialog_targets_are_large(browser, site, scheme: str) -> None:
+    context, page = open_page(browser, scheme, viewport=PHONE)
+    page.goto(site["base"] + "/?tag=shared")
+
+    assert page.locator(".list .row .badge").first.is_visible()
+    assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
+    open_dialog(page)
+    clear = page.get_by_role("button", name="Clear tag filters").bounding_box()
+    more = page.get_by_role("button", name="Show all 14 authors").bounding_box()
+
+    assert clear["height"] >= 44 and clear["width"] >= 44
+    assert more["height"] >= 44
+    context.close()
+
+
+def test_without_script_a_value_with_no_result_can_still_be_ticked(browser, site) -> None:
+    context, page = open_page(browser, java_script_enabled=False)
+    page.goto(site["base"] + "/filters?tag=tag03")
+
+    page.locator(".pill", has_text="informe").click()
+
+    assert page.locator("input[name=type][value=informe]").is_checked()
+    context.close()
