@@ -74,6 +74,27 @@ def test_filters_and_index_controls_draw_with_the_shared_icons(client: Client) -
                                          if isinstance(icon, str) and icon.startswith("<svg")), "", index)
 
 
+SCRIPTED = {
+    "/": {"/static/theme.js", "/static/shortcuts.js", "/static/index.js", "/static/filters.js"},
+    "/filters": {"/static/theme.js", "/static/shortcuts.js"},
+    "/{id}/view": {"/static/theme.js", "/static/shortcuts.js", "/static/pages.js"},
+    "/{id}/diff/v1..v2": {"/static/theme.js", "/static/shortcuts.js", "/static/pages.js"},
+    "/nope": {"/static/theme.js", "/static/shortcuts.js"},
+}
+
+
+@pytest.mark.parametrize("path", SCRIPTED)
+def test_every_page_loads_each_script_once(client: Client, path: str) -> None:
+    pid = client.publish(html="<p>one</p>")["id"]
+    client.publish(id=pid, html="<p>two</p>")
+
+    page = client.request("GET", path.format(id=pid), headers={"Accept": "text/html"}).text
+    sources = [src.split("?")[0] for src in re.findall(r'<script src="([^"]+)"', page)]
+
+    assert len(sources) == len(set(sources)), sources
+    assert set(sources) == SCRIPTED[path]
+
+
 try:
     from playwright import sync_api
 except ImportError:
