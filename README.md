@@ -102,7 +102,7 @@ Prefer not to build? Run the published multi-arch image (`linux/amd64`, `linux/a
 PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2 docker compose up -d
 ```
 
-Tags are `2.0.0` (exact), `2.0`, `2` and `latest`. Pin `2.0.0` in production and upgrade on purpose. Without compose, [`docker run` works too](DOCS.md#published-image).
+Put the variable in `.env` to keep it for later `docker compose` commands. Tags are `2.0.0` (exact), `2.0`, `2` and `latest`. Pin `2.0.0` in production and upgrade on purpose. Without compose, [`docker run` works too](DOCS.md#published-image).
 
 ### ☁️ Hosted (zero setup, 1-year TTL)
 

@@ -561,12 +561,14 @@ For larger teams, swap `tls internal` for an OIDC sidecar (e.g. `oauth2-proxy`) 
 
 Every release is published as a multi-arch image (`linux/amd64`, `linux/arm64`) at `ghcr.io/diesilveira/pergam`, built from the repository's `Dockerfile`. Tags for release `2.0.0`: `2.0.0`, `2.0`, `2` and `latest`. Use the exact version in production, or `2` / `2.0` to follow minor and patch releases. The image carries the OCI labels `source`, `version`, `revision` and `licenses`.
 
-With compose, set `PERGAM_IMAGE` (in `.env` or the environment) and start without `--build`:
+With compose, set `PERGAM_IMAGE` and start without `--build`. Put it in `.env` so every `docker compose` command sees it; a variable set in front of one command applies to that command only:
 
 ```bash
-PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2.0.0 docker compose up -d     # pulls the image
-PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2.0.0 docker compose pull && docker compose up -d   # later: move to a newer image
+echo 'PERGAM_IMAGE=ghcr.io/diesilveira/pergam:2.0.0' >> .env
+docker compose up -d                 # pulls the image and starts it
 ```
+
+To move to a newer release, change the tag in `.env` and run `docker compose up -d` again: compose pulls the new image and recreates the container. With a floating tag (`:2`, `:2.0`, `:latest`), `docker compose pull && docker compose up -d` fetches what the tag now points to.
 
 Compose pulls an image it does not have; `--build` (and `make up`) builds from source and tags the result with that name instead. With `PERGAM_IMAGE` unset nothing changes: the service builds `pergam:latest` from the checkout.
 
@@ -574,17 +576,17 @@ Without compose, run the image against any Postgres, with the same environment v
 
 ```bash
 docker network create pergam
-docker run -d --name pergam-db --network pergam \
+docker run -d --name pergam-db --network pergam --restart unless-stopped \
   -e POSTGRES_DB=pergam -e POSTGRES_USER=pergam -e POSTGRES_PASSWORD=CHANGE_ME \
   -v pergam_db:/var/lib/postgresql/data postgres:15-alpine
-docker run -d --name pergam --network pergam -p 1111:1111 \
+docker run -d --name pergam --network pergam --restart unless-stopped -p 1111:1111 \
   -e DATABASE_URL=postgresql://pergam:CHANGE_ME@pergam-db:5432/pergam \
   -e PUBLIC_URL=http://localhost:1111 \
   ghcr.io/diesilveira/pergam:2.0.0
 curl http://localhost:1111/healthz   # → {"ok":true}
 ```
 
-The container runs as uid 10001 and needs nothing else mounted.
+The server waits ten seconds for the database and exits if it is not there, so keep the restart policy: it brings the server back when the database starts later than it. The container runs as uid 10001 and needs nothing else mounted.
 
 ### Releasing
 
