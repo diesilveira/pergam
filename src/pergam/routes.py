@@ -8,11 +8,12 @@ import re
 import sys
 import threading
 from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse
 
 from pergam.access import Access, CollaboratorError, Forbidden, parse_collaborators
-from pergam.api import index_json, pergam_json
+from pergam.api import facets_json, index_json, pergam_json
 from pergam.cursor import CursorError, SortError, decode_cursor, parse_sort
 from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
@@ -69,19 +70,35 @@ def _first(query: dict[str, list[str]], key: str) -> str | None:
     return query.get(key, [None])[0] or None
 
 
+MAX_FILTER_VALUES = 50
+
+
+class FilterError(ValueError):
+    pass
+
+
+def _values(query: dict[str, list[str]], key: str, normalise: Callable[[str], str]) -> tuple[str, ...]:
+    """Every value of a repeated `key`, normalised, blanks dropped, duplicates removed, first order kept."""
+    raw = query.get(key, [])
+    if len(raw) > MAX_FILTER_VALUES:
+        raise FilterError(f"at most {MAX_FILTER_VALUES} values of {key}")
+    return tuple(dict.fromkeys(value for value in map(normalise, raw) if value))
+
+
 def parse_filters(query: dict[str, list[str]]) -> IndexFilters:
     """Index filters from a query string, shared by `/` and `/api/pergams`.
 
-    Raises `CursorError`, `SortError`, `StateError` or `QueryError`. An old `archived=1`
-    without a `state` reads as `state=all` (the page redirects to that URL first).
+    `type`, `author` and `tag` may repeat (any of the values). Raises `CursorError`,
+    `SortError`, `StateError`, `FilterError` or `QueryError`. An old `archived=1` without
+    a `state` reads as `state=all` (the page redirects to that URL first).
     """
     token = _first(query, "cursor")
     sort = parse_sort(_first(query, "sort"))
     state = parse_state(_first(query, "state") or (ALL if legacy_archived(_first(query, "archived")) else None))
     return IndexFilters(
-        type=normalise_type(_first(query, "type") or "") or None,
-        author=_first(query, "author"),
-        tag=normalise_tag(_first(query, "tag") or "") or None,
+        types=_values(query, "type", normalise_type),
+        authors=_values(query, "author", str.strip),
+        tags=_values(query, "tag", normalise_tag),
         q=parse_query(_first(query, "q")),
         state=state,
         cursor=decode_cursor(token, sort) if token else None,
@@ -304,6 +321,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         if path == "api/pergams":
             self._render_index_json(parse_qs(parsed.query))
+            return
+        if path == "facets":
+            self._render_facets(parse_qs(parsed.query))
             return
         static = STATIC_FILES.get(parsed.path)
         if static is not None:
@@ -563,7 +583,7 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return parse_filters(query)
         except CursorError:
             self.send_error(400, "Invalid cursor")
-        except (SortError, StateError, QueryError) as exc:
+        except (SortError, StateError, FilterError, QueryError) as exc:
             self.send_error(400, str(exc))
         return None
 
@@ -579,6 +599,13 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if filters is None:
             return
         self._send_json(index_json(self.store.index(filters), self.public, filters.sort, filters.state))
+
+    def _render_facets(self, query: dict[str, list[str]]) -> None:
+        """`GET /facets`: the total and the counts for a set of filters, for the filter dialog's live preview."""
+        filters = self._filters(query)
+        if filters is None:
+            return
+        self._send_json(facets_json(self.store.facets(filters), filters, self.types))
 
     def _render_pergam_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)

@@ -35,28 +35,37 @@ SORT_LABELS = {"recent": "Recent", "title": "Title A–Z"}
 esc = html_lib.escape
 
 
+FACETS = (("types", "type"), ("authors", "author"), ("tags", "tag"))
+
+
+def query_pairs(filters: IndexFilters) -> list[tuple[str, str]]:
+    """The query of `filters` in canonical order, as the filter form submits it: types, authors, tags, state, q, sort, cursor."""
+    pairs = [(key, value) for field_name, key in FACETS for value in getattr(filters, field_name)]
+    if filters.state != ACTIVE:
+        pairs.append(("state", filters.state))
+    if filters.q:
+        pairs.append(("q", filters.q))
+    if filters.sort != DEFAULT_SORT:
+        pairs.append(("sort", filters.sort))
+    if filters.cursor:
+        pairs.append(("cursor", filters.cursor.encode()))
+    return pairs
+
+
 def index_link(filters: IndexFilters, path: str = "/") -> str:
     """Index URL for `filters`, cursor and sort included; callers reset the cursor with `replace(..., cursor=None)`."""
-    qs = {
-        key: value
-        for key, value in (("type", filters.type), ("author", filters.author), ("tag", filters.tag), ("q", filters.q))
-        if value
-    }
-    if filters.state != ACTIVE:
-        qs["state"] = filters.state
-    if filters.q:
-        qs["q"] = qs.pop("q")
-    if filters.sort != DEFAULT_SORT:
-        qs["sort"] = filters.sort
-    if filters.cursor:
-        qs["cursor"] = filters.cursor.encode()
-    return f"{path}?{urlencode(qs)}" if qs else path
+    pairs = query_pairs(filters)
+    return f"{path}?{urlencode(pairs)}" if pairs else path
 
 
-def toggle_link(filters: IndexFilters, **change: str | None) -> str:
-    """Link that sets one filter, or clears it when it already has that value, back on page one."""
-    ((name, value),) = change.items()
-    return index_link(replace(filters, cursor=None, **{name: None if getattr(filters, name) == value else value}))
+def with_value(filters: IndexFilters, field_name: str, value: str) -> IndexFilters:
+    """`filters` with `value` added to one facet (kept once), back on page one."""
+    values = getattr(filters, field_name)
+    return replace(filters, cursor=None, **{field_name: values if value in values else (*values, value)})
+
+
+def without_value(filters: IndexFilters, field_name: str, value: str) -> IndexFilters:
+    return replace(filters, cursor=None, **{field_name: tuple(v for v in getattr(filters, field_name) if v != value)})
 
 
 def short_author(author: str) -> str:
@@ -106,14 +115,14 @@ def type_style(pergam_type: str) -> str:
 
 def _tag_links(row: IndexRow, filters: IndexFilters) -> str:
     return "".join(
-        f'<a class="tag" href="{esc(index_link(replace(filters, tag=tag, cursor=None)))}" title="filter by tag">'
+        f'<a class="tag" href="{esc(index_link(with_value(filters, "tags", tag)))}" title="filter by tag">'
         f"{esc(tag)}</a>"
         for tag in row.tags
     )
 
 
 def _badge(row: IndexRow, filters: IndexFilters) -> str:
-    href = esc(index_link(replace(filters, type=row.type, cursor=None)))
+    href = esc(index_link(with_value(filters, "types", row.type)))
     return f'<a class="badge" {type_style(row.type)} href="{href}" title="filter by type">{esc(row.type)}</a>'
 
 
@@ -146,7 +155,7 @@ def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
     flags = ('<span class="flag flag--pinned">pinned</span>' if row.pinned else "") + (
         '<span class="flag flag--archived">Archived</span>' if row.archived and filters.state == ALL else ""
     )
-    author_href = esc(index_link(replace(filters, author=row.author, cursor=None)))
+    author_href = esc(index_link(with_value(filters, "authors", row.author)))
     classes = "row" + (" row--archived" if row.archived else "") + (" row--snippet" if row.snippet else "")
     return (
         f'<li class="{classes}" data-href="/{row.id}/view">'
@@ -217,7 +226,11 @@ def list_groups(rows: list[IndexRow], filters: IndexFilters, now: datetime) -> s
 
 
 def _named_filters(filters: IndexFilters) -> str:
-    parts = [f"{name} {esc(value)}" for name, value in (("type", filters.type), ("tag", filters.tag), ("author", filters.author)) if value]
+    parts = [
+        f"{key} {' or '.join(esc(value) for value in getattr(filters, field_name))}"
+        for field_name, key in FACETS
+        if getattr(filters, field_name)
+    ]
     return ", ".join(parts)
 
 
@@ -311,11 +324,7 @@ def sort_menu(filters: IndexFilters) -> str:
 
 def search_box(filters: IndexFilters) -> SearchBox:
     """The top bar's field on the index: the current query, and the filters a new search keeps."""
-    keep = [(name, value) for name, value in (("type", filters.type), ("author", filters.author), ("tag", filters.tag)) if value]
-    if filters.state != ACTIVE:
-        keep.append(("state", filters.state))
-    if filters.sort != DEFAULT_SORT:
-        keep.append(("sort", filters.sort))
+    keep = [(key, value) for key, value in query_pairs(replace(filters, q=None, cursor=None))]
     return SearchBox(query=filters.q or "", keep=tuple(keep), compact=False)
 
 

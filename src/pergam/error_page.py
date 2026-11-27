@@ -67,7 +67,7 @@ def prefers_html(accept: str | None) -> bool:
 def is_machine_route(path: str) -> bool:
     """Routes that answer with JSON, a feed, plain text, Markdown or a health check, never with a page."""
     parts = path.strip("/").split("/")
-    if parts[0] in {"api", "healthz", "feed.atom"}:
+    if parts[0] in {"api", "healthz", "feed.atom", "facets"}:
         return True
     if not parts[0] or ID_RE.match(parts[0]) is None:
         return False
