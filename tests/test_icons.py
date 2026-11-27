@@ -65,13 +65,29 @@ def test_filters_and_index_controls_draw_with_the_shared_icons(client: Client) -
     pid = client.publish(tags=["q3"])["id"]
     assert client.request("PATCH", f"/{pid}/meta", b'{"pinned":true}', {"Content-Type": "application/json"}).status == 200
 
-    index = client.get("/?tag=q3").text
+    index, form = client.get("/?tag=q3").text, client.get("/filters/form?tag=q3").text
 
-    for icon in (icons.FILTER, icons.CHIP_REMOVE, icons.CHEVRON_DOWN, icons.CHEVRON_LEFT, icons.CHEVRON_RIGHT, icons.CLOSE,
-                 icons.CHECK):
+    for icon in (icons.FILTER, icons.CHIP_REMOVE, icons.CHEVRON_DOWN, icons.CHEVRON_LEFT, icons.CHEVRON_RIGHT):
         assert icon in index
-    assert "<svg" not in re.sub("|".join(re.escape(icon) for icon in vars(icons).values()
-                                         if isinstance(icon, str) and icon.startswith("<svg")), "", index)
+    assert icons.CLOSE in form
+    shared = "|".join(re.escape(icon) for icon in vars(icons).values() if isinstance(icon, str) and icon.startswith("<svg"))
+    for page in (index, form):
+        assert "<svg" not in re.sub(shared, "", page)
+    assert not GLYPHS.search(re.sub(r"<[^>]+>", " ", re.sub(r"<style>.*?</style>", "", form, flags=re.S)))
+
+
+def test_the_lazy_dialog_form_is_framed_like_a_page_and_carries_no_script(client: Client) -> None:
+    client.publish(tags=["q3"])
+
+    form = client.request("GET", "/filters/form?tag=q3", headers={"Accept": "text/html"})
+    refused = client.request("GET", "/filters/form?sort=nonsense", headers={"Accept": "text/html"})
+
+    assert form.status == 200
+    assert form.headers["content-security-policy"] == "frame-ancestors 'self'"
+    assert form.headers["x-frame-options"] == "SAMEORIGIN"
+    assert "<script" not in form.text
+    assert refused.status == 400
+    assert refused.headers["x-frame-options"] == "SAMEORIGIN"
 
 
 SCRIPTED = {
