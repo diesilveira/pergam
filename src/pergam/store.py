@@ -16,6 +16,7 @@ from pergam.cursor import DEFAULT_SORT, Cursor, IndexCursor, TitleCursor
 from pergam.meta import Meta, MetaChange, Origin
 from pergam.pins import ARCHIVED_REASON, DEFAULT_MAX_PINNED, PinRefused, over_cap_reason
 from pergam.search import HEADLINE_SQL, INSERT_TEXT, MATCHES_SQL, Snippet, search_params
+from pergam.states import ACTIVE, scope_sql
 from pergam.summary import SOURCE_CHARS, summarise
 from pergam.tags import merge_tags
 from pergam.text import EXTRACTOR_VERSION, PageText, extract_text
@@ -68,7 +69,7 @@ class IndexFilters:
     author: str | None = None
     tag: str | None = None
     q: str | None = None
-    archived: bool = False
+    state: str = ACTIVE
     cursor: Cursor | None = None
     sort: str = DEFAULT_SORT
 
@@ -126,6 +127,7 @@ class IndexData:
     next_cursor: Cursor | None
     pinned: list[IndexRow] = field(default_factory=list)
     pinned_ids: frozenset[str] = frozenset()
+    state_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -564,15 +566,15 @@ class PergamStore:
         version count, text prefix and headline.
 
         Counts are facets over every visible pergam, not just the page: each one
-        (type, author, tag, and `archived_count` for the archived state) applies `q`
-        and every other active filter but not its own, so the other values of a facet
-        stay listed with what choosing them would give.
+        (type, author, tag, and `state_counts` for the status) applies `q` and every
+        other active filter but not its own, so the other values of a facet stay listed
+        with what choosing them would give. `archived_count` is `state_counts["archived"]`.
 
         `cards` asks for the pinned pergams the HTML lifts into cards (the first
         `page_size` that match, in the page's order): their rows on the first page,
         only their ids on later pages, where the list still has to leave them out.
         """
-        scope = "" if filters.archived else " AND NOT COALESCE(m.archived, false)"
+        scope = scope_sql(filters.state)
         conditions: dict[str, str] = {}
         params: dict[str, Any] = {"source_chars": SOURCE_CHARS, "limit": page_size + 1, "pinned_limit": page_size}
         if filters.type:
@@ -636,7 +638,11 @@ class PergamStore:
                 " GROUP BY 1 ORDER BY 2 DESC, 1",
                 params,
             ).fetchall()
-            archived_count = conn.execute(f"SELECT count(*) {source} WHERE m.archived{narrowed()}", params).fetchone()[0]
+            active_count, archived_count = conn.execute(
+                f"SELECT count(*) FILTER (WHERE NOT COALESCE(m.archived, false)), count(*) FILTER (WHERE m.archived)"
+                f" {source} WHERE true{narrowed()}",
+                params,
+            ).fetchone()
             stats = conn.execute(
                 """
                 SELECT
@@ -660,14 +666,15 @@ class PergamStore:
             stats=IndexStats(*stats, max_pinned=self.max_pinned),
             matching=matching,
             archived_count=archived_count,
+            state_counts={"active": active_count, "archived": archived_count, "all": active_count + archived_count},
             next_cursor=page[-1].cursor(filters.sort) if len(rows) > page_size else None,
             pinned=pinned,
             pinned_ids=pinned_ids,
         )
 
-    def feed(self, tag: str | None, author: str | None, limit: int = FEED_SIZE) -> list[FeedEntry]:
-        """The newest versions of pergams that are not archived, each publication its own entry."""
-        where = "WHERE NOT COALESCE(m.archived, false)"
+    def feed(self, tag: str | None, author: str | None, state: str = ACTIVE, limit: int = FEED_SIZE) -> list[FeedEntry]:
+        """The newest versions of the pergams in `state` (active by default), each publication its own entry."""
+        where = "WHERE true" + scope_sql(state)
         params: dict[str, Any] = {"limit": limit, "summary_chars": SUMMARY_CHARS}
         if tag:
             where += " AND m.tags @> ARRAY[%(tag)s]::text[]"

@@ -191,7 +191,7 @@ def crowded(client: Client, db: psycopg.Connection) -> str:
 @pytest.mark.parametrize("sort", ["recent", "title"])
 def test_load_more_appends_the_next_pages_without_repeating(browser, crowded: str, sort: str) -> None:
     context, page = open_page(browser)
-    page.goto(f"{crowded}?archived=1&sort={sort}")
+    page.goto(f"{crowded}?state=all&sort={sort}")
     titles = page.locator(".pin__title, .row__title")
     first_page = titles.count()
 
@@ -202,7 +202,7 @@ def test_load_more_appends_the_next_pages_without_repeating(browser, crowded: st
 
     hrefs = page.locator(".pin__title, .row__title").evaluate_all("(links) => links.map((a) => a.getAttribute('href'))")
     assert len(hrefs) == len(set(hrefs)) == 230
-    assert page.url == f"{crowded}?archived=1&sort={sort}"
+    assert page.url == f"{crowded}?state=all&sort={sort}"
     assert page.evaluate("document.activeElement.className") == "row__title"
     assert re.fullmatch(r"\d+ more loaded, that is all", page.locator("[data-load-status]").inner_text())
     if sort == "recent":

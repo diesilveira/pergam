@@ -20,6 +20,7 @@ from urllib.parse import urlencode
 
 from pergam.cursor import DEFAULT_SORT
 from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
+from pergam.states import ACTIVE, ALL, ARCHIVED
 from pergam.static_files import INDEX_SCRIPT_PATH, hashed_url
 from pergam.store import IndexData, IndexFilters, IndexRow
 from pergam.taxonomy import type_rgb
@@ -41,8 +42,10 @@ def index_link(filters: IndexFilters, path: str = "/") -> str:
         for key, value in (("type", filters.type), ("author", filters.author), ("tag", filters.tag), ("q", filters.q))
         if value
     }
-    if filters.archived:
-        qs["archived"] = "1"
+    if filters.state != ACTIVE:
+        qs["state"] = filters.state
+    if filters.q:
+        qs["q"] = qs.pop("q")
     if filters.sort != DEFAULT_SORT:
         qs["sort"] = filters.sort
     if filters.cursor:
@@ -141,7 +144,7 @@ def render_row(row: IndexRow, filters: IndexFilters, now: datetime) -> str:
     `data-href` names the pergam the row opens, for scripts and tests that look rows up by it.
     """
     flags = ('<span class="flag flag--pinned">pinned</span>' if row.pinned else "") + (
-        '<span class="flag flag--archived">Archived</span>' if row.archived else ""
+        '<span class="flag flag--archived">Archived</span>' if row.archived and filters.state == ALL else ""
     )
     author_href = esc(index_link(replace(filters, author=row.author, cursor=None)))
     classes = "row" + (" row--archived" if row.archived else "") + (" row--snippet" if row.snippet else "")
@@ -223,10 +226,10 @@ def empty_state(filters: IndexFilters) -> str:
     if filters.q:
         narrowed = _named_filters(filters)
         scope = f" with {narrowed}" if narrowed else ""
-        archived = "" if filters.archived else " (archived pergams not included)"
+        archived = " (archived pergams not included)" if filters.state == ACTIVE else ""
         actions = []
-        if narrowed or filters.archived:
-            wide = index_link(IndexFilters(q=filters.q, archived=True, sort=filters.sort))
+        if narrowed or filters.state != ALL:
+            wide = index_link(IndexFilters(q=filters.q, state=ALL, sort=filters.sort))
             actions.append(f'<a class="btn btn--primary" href="{esc(wide)}">Search every pergam</a>')
         actions.append(f'<a class="btn" href="{esc(index_link(IndexFilters(sort=filters.sort)))}">Clear search</a>')
         return (
@@ -261,6 +264,8 @@ def pager(filters: IndexFilters, data: IndexData) -> str:
 
 
 def heading(data: IndexData, filters: IndexFilters) -> str:
+    if filters.state == ARCHIVED and not (filters.q or filters.active):
+        return "Archived pergams"
     if filters.q:
         return f"{data.matching} result{'s' if data.matching != 1 else ''}"
     if filters.active:
@@ -273,7 +278,9 @@ def showing_note(data: IndexData, filters: IndexFilters) -> str:
     if filters.q:
         return f"for “{esc(filters.q)}” · the filters count these results only"
     stats = data.stats
-    hidden = 0 if filters.archived else stats.total_archived
+    if filters.state != ACTIVE:
+        return ""
+    hidden = stats.total_archived
     visible = stats.total_pergams - hidden
     if filters.active and data.matching != visible:
         return f"showing {data.matching} of {visible}"
@@ -305,16 +312,16 @@ def sort_menu(filters: IndexFilters) -> str:
 def search_box(filters: IndexFilters) -> SearchBox:
     """The top bar's field on the index: the current query, and the filters a new search keeps."""
     keep = [(name, value) for name, value in (("type", filters.type), ("author", filters.author), ("tag", filters.tag)) if value]
-    if filters.archived:
-        keep.append(("archived", "1"))
+    if filters.state != ACTIVE:
+        keep.append(("state", filters.state))
     if filters.sort != DEFAULT_SORT:
         keep.append(("sort", filters.sort))
     return SearchBox(query=filters.q or "", keep=tuple(keep), compact=False)
 
 
 def clear_link(filters: IndexFilters) -> str:
-    """"Clear all" drops every filter, the archived one included, and keeps the search and the sort."""
-    if not (filters.active or filters.archived):
+    """"Clear all" drops every filter, the status included, and keeps the search and the sort."""
+    if not (filters.active or filters.state != ACTIVE):
         return ""
     href = esc(index_link(IndexFilters(q=filters.q, sort=filters.sort)))
     return f'<a class="toolbar__clear" href="{href}">Clear all</a>'

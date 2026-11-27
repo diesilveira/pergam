@@ -41,7 +41,7 @@ def catalogue(client: Client) -> dict[str, str]:
 
 @pytest.mark.parametrize(
     "query",
-    ["", "?type=plan", "?author=bo@example.com", "?tag=OPS", "?q=budget", "?q=notes", "?archived=1", "?tag=ops&archived=1"],
+    ["", "?type=plan", "?author=bo@example.com", "?tag=OPS", "?q=budget", "?q=notes", "?state=all", "?tag=ops&state=all"],
 )
 def test_api_and_html_index_list_the_same_pergams(client: Client, catalogue: dict[str, str], query: str) -> None:
     html_ids = listed_order(client.get(f"/{query}").text)
@@ -51,7 +51,7 @@ def test_api_and_html_index_list_the_same_pergams(client: Client, catalogue: dic
     assert body["matching"] == len(html_ids)
 
 
-@pytest.mark.parametrize("query", ["", "?archived=1", "?tag=seeded&type=plan"])
+@pytest.mark.parametrize("query", ["", "?state=all", "?tag=seeded&type=plan"])
 def test_api_pages_like_the_html_index(client: Client, db: psycopg.Connection, query: str) -> None:
     flags = seed(db)
 
@@ -160,7 +160,7 @@ def test_api_pergam_unknown_is_404(client: Client, path: str) -> None:
     assert client.get(path).status == 404
 
 
-@pytest.mark.parametrize("query", ["?q=needle", "?q=needle&archived=1"])
+@pytest.mark.parametrize("query", ["?q=needle", "?q=needle&state=all"])
 def test_search_results_page_like_the_index(client: Client, db: psycopg.Connection, query: str) -> None:
     flags = seed(db)
     ids = sorted(flags)
@@ -174,7 +174,7 @@ def test_search_results_page_like_the_index(client: Client, db: psycopg.Connecti
         pid
         for (pid,) in rows
         if pid in with_needle
-        and ("archived=1" in query or not flags[pid][1])
+        and ("state=all" in query or not flags[pid][1])
     ]
 
     visited = crawl(client, f"/{query}")

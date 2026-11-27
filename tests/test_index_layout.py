@@ -33,10 +33,10 @@ def api_crawl(client: Client, query: str) -> list[str]:
     raise AssertionError("too many pages")
 
 
-@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&archived=1", "?sort=title&tag=seeded&type=plan"])
+@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&state=all", "?sort=title&tag=seeded&type=plan"])
 def test_title_order_pages_every_pergam_once(client: Client, db: psycopg.Connection, query: str) -> None:
     flags = seed(db)
-    archived = "archived=1" in query
+    archived = "state=all" in query
     rows = db.execute(
         "SELECT l.id, l.type FROM pergams_latest l LEFT JOIN pergam_meta m USING (id) ORDER BY lower(l.title), l.id"
     ).fetchall()
@@ -222,7 +222,7 @@ FACETS = (("types", "type"), ("authors", "author"), ("tags", "tag"))
 
 @pytest.mark.parametrize(
     "query",
-    ["", "q=needle", "q=needle&type=plan", "q=needle&archived=1", "q=needle&tag=ops", "type=plan", "type=plan&author=bo@example.com&tag=ops", "author=ana@example.com&archived=1"],
+    ["", "q=needle", "q=needle&type=plan", "q=needle&state=all", "q=needle&tag=ops", "type=plan", "type=plan&author=bo@example.com&tag=ops", "author=ana@example.com&state=all"],
 )
 def test_each_facet_counts_what_choosing_it_would_give(client: Client, results: dict[str, str], query: str) -> None:
     """Standard faceting: a facet applies `q` and every other filter, never its own."""
@@ -235,9 +235,8 @@ def test_each_facet_counts_what_choosing_it_would_give(client: Client, results: 
             assert item["count"] == matching(client, {**others, name: item[name]}), (key, item)
         if key != "tags":
             assert sum(item["count"] for item in body["counts"][key]) == matching(client, others)
-    with_archived = matching(client, {**params, "archived": "1"})
-    without = matching(client, {k: v for k, v in params.items() if k != "archived"})
-    assert body["archived_count"] == with_archived - without
+    assert body["archived_count"] == matching(client, {**params, "state": "archived"})
+    assert body["state"] == params.get("state", "active")
 
 
 def test_other_values_of_a_facet_stay_listed_within_a_search(client: Client, results: dict[str, str]) -> None:
@@ -272,7 +271,7 @@ def test_an_empty_search_says_what_was_searched_and_offers_to_widen_it(client: C
     page = client.get("/?q=%3Cnothing%3E&type=plan").text
 
     assert "Nothing matches “&lt;nothing&gt;” with type plan (archived pergams not included)." in page
-    assert '<a class="btn btn--primary" href="/?q=%3Cnothing%3E&amp;archived=1">Search every pergam</a>' in page
+    assert '<a class="btn btn--primary" href="/?state=all&amp;q=%3Cnothing%3E">Search every pergam</a>' in page
     assert '<a class="btn" href="/">Clear search</a>' in page
 
 
@@ -373,12 +372,12 @@ def test_every_page_has_the_search_field_in_its_top_bar(client: Client, path: st
 
 
 def test_the_index_search_field_shows_the_query_and_keeps_the_filters(client: Client) -> None:
-    form = search_form(client.get('/?q=%22a%22%3Cb&tag=ops&archived=1&sort=title').text)
+    form = search_form(client.get('/?q=%22a%22%3Cb&tag=ops&state=all&sort=title').text)
 
     assert 'value="&quot;a&quot;&lt;b"' in form
     assert re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)">', form) == [
         ("tag", "ops"),
-        ("archived", "1"),
+        ("state", "all"),
         ("sort", "title"),
     ]
 
@@ -420,7 +419,7 @@ def test_a_later_page_of_carded_rows_shows_no_empty_state(client: Client, db: ps
     assert crawl(client, "/?sort=title")[-1] == "c0000000"
 
 
-@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&archived=1"])
+@pytest.mark.parametrize("query", ["?sort=title", "?sort=title&state=all"])
 def test_title_ties_across_page_boundaries_are_broken_by_id(client: Client, db: psycopg.Connection, query: str) -> None:
     titles = ["Same", "same", "SAME", "Other"]
     insert(db, [(f"{n:08x}", titles[n % 4], n % 9 == 0) for n in range(230)])

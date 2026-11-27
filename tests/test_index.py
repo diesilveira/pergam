@@ -93,8 +93,8 @@ def tagged(client: Client) -> dict[str, str]:
         ("?tag=ops&q=plan", {"ops_plan"}),
         ("?tag=ops&type=plan&author=ana@example.com&q=ops", {"ops_plan"}),
         ("?tag=nope", set()),
-        ("?archived=1", {"ops_plan", "ops_report", "q3_plan", "untagged", "archived"}),
-        ("?archived=1&tag=ops&type=plan", {"ops_plan", "archived"}),
+        ("?state=all", {"ops_plan", "ops_report", "q3_plan", "untagged", "archived"}),
+        ("?state=all&tag=ops&type=plan", {"ops_plan", "archived"}),
         ("", {"ops_plan", "ops_report", "q3_plan", "untagged"}),
     ],
 )
@@ -108,7 +108,7 @@ def test_tag_filter_composes_and_archived_stay_hidden(
 
 
 def test_tag_counts_cover_visible_pergams(client: Client, tagged: dict[str, str]) -> None:
-    hidden, shown = client.get("/api/pergams").json(), client.get("/api/pergams?archived=1").json()
+    hidden, shown = client.get("/api/pergams").json(), client.get("/api/pergams?state=all").json()
 
     assert hidden["counts"]["tags"] == [{"tag": "ops", "count": 2}, {"tag": "q3", "count": 2}]
     assert shown["counts"]["tags"][0] == {"tag": "ops", "count": 3}
@@ -119,9 +119,9 @@ def test_tag_counts_cover_visible_pergams(client: Client, tagged: dict[str, str]
     ("query", "note"),
     [
         ("/", "showing 4 of 5 · 1 archived hidden"),
-        ("/?archived=1", ""),
+        ("/?state=all", ""),
         ("/?tag=ops", "showing 2 of 4"),
-        ("/?tag=ops&archived=1", "showing 3 of 5"),
+        ("/?tag=ops&state=all", ""),
     ],
 )
 def test_header_counts_follow_the_archived_filter(
@@ -132,7 +132,7 @@ def test_header_counts_follow_the_archived_filter(
     assert f'<p class="index-head__note">{note}</p>' in page
 
 
-@pytest.mark.parametrize(("query", "clear"), [("/", False), ("/?archived=1", True), ("/?tag=ops", True)])
+@pytest.mark.parametrize(("query", "clear"), [("/", False), ("/?state=all", True), ("/?tag=ops", True)])
 def test_clear_all_resets_the_archived_filter_too(
     client: Client, tagged: dict[str, str], query: str, clear: bool
 ) -> None:
@@ -142,9 +142,9 @@ def test_clear_all_resets_the_archived_filter_too(
 def test_rows_show_tags_and_flags(client: Client, tagged: dict[str, str]) -> None:
     patch_meta(client, tagged["q3_plan"], {"pinned": True})
 
-    resp = client.get("/?archived=1")
+    resp = client.get("/?state=all")
 
-    assert '<a class="tag" href="/?tag=q3&amp;archived=1"' in resp.text
+    assert '<a class="tag" href="/?tag=q3&amp;state=all"' in resp.text
     assert f'<li class="pin" data-href="/{tagged["q3_plan"]}/view"><a class="pin__title" href="/{tagged["q3_plan"]}/view">' in resp.text
     assert re.search(
         rf'<li class="row row--archived" data-href="/{tagged["archived"]}/view">.*?'
@@ -169,9 +169,9 @@ def test_invalid_cursor_is_rejected(client: Client) -> None:
     ("query", "keep"),
     [
         ("/", lambda pinned, archived, tagged: not archived),
-        ("/?archived=1", lambda pinned, archived, tagged: True),
+        ("/?state=all", lambda pinned, archived, tagged: True),
         ("/?tag=seeded", lambda pinned, archived, tagged: tagged and not archived),
-        ("/?tag=seeded&archived=1&type=plan", lambda pinned, archived, tagged: tagged),
+        ("/?tag=seeded&state=all&type=plan", lambda pinned, archived, tagged: tagged),
     ],
 )
 def test_paging_visits_every_pergam_once_in_order(client: Client, db: psycopg.Connection, query: str, keep) -> None:
@@ -193,10 +193,10 @@ def test_paging_visits_every_pergam_once_in_order(client: Client, db: psycopg.Co
 def test_first_page_has_no_back_link_and_later_pages_do(client: Client, db: psycopg.Connection) -> None:
     seed(db)
 
-    first = client.get("/?archived=1").text
+    first = client.get("/?state=all").text
     second_path = html_lib.unescape(re.search(r'<a class="pager__next" href="([^"]+)"', first).group(1))
     second = client.get(second_path).text
 
     assert "first page" not in first
-    assert "archived=1" in second_path
-    assert '<a class="pager__first" href="/?archived=1">' in second
+    assert "state=all" in second_path
+    assert '<a class="pager__first" href="/?state=all">' in second

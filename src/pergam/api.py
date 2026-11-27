@@ -10,6 +10,7 @@ from typing import Any
 
 from pergam.cursor import DEFAULT_SORT
 from pergam.meta import Meta
+from pergam.states import ACTIVE
 from pergam.public_url import PublicAddress
 from pergam.store import IndexData, IndexRow, VersionInfo
 
@@ -38,11 +39,12 @@ def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
     return body
 
 
-def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT) -> dict[str, Any]:
+def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT, state: str = ACTIVE) -> dict[str, Any]:
     stats = data.stats
     return {
         "pergams": [_row(row, public) for row in data.rows],
         "sort": sort,
+        "state": state,
         "matching": data.matching,
         "next_cursor": data.next_cursor.encode() if data.next_cursor else None,
         "archived_count": data.archived_count,
