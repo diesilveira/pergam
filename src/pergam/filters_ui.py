@@ -20,6 +20,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Template
 
+from pergam import icons
 from pergam.api import facet_values
 from pergam.index_links import avatar, esc, index_link, query_pairs, short_author, without_value
 from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
@@ -39,11 +40,7 @@ CHIPS_SHOWN = 5
 STATE_CHIPS = {ARCHIVED: "Archived only", ALL: "Active and archived"}
 STATUS_OPTIONS = ((ACTIVE, "Active"), (ARCHIVED, "Archived"), (ALL, "All"))
 
-_SVG = 'aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"'
-FUNNEL = f'<svg class="icon" {_SVG} width="16" height="16" stroke-width="2"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>'
-CROSS = f'<svg class="icon" {_SVG} width="11" height="11" stroke-width="2.5"><path d="M6 6l12 12M18 6L6 18"/></svg>'
-CLOSE = f'<svg class="icon" {_SVG} width="16" height="16" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>'
-CHECK = f'<svg class="pill__check" {_SVG} width="13" height="13" stroke-width="3"><path d="M5 12l5 5 9-10"/></svg>'
+FUNNEL, CROSS, CLOSE, CHECK = icons.FILTER, icons.CHIP_REMOVE, icons.CLOSE, icons.CHECK
 
 
 def filter_count(filters: IndexFilters) -> int:

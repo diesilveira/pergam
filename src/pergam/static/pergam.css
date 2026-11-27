@@ -217,7 +217,7 @@ a.tag:hover { color: var(--accent); border-color: var(--accent); }
   display: inline-flex; align-items: center; gap: var(--space-1); padding: .18rem .5rem;
   border: 1px solid var(--border-strong); border-radius: 7px; white-space: nowrap;
 }
-.dropdown__toggle.ver::after { content: "▾"; color: var(--muted); }
+.dropdown__toggle.ver .icon { color: var(--muted); }
 .dropdown__toggle.ver:hover { background: var(--raised); }
 .dropdown__menu {
   position: absolute; z-index: 40; top: calc(100% + .3rem); left: 0; margin: 0; padding: var(--space-1) 0;

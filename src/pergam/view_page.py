@@ -153,7 +153,7 @@ def _bar_middle(pergam_id: str, shown: VersionInfo, meta: Meta, versions: list[V
         f'<h1 class="bar__title">{esc(shown.title)}</h1></div>'
         f"{_tag_form(meta.tags) if editable else ''}"
         '<details class="dropdown versions"><summary class="ver dropdown__toggle">'
-        f'v{shown.version}<span class="ver__of"> of {len(versions)}</span></summary>'
+        f'v{shown.version}<span class="ver__of"> of {len(versions)}</span>{icons.CHEVRON_DOWN}</summary>'
         f'<ol class="dropdown__menu versions__list" reversed>{items}</ol></details>'
     )
 

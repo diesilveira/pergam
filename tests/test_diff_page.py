@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from pergam import icons
 from pergam.diff import MAX_LINES
 from support import Client, in_ci, unavailable
 
@@ -51,8 +52,8 @@ def test_pickers_link_every_other_pair_and_mark_the_current_one(client: Client) 
 
     old = re.search(r'<details class="dropdown versions picker--old">(.*?)</details>', page).group(1)
     new = re.search(r'<details class="dropdown versions picker--new">(.*?)</details>', page).group(1)
-    assert '<summary class="ver dropdown__toggle">v1<span class="sr-only">, older version</span></summary>' in old
-    assert '<summary class="ver dropdown__toggle">v2<span class="sr-only">, newer version</span></summary>' in new
+    assert f'<summary class="ver dropdown__toggle">v1<span class="sr-only">, older version</span>{icons.CHEVRON_DOWN}</summary>' in old
+    assert f'<summary class="ver dropdown__toggle">v2<span class="sr-only">, newer version</span>{icons.CHEVRON_DOWN}</summary>' in new
     assert re.findall(r'<a href="([^"]+)"( aria-current="page")?>', old) == [
         (f"/{pid}/diff/v3..v2", ""), (f"/{pid}/diff/v2..v2", ""), (f"/{pid}/diff/v1..v2", ' aria-current="page"'),
     ]

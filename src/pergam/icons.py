@@ -1,4 +1,4 @@
-"""Inline SVG icons for every page's top bar and the view and diff pages: drawn in `currentColor`, hidden from assistive technology.
+"""Inline SVG icons for every server-rendered page: drawn in `currentColor`, hidden from assistive technology.
 
 The control that carries an icon names itself with text or `aria-label`; the icon never does.
 """
@@ -6,11 +6,12 @@ The control that carries an icon names itself with text or `aria-label`; the ico
 from __future__ import annotations
 
 
-def _svg(body: str, name: str = "") -> str:
-    css = f"icon icon--{name}" if name else "icon"
+def _svg(body: str, name: str = "", *, size: int = 16, stroke: float = 1.5, css: str | None = None) -> str:
+    """One icon on a 16-unit grid, drawn `size` pixels wide; `css` replaces the default `icon icon--{name}` classes."""
+    classes = css or (f"icon icon--{name}" if name else "icon")
     return (
-        f'<svg class="{css}" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false" '
-        'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+        f'<svg class="{classes}" viewBox="0 0 16 16" width="{size}" height="{size}" aria-hidden="true" focusable="false" '
+        f'fill="none" stroke="currentColor" stroke-width="{stroke}" stroke-linecap="round" stroke-linejoin="round">'
         f"{body}</svg>"
     )
 
@@ -28,3 +29,10 @@ THEME_LIGHT = _svg(
     "theme-light",
 )
 THEME_DARK = _svg('<path d="M13.2 9.6A5.5 5.5 0 0 1 6.4 2.8a5.5 5.5 0 1 0 6.8 6.8z"/>', "theme-dark")
+CHEVRON_DOWN = _svg('<path d="M4.5 6.5L8 10l3.5-3.5"/>', size=12)
+CHEVRON_LEFT = _svg('<path d="M9.5 4.5L6 8l3.5 3.5"/>')
+CHEVRON_RIGHT = _svg('<path d="M6.5 4.5L10 8l-3.5 3.5"/>')
+ARROW_RIGHT = _svg('<path d="M3 8h10M9.5 4.5L13 8l-3.5 3.5"/>', size=14)
+FILTER = _svg('<path d="M2 3.5h12L9.3 8.8v4L6.7 11.5V8.8z"/>', stroke=1.6)
+CHIP_REMOVE = _svg('<path d="M4 4l8 8M12 4l-8 8"/>', size=11, stroke=2)
+CHECK = _svg('<path d="M3.3 8.2l3.3 3.2 6.1-6.6"/>', size=13, stroke=2.2, css="pill__check")

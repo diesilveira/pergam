@@ -9,7 +9,8 @@ import pytest
 from pergam import icons
 from support import Client
 
-GLYPHS = re.compile("[←-⯿☀-➿\U0001f300-\U0001faff]")
+GLYPHS = re.compile("[\u2190-\u21ff\u2300-\u23ff\u2500-\u27bf\u2b00-\u2bff\U0001f300-\U0001faff]")
+"""Arrows, technical and geometric shapes, dingbats and emoji: what an icon would be drawn with; not typography like − or ·."""
 
 
 def test_every_icon_is_hidden_svg_drawn_in_the_text_colour() -> None:
@@ -33,6 +34,44 @@ def test_the_top_bar_draws_its_theme_and_search_icons(client: Client, path: str)
     assert toggle == icons.THEME_SYSTEM + icons.THEME_LIGHT + icons.THEME_DARK
     search = re.search(r'<label class="topbar__search-icon"[^>]*>(.*?)</label>', header).group(1)
     assert search == icons.SEARCH
+
+
+CHROME = (
+    r'<header class="topbar">.*?</header>', r'<footer class="index-foot">.*?</footer>', r'<details class="dropdown sortmenu".*?</summary>',
+    r'<section class="pins">.*?<ul class="pins__row"', r'<div class="dwrap">\s*<main class="dmain">\s*<p class="summary--phone">',
+)
+
+
+def chrome_text(page: str) -> str:
+    """The text of a page's own controls (bar, footer, sort menu, pinned row head), without any pergam's content."""
+    parts = [match.group(0) for pattern in CHROME for match in re.finditer(pattern, page, re.S)]
+    return re.sub(r"<[^>]+>", " ", " ".join(parts))
+
+
+@pytest.mark.parametrize("path", ["/", "/?state=all&sort=title", "/filters", "/{id}/view", "/{id}/diff/v1..v2", "/nope"])
+def test_page_controls_write_no_glyphs(client: Client, path: str) -> None:
+    pid = client.publish(title="Plan", html="<p>one</p>")["id"]
+    client.publish(id=pid, title="Plan", html="<p>two</p>")
+    patch = client.request("PATCH", f"/{pid}/meta", b'{"pinned":true}', {"Content-Type": "application/json"})
+    assert patch.status == 200
+
+    page = client.request("GET", path.format(id=pid), headers={"Accept": "text/html"}).text
+
+    assert "<header" in page
+    assert not GLYPHS.search(chrome_text(page)), GLYPHS.findall(chrome_text(page))
+
+
+def test_filters_and_index_controls_draw_with_the_shared_icons(client: Client) -> None:
+    pid = client.publish(tags=["q3"])["id"]
+    assert client.request("PATCH", f"/{pid}/meta", b'{"pinned":true}', {"Content-Type": "application/json"}).status == 200
+
+    index = client.get("/?tag=q3").text
+
+    for icon in (icons.FILTER, icons.CHIP_REMOVE, icons.CHEVRON_DOWN, icons.CHEVRON_LEFT, icons.CHEVRON_RIGHT, icons.CLOSE,
+                 icons.CHECK):
+        assert icon in index
+    assert "<svg" not in re.sub("|".join(re.escape(icon) for icon in vars(icons).values()
+                                         if isinstance(icon, str) and icon.startswith("<svg")), "", index)
 
 
 try:

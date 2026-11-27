@@ -155,7 +155,7 @@ def _picker(pergam_id: str, side: str, chosen: int, other: int, versions: list[V
     menu_class = "dropdown__menu versions__list" + (" dropdown__menu--end" if side == "new" else "")
     return (
         f'<details class="dropdown versions picker--{side}">'
-        f'<summary class="ver dropdown__toggle">v{chosen}<span class="sr-only">, {label}</span></summary>'
+        f'<summary class="ver dropdown__toggle">v{chosen}<span class="sr-only">, {label}</span>{icons.CHEVRON_DOWN}</summary>'
         f'<ol class="{menu_class}" reversed>{items}</ol></details>'
     )
 
@@ -182,7 +182,7 @@ def _bar(
         '<span class="crumbs__sep" aria-hidden="true">/</span><h1 class="bar__title">Changes</h1></div>'
         '<div class="pickers" role="group" aria-label="Versions compared">'
         f'{_picker(pergam_id, "old", old.version, new.version, versions)}'
-        '<span class="pickers__arrow" aria-hidden="true">→</span>'
+        f'<span class="pickers__arrow">{icons.ARROW_RIGHT}</span>'
         f'{_picker(pergam_id, "new", new.version, old.version, versions)}</div>'
     )
     actions = (

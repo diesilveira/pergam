@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from string import Template
 
+from pergam import icons
 from pergam.filters_ui import FORM_CSS, dialog, filter_count, filters_page_link, summary, trigger
 from pergam.index_links import avatar, index_link, query_pairs, short_author, with_value
 from pergam.layout import HEAD_ASSETS, SearchBox, top_bar
@@ -153,9 +154,9 @@ def pinned_cards(data: IndexData, filters: IndexFilters, now: datetime) -> str:
         f'<h2 class="group__title" id="pins-title">Pinned</h2>'
         f'<span class="pins__count">{stats.total_pinned} of {stats.max_pinned} pinned</span>'
         '<button type="button" class="icon-btn pins__nav" data-pins-prev aria-label="Previous pinned pergams" hidden>'
-        '<span aria-hidden="true">‹</span></button>'
+        f"{icons.CHEVRON_LEFT}</button>"
         '<button type="button" class="icon-btn pins__nav" data-pins-next aria-label="Next pinned pergams" hidden>'
-        '<span aria-hidden="true">›</span></button>'
+        f"{icons.CHEVRON_RIGHT}</button>"
         "</div>"
         f'<ul class="pins__row" aria-labelledby="pins-title" data-pins>{cards}</ul></section>'
     )
@@ -235,7 +236,7 @@ def sort_menu(filters: IndexFilters) -> str:
     label = SORT_LABELS[filters.sort]
     return (
         '<details class="dropdown sortmenu" data-sortmenu>'
-        f'<summary class="btn sortmenu__toggle" aria-label="Sort: {label}">{label}<span aria-hidden="true"> ▾</span></summary>'
+        f'<summary class="btn sortmenu__toggle" aria-label="Sort: {label}">{label}{icons.CHEVRON_DOWN}</summary>'
         '<ul class="dropdown__menu dropdown__menu--end sortmenu__menu">'
         f'{"".join(option(sort, text) for sort, text in SORT_LABELS.items())}'
         '<li class="sortmenu__switch" data-summaries-item hidden>'
