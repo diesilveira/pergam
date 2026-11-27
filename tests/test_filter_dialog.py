@@ -234,3 +234,71 @@ def test_pinned_cards_keep_showing_the_pinned_pergams_that_match(client: Client,
 
     assert re.findall(r'<a class="pin__title" href="/([0-9a-f]+)/view"', text) == [library["plan"]]
     assert listed_order(text).count(library["plan"]) == 1
+
+
+@pytest.fixture
+def wide(client: Client, db) -> None:
+    """200 pergams by 200 authors with 300 tags between them, written directly for speed."""
+    with db.cursor() as cur:
+        for n in range(200):
+            pid = f"{n:08x}"
+            cur.execute(
+                "INSERT INTO pergams (id, version, title, html, type, author, bytes)"
+                " VALUES (%s, 1, %s, '<p>x</p>', 'plan', %s, 8)",
+                (pid, f"Doc {n}", f"author{n:03d}@example.com"),
+            )
+            cur.execute("INSERT INTO pergam_meta (id, tags) VALUES (%s, %s)", (pid, [f"tag{n:03d}", f"tag{(n + 200) % 300:03d}"]))
+
+
+def test_the_index_carries_an_empty_dialog_whatever_the_number_of_authors_and_tags(client: Client, wide: None) -> None:
+    first = client.get("/").body
+    filtered = client.get("/?tag=tag001").body
+    form = client.get("/filters/form").text
+
+    assert len(first) < 125_000 and len(filtered) < 30_000
+    for page_body in (first, filtered):
+        text = page_body.decode()
+        assert '<dialog class="fdialog" aria-labelledby="filters-title" data-filters-dialog data-src="/filters/form' in text
+        assert 'name="author"' not in text and 'class="pill' not in text
+    assert form.count('name="author"') == 200 and form.count('name="tag"') == 300
+    assert "<svg" not in form.split('<div class="fform__body">')[1]
+
+
+def test_pages_after_the_first_carry_no_dialog(client: Client, wide: None) -> None:
+    first = client.get("/").text
+    later = html.unescape(re.search(r'<a class="pager__next" href="([^"]+)"', first).group(1))
+
+    assert "data-filters-dialog" not in client.get(later).text
+
+
+def test_the_dialog_form_keeps_the_query_and_rejects_bad_parameters(client: Client, library: dict[str, str]) -> None:
+    text = page(client, "?tag=ops&sort=title")
+
+    assert 'data-src="/filters/form?tag=ops&amp;sort=title"' in text
+    assert client.get("/filters/form?state=gone").status == 400
+    assert client.get("/filters/form?tag=ops").headers["cache-control"] == "no-store"
+
+
+def test_one_selection_has_one_url(client: Client, library: dict[str, str]) -> None:
+    unsorted, ordered = page(client, "?tag=ops&tag=infra&type=reporte&type=plan"), page(client, "?type=plan&type=reporte&tag=infra&tag=ops")
+
+    for text in (unsorted, ordered):
+        assert 'href="/filters?type=plan&amp;type=reporte&amp;tag=infra&amp;tag=ops"' in text
+        assert 'href="/?type=plan&amp;tag=infra&amp;tag=ops" aria-label="Remove filter Type: reporte"' in text
+        assert re.findall(r'aria-label="Remove filter Tag: (\w+)"', text) == ["infra", "ops"]
+
+
+def test_a_single_tag_still_offers_the_tags_section(client: Client) -> None:
+    client.publish(type="plan", tags=["only"])
+    client.publish(type="otro")
+
+    assert section(dialog(client), "tag")
+    assert section(dialog(client), "type")
+
+
+def test_the_page_without_script_never_marks_a_value_unavailable(client: Client, library: dict[str, str]) -> None:
+    text = client.get("/filters?tag=infra").text
+    form = re.search(r'<form class="fform".*?</form>', text, re.S).group(0)
+
+    assert "aria-disabled" not in form and "is-zero" not in form and "unavailable" not in form
+    assert 'aria-label="reporte, 0 pergams"' in form

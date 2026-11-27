@@ -99,8 +99,12 @@ def _chip(chip: Chip) -> str:
 
 
 def scope_total(stats: IndexStats, state: str) -> int:
-    """What "everything" means for the summary's "N of M": the active pergams, or all of them once archived ones show."""
-    return stats.total_pergams - (stats.total_archived if state == ACTIVE else 0)
+    """What "everything" means for the summary's "N of M": every pergam in the status (active, archived or all)."""
+    if state == ACTIVE:
+        return stats.total_pergams - stats.total_archived
+    if state == ARCHIVED:
+        return stats.total_archived
+    return stats.total_pergams
 
 
 def summary(matching: int, stats: IndexStats, filters: IndexFilters) -> str:
@@ -134,19 +138,26 @@ class Item:
     value: str
     count: int
     checked: bool
+    dims: bool = True
 
     @property
     def unavailable(self) -> bool:
-        return self.count == 0 and not self.checked
+        """No result and not selected: dimmed and refused in the dialog; the page has no script to refuse it, so never."""
+        return self.dims and self.count == 0 and not self.checked
 
 
-def items(counts: list[tuple[str, int]], selected: tuple[str, ...], first: tuple[str, ...] = ()) -> list[Item]:
+def items(
+    counts: list[tuple[str, int]], selected: tuple[str, ...], first: tuple[str, ...] = (), dims: bool = True
+) -> list[Item]:
     """Selected values first, then the others in facet order (configured types, else most used), then the empty ones."""
-    listed = [Item(entry["value"], entry["count"], entry["value"] in selected) for entry in facet_values(counts, selected, first)]
+    listed = [
+        Item(entry["value"], entry["count"], entry["value"] in selected, dims)
+        for entry in facet_values(counts, selected, first)
+    ]
     return (
         [item for item in listed if item.checked]
         + [item for item in listed if not item.checked and item.count]
-        + [item for item in listed if item.unavailable]
+        + [item for item in listed if not item.checked and not item.count]
     )
 
 
@@ -200,21 +211,23 @@ class Section:
     shown: int
     find_above: int
     find_label: str
+    nothing_below: int
 
 
-TYPE = Section("type", "type", "Type", "types", 10**6, 10**6, "")
-AUTHOR = Section("author", "author", "Author", "authors", AUTHORS_SHOWN, FIND_AUTHORS_ABOVE, "Find an author")
-TAG = Section("tag", "tag", "Tags", "tags", TAGS_SHOWN, FIND_TAGS_ABOVE, "Find a tag")
+TYPE = Section("type", "type", "Type", "types", 10**6, 10**6, "", 2)
+AUTHOR = Section("author", "author", "Author", "authors", AUTHORS_SHOWN, FIND_AUTHORS_ABOVE, "Find an author", 2)
+TAG = Section("tag", "tag", "Tags", "tags", TAGS_SHOWN, FIND_TAGS_ABOVE, "Find a tag", 1)
 
 
 def section(spec: Section, values: list[Item], dialog: bool, existing: int) -> str:
     """One fieldset; in the dialog, values past `spec.shown` start folded (never a selected one, never just a few).
 
-    A section with nothing to choose is left out: no pergam has two different values
-    of it (`existing` counts the values any pergam has), and none is selected.
+    A section with nothing to choose is left out when none of its values is selected:
+    Type and Author when every pergam has the same one, Tags when no pergam has a tag
+    (`existing` counts the values any pergam has, against `spec.nothing_below`).
     """
     selected = sum(item.checked for item in values)
-    if not selected and existing <= 1:
+    if not selected and existing < spec.nothing_below:
         return ""
     keep = max(spec.shown, selected)
     folds = dialog and len(values) - keep > FEW_HIDDEN
@@ -269,9 +282,9 @@ def form_body(facets: Facets, filters: IndexFilters, types: tuple[str, ...], dia
         if value
     )
     return (
-        section(TYPE, items(facets.types, filters.types, types), dialog, len(facets.types))
-        + section(AUTHOR, items(facets.authors, filters.authors), dialog, len(facets.authors))
-        + section(TAG, items(facets.tags, filters.tags), dialog, len(facets.tags))
+        section(TYPE, items(facets.types, filters.types, types, dialog), dialog, len(facets.types))
+        + section(AUTHOR, items(facets.authors, filters.authors, dims=dialog), dialog, len(facets.authors))
+        + section(TAG, items(facets.tags, filters.tags, dims=dialog), dialog, len(facets.tags))
         + status_section(filters)
         + kept
     )
