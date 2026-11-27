@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from pergam import icons
 from pergam.meta import Meta
 from pergam.store import VersionInfo
 from pergam.static_files import MERMAID_PATH, MERMAID_VERSION, STORAGE_SHIM
@@ -40,12 +41,12 @@ def test_view_frames_the_latest_version_in_a_page_of_its_own(client: Client) -> 
     page = resp.text
     assert frame_src(page) == f"/{pid}/v2/content"
     assert '<h1 class="bar__title">Plan &amp; budget</h1>' in page
-    assert '<span class="type" style="--type-rgb:240,210,138">plan</span>' in page
+    assert '<span class="badge" style="--type-rgb:240,210,138">plan</span>' in page
     assert '<a class="tag" href="/?tag=q3">q3</a>' in page
     assert "ana@example.com" in page
-    assert "<summary>v2 of 2</summary>" in page
-    assert '<a href="/">index</a>' in page
-    assert f'<a href="/{pid}/v2/raw">raw</a>' in page
+    assert f'<summary class="ver dropdown__toggle">v2<span class="ver__of"> of 2</span>{icons.CHEVRON_DOWN}</summary>' in page
+    assert '<nav aria-label="Breadcrumb"><a href="/">Index</a></nav>' in page
+    assert f'<a href="/{pid}/v2/raw">Raw HTML</a>' in page
     assert 'class="outdated"' not in page
 
 
@@ -55,7 +56,7 @@ def test_earlier_version_shows_that_a_newer_one_exists(client: Client) -> None:
     page = client.get(f"/{pid}/v1/view").text
 
     assert frame_src(page) == f"/{pid}/v1/content"
-    assert "<summary>v1 of 5</summary>" in page
+    assert f'<summary class="ver dropdown__toggle">v1<span class="ver__of"> of 5</span>{icons.CHEVRON_DOWN}</summary>' in page
     assert re.search(
         rf'<p class="outdated" role="status">.*<a href="/{pid}/view">Go to the current version \(v5\)</a>', page
     )
@@ -66,7 +67,7 @@ def test_latest_version_pinned_by_number_has_no_outdated_notice(client: Client) 
 
     page = client.get(f"/{pid}/v3/view").text
 
-    assert "<summary>v3 of 3</summary>" in page
+    assert f'<summary class="ver dropdown__toggle">v3<span class="ver__of"> of 3</span>{icons.CHEVRON_DOWN}</summary>' in page
     assert 'class="outdated"' not in page
 
 
@@ -103,8 +104,8 @@ def test_bar_links_the_document_alone_and_offers_print_once_bridged(client: Clie
 
     page = client.get(f"/{pid}/view").text
 
-    assert f'<a href="/{pid}/v1/content">open document</a>' in page
-    assert '<button type="button" class="bar__print" hidden>print</button>' in page
+    assert f'<a href="/{pid}/v1/content">Open document</a>' in page
+    assert '<li><button type="button" class="dropdown__item bar__print" hidden>Print</button></li>' in page
     assert '<body data-title-suffix=" · v1 · pergam">' in page
 
 

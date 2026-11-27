@@ -2,31 +2,17 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${page_title}</title>
+${head_assets}
+<script src="${pages_script}"></script>
 <style>
 ${css}</style></head><body data-title-suffix="${title_suffix}">
 
-<header class="bar">
-  <a class="bar__home" href="/" title="pergam index"><span class="blocks">▮▮</span> pergam</a>
-  <h1 class="bar__title">${title}</h1>
-  <span class="type" style="--type-rgb:${type_rgb}">${type}</span>
-  ${tags}
-  <span class="bar__author">${author}</span>
-  ${origin}
-  <details class="versions">
-    <summary>v${version} of ${total}</summary>
-    <ol class="versions__list" reversed>${version_items}</ol>
-  </details>
-  <nav class="bar__links">
-    <a href="/">index</a>
-    <a href="${raw_href}">raw</a>
-    <a href="${text_href}">text</a>
-    ${changes_link}
-    <a href="${content_href}">open document</a>
-    <button type="button" class="bar__print" hidden>print</button>
-  </nav>
-</header>
-${outdated}
+${top_bar}
+${meta_status}${outdated}
+<div class="view">
 <iframe ${frame_attributes}></iframe>
+${panel}
+</div>
 
 <script>
   (() => {

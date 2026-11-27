@@ -2,23 +2,22 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${page_title}</title>
+${head_assets}
+<script src="${pages_script}"></script>
 <style>
 ${css}</style></head><body>
 
-<header class="bar">
-  <a class="bar__home" href="/" title="pergam index"><span class="blocks">▮▮</span> pergam</a>
-  <h1 class="bar__title">${title}</h1>
-  <span class="bar__range">v${old} → v${new}</span>
-  <nav class="bar__links"><a href="/">index</a></nav>
-</header>
+${top_bar}
 
-<main class="wrap">
-  <div class="versions">
-    <a class="ver ver--old" href="${old_href}"><span class="ver__n">v${old}</span>${old_note}</a>
-    <span class="arrow" aria-hidden="true">→</span>
-    <a class="ver ver--new" href="${new_href}"><span class="ver__n">v${new}</span>${new_note}</a>
-  </div>
-  <p class="summary">${summary}</p>
-  ${sections}
-</main>
+<div class="dwrap">
+  <main class="dmain">
+    <p class="summary--phone">${summary}</p>
+    <div class="compare">
+      <a class="compare__side compare__side--old" href="${old_href}"><span class="ver">v${old}</span>${old_note}</a>
+      <span class="arrow" aria-hidden="true">→</span>
+      <a class="compare__side compare__side--new" href="${new_href}"><span class="ver">v${new}</span>${new_note}</a>
+    </div>
+    ${sections}
+  </main>
+</div>
 </body></html>

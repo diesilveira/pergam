@@ -1,0 +1,357 @@
+"""The diff page's layout: section list, version pickers, summary in the bar, and the same layout when too large."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterator
+
+import pytest
+
+from pergam import icons
+from pergam.diff import MAX_LINES
+from support import Client, in_ci, unavailable
+
+V1 = "<h1>Plan</h1><p>Intro stays.</p><h2>Costs</h2><p>We spend 10 dollars a month.</p><h2>Old</h2><p>Dropped.</p>"
+V2 = V1.replace("10", "12") + "<h2>Risks</h2><p>A new risk.</p>"
+
+
+def publish_three(client: Client) -> str:
+    pid = client.publish(title="Plan", html=V1, note="first")["id"]
+    client.publish(id=pid, title="Plan", html=V2, note="<b>second</b>")
+    client.publish(id=pid, title="Plan", html=V2 + "<p>More.</p>", note="third")
+    return pid
+
+
+TOC_LINK = (
+    r'<a class="(toc__link[^"]*)" href="#(sec-\d+)"><span class="toc__name">([^<]+)</span>'
+    r'<span class="toc__count">(.*?)</span></a>'
+)
+
+
+def test_side_list_names_every_section_with_its_counts_and_links_to_it(client: Client) -> None:
+    pid = publish_three(client)
+
+    page, backwards = client.get(f"/{pid}/diff/v1..v2").text, client.get(f"/{pid}/diff/v2..v1").text
+
+    links = re.findall(TOC_LINK, re.search(r'<ol class="toc__list">(.*?)</ol>', page).group(1))
+    assert links == [
+        ("toc__link toc__link--same", "sec-1", "Plan", "unchanged"),
+        ("toc__link", "sec-2", "Costs", '<span class="plus">+1</span> <span class="minus">−1</span>'),
+        ("toc__link toc__link--same", "sec-3", "Old", "unchanged"),
+        ("toc__link", "sec-4", "Risks", '<span class="plus">+2</span> new'),
+    ]
+    for _, anchor, _, _ in links:
+        assert f'id="{anchor}"' in page
+    assert re.findall(TOC_LINK, backwards)[3] == ("toc__link", "sec-4", "Risks", '<span class="minus">−2</span> removed')
+
+
+def test_pickers_link_every_other_pair_and_mark_the_current_one(client: Client) -> None:
+    pid = publish_three(client)
+
+    page = client.get(f"/{pid}/diff/v1..v2").text
+
+    old = re.search(r'<details class="dropdown versions picker--old">(.*?)</details>', page).group(1)
+    new = re.search(r'<details class="dropdown versions picker--new">(.*?)</details>', page).group(1)
+    assert f'<summary class="ver dropdown__toggle">v1<span class="sr-only">, older version</span>{icons.CHEVRON_DOWN}</summary>' in old
+    assert f'<summary class="ver dropdown__toggle">v2<span class="sr-only">, newer version</span>{icons.CHEVRON_DOWN}</summary>' in new
+    assert re.findall(r'<a href="([^"]+)"( aria-current="page")?>', old) == [
+        (f"/{pid}/diff/v3..v2", ""), (f"/{pid}/diff/v2..v2", ""), (f"/{pid}/diff/v1..v2", ' aria-current="page"'),
+    ]
+    assert re.findall(r'<a href="([^"]+)"( aria-current="page")?>', new) == [
+        (f"/{pid}/diff/v1..v3", ""), (f"/{pid}/diff/v1..v2", ' aria-current="page"'), (f"/{pid}/diff/v1..v1", ""),
+    ]
+    assert "&lt;b&gt;second&lt;/b&gt;" in new
+
+
+def test_bar_has_a_breadcrumb_the_summary_and_a_link_to_the_newer_version(client: Client) -> None:
+    pid = publish_three(client)
+
+    page = client.get(f"/{pid}/diff/v1..v2").text
+
+    header = re.search(r'<header class="topbar">(.*?)</header>', page).group(1)
+    assert '<nav aria-label="Breadcrumb"><a href="/">Index</a>' in header
+    assert f'<a class="crumbs__doc" href="/{pid}/v2/view">Plan</a>' in header
+    assert '<h1 class="bar__title">Changes</h1>' in header
+    assert (
+        '<span class="bar__summary"><span class="plus">+3</span> <span class="minus">−1</span> lines · '
+        "2 of 4 sections changed</span>"
+    ) in header
+    assert f'<a class="btn btn--primary" href="/{pid}/v2/view">Open v2</a>' in header
+
+
+def test_too_large_answer_keeps_the_layout(client: Client) -> None:
+    pid = client.publish(html="<p>small</p>")["id"]
+    client.publish(id=pid, html="<p>x</p>" * (MAX_LINES + 1))
+
+    page = client.get(f"/{pid}/diff/v1..v2").text
+
+    assert '<span class="bar__summary">Not compared.</span>' in page
+    assert '<details class="dropdown toc">' not in page and ">Sections<" not in page
+    assert 'picker--old' in page and 'picker--new' in page
+    assert re.search(r'<main class="dmain">.*<section class="too-large" role="status">', page, re.S)
+
+
+try:
+    from playwright import sync_api
+except ImportError:
+    sync_api = None
+
+
+@pytest.fixture(scope="module")
+def browser() -> Iterator[object]:
+    if sync_api is None:
+        if in_ci():
+            pytest.fail("Playwright is not installed", pytrace=False)
+        pytest.skip("Playwright is not installed")
+    with sync_api.sync_playwright() as playwright:
+        for options in ({"channel": "chrome"}, {}):
+            try:
+                launched = playwright.chromium.launch(**options)
+                break
+            except sync_api.Error:
+                continue
+        else:
+            unavailable("no Chrome or Chromium that Playwright can launch")
+        yield launched
+        launched.close()
+
+
+@pytest.fixture
+def page_at(browser) -> Iterator:
+    contexts = []
+
+    def page_at(url: str, scheme: str = "light", **options):
+        context = browser.new_context(color_scheme=scheme, **options)
+        contexts.append(context)
+        page = context.new_page()
+        page.goto(url)
+        return page
+
+    yield page_at
+    for context in contexts:
+        context.close()
+
+
+def test_choosing_versions_navigates_to_the_matching_range(page_at, client: Client) -> None:
+    pid = publish_three(client)
+    base = f"http://127.0.0.1:{client.port}"
+    page = page_at(f"{base}/{pid}/diff/v1..v2")
+
+    page.locator(".picker--new summary").click()
+    page.locator(".picker--new").get_by_role("link", name=re.compile(r"^v3")).click()
+    page.wait_for_url(f"{base}/{pid}/diff/v1..v3")
+    page.locator(".picker--old summary").focus()
+    page.keyboard.press("Enter")
+    page.keyboard.press("Tab")
+    page.keyboard.press("Tab")
+    page.keyboard.press("Enter")
+
+    page.wait_for_url(f"{base}/{pid}/diff/v2..v3")
+
+
+def open_sections(page) -> None:
+    page.locator("details.toc > summary").click()
+
+
+def test_sections_start_collapsed_and_a_link_closes_the_list(page_at, client: Client) -> None:
+    pid = publish_three(client)
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2")
+    menu = page.locator(".toc__menu")
+
+    assert menu.is_hidden()
+    open_sections(page)
+    assert menu.is_visible()
+    menu.get_by_role("link", name=re.compile(r"^Costs")).click()
+
+    assert menu.is_hidden()
+    assert page.url.endswith("#sec-2")
+    open_sections(page)
+    page.keyboard.press("Escape")
+    assert menu.is_hidden()
+    assert page.evaluate("document.activeElement.closest('details.toc') !== null")
+
+
+@pytest.mark.parametrize("width", [1280, 1440])
+def test_the_changes_sit_in_a_centred_reading_column(page_at, client: Client, width: int) -> None:
+    pid = publish_three(client)
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2", viewport={"width": width, "height": 700})
+
+    box = page.locator("main.dmain").bounding_box()
+
+    assert box["width"] <= 860
+    assert abs(box["x"] - (width - box["x"] - box["width"])) <= 2
+
+
+def test_section_link_opens_a_collapsed_section(page_at, client: Client) -> None:
+    pid = publish_three(client)
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2")
+    plan = page.locator("#sec-1")
+
+    assert plan.evaluate("node => node.open") is False
+    open_sections(page)
+    page.locator(".toc").get_by_role("link", name=re.compile(r"^Plan")).click()
+
+    page.wait_for_function("document.querySelector('#sec-1').open")
+    assert page.url.endswith("#sec-1")
+    plan.locator("summary").click()
+    assert plan.evaluate("node => node.open") is False
+    open_sections(page)
+    page.locator(".toc").get_by_role("link", name=re.compile(r"^Plan")).click()
+    page.wait_for_function("document.querySelector('#sec-1').open")
+
+
+def test_a_malformed_fragment_breaks_nothing(page_at, client: Client) -> None:
+    pid = publish_three(client)
+    errors: list[str] = []
+    page = page_at("about:blank")
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    page.goto(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2#%E0%A4%A")
+    page.evaluate("location.hash = '#%zz'")
+    open_sections(page)
+    page.locator(".toc").get_by_role("link", name=re.compile(r"^Plan")).click()
+
+    page.wait_for_function("document.querySelector('#sec-1').open")
+    assert errors == []
+
+
+def test_without_script_pickers_and_section_links_still_work(page_at, client: Client) -> None:
+    pid = publish_three(client)
+    base = f"http://127.0.0.1:{client.port}"
+    page = page_at(f"{base}/{pid}/diff/v1..v2", java_script_enabled=False)
+
+    open_sections(page)
+    page.locator(".toc").get_by_role("link", name=re.compile(r"^Costs")).click()
+    assert page.url.endswith("#sec-2")
+    page.locator(".picker--old summary").click()
+    page.locator(".picker--old").get_by_role("link", name=re.compile(r"^v2")).click()
+
+    page.wait_for_url(f"{base}/{pid}/diff/v2..v2")
+
+
+MARK_CONTRAST = """
+() => {
+  const canvas = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const rgba = (css) => {
+    canvas.clearRect(0, 0, 1, 1);
+    canvas.fillStyle = '#000';
+    canvas.fillStyle = css;
+    canvas.fillRect(0, 0, 1, 1);
+    return Array.from(canvas.getImageData(0, 0, 1, 1).data);
+  };
+  const luminance = ([r, g, b]) => {
+    const [lr, lg, lb] = [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+  };
+  const over = ([r, g, b, a], [br, bg, bb]) => [r * a / 255 + br * (1 - a / 255), g * a / 255 + bg * (1 - a / 255), b * a / 255 + bb * (1 - a / 255)];
+  const backdrop = (node) => {
+    const layers = [];
+    for (let at = node; at; at = at.parentElement) {
+      const colour = rgba(getComputedStyle(at).backgroundColor);
+      if (colour[3] > 0) layers.push(colour);
+      if (colour[3] === 255) break;
+    }
+    return layers.reverse().reduce((under, layer) => over(layer, under), [255, 255, 255]);
+  };
+  return Array.from(document.querySelectorAll('ins, del, .line--added .line__text, .line--removed .line__text, .toc__link, .toc__count, .bar__summary')).map((node) => {
+    const [high, low] = [luminance(rgba(getComputedStyle(node).color)), luminance(backdrop(node))].sort((a, b) => b - a);
+    return [node.tagName + '.' + node.className, (high + 0.05) / (low + 0.05)];
+  });
+}
+"""
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_word_marks_and_side_list_stay_readable(page_at, client: Client, scheme: str) -> None:
+    pid = publish_three(client)
+
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2", scheme)
+    open_sections(page)
+
+    ratios = page.evaluate(MARK_CONTRAST)
+    assert {name.split(".")[0] for name, _ in ratios} >= {"INS", "DEL", "A", "SPAN"}
+    assert min(ratio for _, ratio in ratios) >= 4.5, ratios
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+@pytest.mark.parametrize("too_large", [False, True], ids=["diff", "too-large"])
+def test_diff_page_fits_a_phone(page_at, client: Client, scheme: str, too_large: bool) -> None:
+    pid = publish_three(client)
+    if too_large:
+        client.publish(id=pid, title="Plan", html="<p>x</p>" * (MAX_LINES + 1))
+    page = page_at(
+        f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v{4 if too_large else 2}", scheme,
+        viewport={"width": 360, "height": 740},
+    )
+
+    page.locator(".picker--new summary").click()
+
+    assert page.locator(".picker--new .dropdown__menu").is_visible()
+    assert page.evaluate("document.documentElement.scrollWidth") <= 360
+    if too_large:
+        assert page.locator("details.toc").count() == 0
+        return
+    open_sections(page)
+    menu = page.locator(".toc__menu").bounding_box()
+    assert menu["x"] >= 0 and menu["x"] + menu["width"] <= 360
+    assert page.locator(".picker--new .dropdown__menu").is_hidden()
+    assert page.evaluate("document.documentElement.scrollWidth") <= 360
+
+
+def test_long_section_names_end_in_an_ellipsis_in_the_side_list(page_at, client: Client) -> None:
+    heading = "An extremely long section heading that has to be cut short in the side list"
+    pid = client.publish(html=f"<h1>Plan</h1><h2>{heading}</h2><p>one</p>")["id"]
+    client.publish(id=pid, html=f"<h1>Plan</h1><h2>{heading}</h2><p>two</p>")
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2", viewport={"width": 1280, "height": 700})
+    open_sections(page)
+
+    name = page.locator(".toc__link", has_text="An extremely").locator(".toc__name")
+    shape = name.evaluate(
+        """(node) => ({
+            cut: node.scrollWidth > node.clientWidth,
+            ellipsis: getComputedStyle(node).textOverflow === 'ellipsis',
+            inside: node.closest('.toc__link').getBoundingClientRect().right <= node.closest('.toc__menu').getBoundingClientRect().right,
+            scrolls: node.closest('.toc__menu').scrollWidth > node.closest('.toc__menu').clientWidth,
+        })"""
+    )
+
+    assert shape == {"cut": True, "ellipsis": True, "inside": True, "scrolls": False}
+    assert page.locator(".toc__link", has_text="An extremely").locator(".toc__count").is_visible()
+
+
+@pytest.mark.parametrize(("section", "focused"), [("Costs", "sec-2"), ("Plan", "summary")])
+def test_choosing_a_section_moves_focus_to_it(page_at, client: Client, section: str, focused: str) -> None:
+    pid = publish_three(client)
+    page = page_at(f"http://127.0.0.1:{client.port}/{pid}/diff/v1..v2")
+
+    page.locator("details.toc > summary").focus()
+    page.keyboard.press("Enter")
+    page.locator(".toc__menu").get_by_role("link", name=re.compile(f"^{section}")).focus()
+    page.keyboard.press("Enter")
+
+    page.wait_for_function("document.activeElement !== document.body")
+    where = page.evaluate("[document.activeElement.id, document.activeElement.tagName.toLowerCase(), "
+                          "document.activeElement.closest('.sec') && document.activeElement.closest('.sec').id]")
+    assert focused in where[:2]
+    assert where[2] == ("sec-2" if section == "Costs" else "sec-1")
+    assert page.locator(".toc__menu").is_hidden()
+
+
+def test_no_text_pages_have_no_sections_button(client: Client) -> None:
+    pid = client.publish(html="<img alt=''>")["id"]
+    client.publish(id=pid, html="<img alt=''>")
+
+    page = client.get(f"/{pid}/diff/v1..v2").text
+
+    assert '<p class="empty">Neither version has text.</p>' in page
+    assert '<details class="dropdown toc">' not in page
+
+
+def test_picker_names_start_with_their_visible_text(client: Client) -> None:
+    pid = publish_three(client)
+
+    page = client.get(f"/{pid}/diff/v1..v2").text
+
+    assert re.findall(r'<summary class="ver dropdown__toggle"([^>]*)>(v\d+)<span class="sr-only">, (\w+) version</span>', page) == [
+        ("", "v1", "older"), ("", "v2", "newer"),
+    ]

@@ -6,7 +6,7 @@ import re
 import psycopg
 import pytest
 
-from support import Client, crawl, listed_ids, listed_order, patch_meta, seed
+from support import Client, as_listed, crawl, listed_ids, listed_order, patch_meta, seed
 
 
 @pytest.fixture
@@ -25,8 +25,7 @@ def test_index_lists_latest_version_of_every_pergam(client: Client, catalogue: d
     assert resp.headers["content-type"] == "text/html; charset=utf-8"
     assert listed_ids(resp.text, *catalogue.values()) == set(catalogue.values())
     assert "Release notes v2" in resp.text
-    assert f'href="/{catalogue["notes"]}/v1/view"' in resp.text
-    assert "3 pergams · 2 authors · 4 versions" in resp.text
+    assert 'title="2 versions">v2</span>' in resp.text
 
 
 @pytest.mark.parametrize(
@@ -51,15 +50,15 @@ def test_index_filters(client: Client, catalogue: dict[str, str], query: str, ex
 def test_index_filtered_view_reports_partial_count(client: Client, catalogue: dict[str, str]) -> None:
     resp = client.get("/?type=reporte")
 
-    assert "showing 1 of 3" in resp.text
-    assert 'href="/">clear all</a>' in resp.text
+    assert '<span class="summary__count" tabindex="-1" data-results>1 of 3<span class="sr-only"> pergams shown</span></span>' in resp.text
+    assert '<a class="summary__clear" href="/" aria-label="Clear all filters">Clear all</a>' in resp.text
 
 
 def test_empty_index_shows_hint(client: Client) -> None:
     resp = client.get("/")
 
     assert resp.status == 200
-    assert "No pergams match." in resp.text
+    assert "No pergams yet." in resp.text
 
 
 def test_index_escapes_user_content(client: Client) -> None:
@@ -94,8 +93,8 @@ def tagged(client: Client) -> dict[str, str]:
         ("?tag=ops&q=plan", {"ops_plan"}),
         ("?tag=ops&type=plan&author=ana@example.com&q=ops", {"ops_plan"}),
         ("?tag=nope", set()),
-        ("?archived=1", {"ops_plan", "ops_report", "q3_plan", "untagged", "archived"}),
-        ("?archived=1&tag=ops&type=plan", {"ops_plan", "archived"}),
+        ("?state=all", {"ops_plan", "ops_report", "q3_plan", "untagged", "archived"}),
+        ("?state=all&tag=ops&type=plan", {"ops_plan", "archived"}),
         ("", {"ops_plan", "ops_report", "q3_plan", "untagged"}),
     ],
 )
@@ -108,53 +107,55 @@ def test_tag_filter_composes_and_archived_stay_hidden(
     assert listed_ids(resp.text, *tagged.values()) == {tagged[k] for k in expected}
 
 
-def test_tag_pills_count_visible_pergams(client: Client, tagged: dict[str, str]) -> None:
-    hidden, shown = client.get("/").text, client.get("/?archived=1").text
+def test_tag_counts_cover_visible_pergams(client: Client, tagged: dict[str, str]) -> None:
+    hidden, shown = client.get("/api/pergams").json(), client.get("/api/pergams?state=all").json()
 
-    assert re.search(r'href="/\?tag=ops"[^>]*>ops <span class="cnt">2</span>', hidden)
-    assert re.search(r'href="/\?tag=q3"[^>]*>q3 <span class="cnt">2</span>', hidden)
-    assert re.search(r'href="/\?tag=ops&amp;archived=1"[^>]*>ops <span class="cnt">3</span>', shown)
-    assert "show archived (1)" in hidden
-    assert "hide archived" in shown
-
-
-def test_active_tag_pill_links_back_to_unfiltered(client: Client, tagged: dict[str, str]) -> None:
-    resp = client.get("/?tag=ops&type=plan")
-
-    assert re.search(r'<a href="/\?type=plan" class="active"[^>]*>ops ', resp.text)
-    assert "showing 1 of 4" in resp.text
+    assert hidden["counts"]["tags"] == [{"tag": "ops", "count": 2}, {"tag": "q3", "count": 2}]
+    assert shown["counts"]["tags"][0] == {"tag": "ops", "count": 3}
+    assert (hidden["archived_count"], shown["archived_count"]) == (1, 1)
 
 
 @pytest.mark.parametrize(
-    ("query", "note"),
+    ("query", "count"),
     [
-        ("/", "showing 4 of 5 · 1 archived hidden"),
-        ("/?archived=1", "5 pergams · 2 authors · 5 versions"),
-        ("/?tag=ops", "showing 2 of 4"),
-        ("/?tag=ops&archived=1", "showing 3 of 5"),
+        ("/", None),
+        ("/?state=all", "5 of 5"),
+        ("/?state=archived", "1 of 1"),
+        ("/?tag=ops", "2 of 4"),
+        ("/?tag=ops&state=all", "3 of 5"),
+        ("/?q=plan", "2 of 4"),
     ],
 )
-def test_header_counts_follow_the_archived_filter(
-    client: Client, tagged: dict[str, str], query: str, note: str
+def test_the_summary_counts_against_everything_the_status_can_show(
+    client: Client, tagged: dict[str, str], query: str, count: str | None
 ) -> None:
-    assert f'<div class="sub">{note}</div>' in client.get(query).text
+    page = client.get(query).text
+
+    if count is None:
+        assert "data-results" not in page
+    else:
+        assert f'<span class="summary__count" tabindex="-1" data-results>{count}<span class="sr-only"> pergams shown</span></span>' in page
 
 
-@pytest.mark.parametrize(("query", "clear"), [("/", False), ("/?archived=1", True), ("/?tag=ops", True)])
+@pytest.mark.parametrize(("query", "clear"), [("/", False), ("/?state=all", True), ("/?tag=ops", True)])
 def test_clear_all_resets_the_archived_filter_too(
     client: Client, tagged: dict[str, str], query: str, clear: bool
 ) -> None:
-    assert ('href="/">clear all</a>' in client.get(query).text) is clear
+    assert ('<a class="summary__clear" href="/" aria-label="Clear all filters">Clear all</a>' in client.get(query).text) is clear
 
 
 def test_rows_show_tags_and_flags(client: Client, tagged: dict[str, str]) -> None:
     patch_meta(client, tagged["q3_plan"], {"pinned": True})
 
-    resp = client.get("/?archived=1")
+    resp = client.get("/?state=all")
 
-    assert '<a class="tag" href="/?tag=q3&amp;archived=1"' in resp.text
-    assert 'class="flag flag--pinned"' in resp.text
-    assert f'<div class="row row--archived" data-href="/{tagged["archived"]}/view"' in resp.text
+    assert '<a class="tag" href="/?tag=q3&amp;state=all"' in resp.text
+    assert f'<li class="pin" data-href="/{tagged["q3_plan"]}/view"><a class="pin__title" href="/{tagged["q3_plan"]}/view">' in resp.text
+    assert re.search(
+        rf'<li class="row row--archived" data-href="/{tagged["archived"]}/view">.*?'
+        rf'<a class="row__title" href="/{tagged["archived"]}/view">Old ops plan</a><span class="flag flag--archived">Archived</span>',
+        resp.text,
+    )
 
 
 def test_pinned_pergams_sort_first(client: Client, tagged: dict[str, str]) -> None:
@@ -173,16 +174,16 @@ def test_invalid_cursor_is_rejected(client: Client) -> None:
     ("query", "keep"),
     [
         ("/", lambda pinned, archived, tagged: not archived),
-        ("/?archived=1", lambda pinned, archived, tagged: True),
+        ("/?state=all", lambda pinned, archived, tagged: True),
         ("/?tag=seeded", lambda pinned, archived, tagged: tagged and not archived),
-        ("/?tag=seeded&archived=1&type=plan", lambda pinned, archived, tagged: tagged),
+        ("/?tag=seeded&state=all&type=plan", lambda pinned, archived, tagged: tagged),
     ],
 )
 def test_paging_visits_every_pergam_once_in_order(client: Client, db: psycopg.Connection, query: str, keep) -> None:
     flags = seed(db)
     rows = db.execute(
         "SELECT l.id, l.type FROM pergams_latest l LEFT JOIN pergam_meta m USING (id)"
-        " ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC"
+        " ORDER BY COALESCE(m.pinned AND NOT m.archived, false) DESC, l.created_at DESC, l.id DESC"
     ).fetchall()
     assert db.execute("SELECT count(*) FROM pergams_latest WHERE id NOT IN (SELECT id FROM pergam_meta)").fetchone()[0] > 0
     type_filter = "plan" if "type=plan" in query else None
@@ -190,17 +191,17 @@ def test_paging_visits_every_pergam_once_in_order(client: Client, db: psycopg.Co
 
     visited = crawl(client, query)
 
-    assert visited == expected
+    assert visited == as_listed(expected, flags)
     assert len(visited) == len(set(visited))
 
 
 def test_first_page_has_no_back_link_and_later_pages_do(client: Client, db: psycopg.Connection) -> None:
     seed(db)
 
-    first = client.get("/?archived=1").text
+    first = client.get("/?state=all").text
     second_path = html_lib.unescape(re.search(r'<a class="pager__next" href="([^"]+)"', first).group(1))
     second = client.get(second_path).text
 
     assert "first page" not in first
-    assert "archived=1" in second_path
-    assert '<a class="pager__first" href="/?archived=1">' in second
+    assert "state=all" in second_path
+    assert '<a class="pager__first" href="/?state=all">' in second

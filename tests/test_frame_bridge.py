@@ -113,7 +113,7 @@ def view(browser, client: Client) -> Iterator[tuple[object, str, str]]:
 
 def open_view(page, url: str):
     page.goto(url)
-    page.wait_for_selector(".bar__print:not([hidden])")
+    page.wait_for_selector(".bar__print:not([hidden])", state="attached")
     page.wait_for_load_state("load")
     page.evaluate("() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))")
     return page.frame(url=lambda frame_url: "/content" in frame_url)
@@ -188,6 +188,8 @@ def test_print_control_prints_the_framed_document(view) -> None:
     frame.evaluate("() => { window.print = () => { window.printed = (window.printed || 0) + 1; }; }")
     page.evaluate("() => { window.print = () => { window.printed = true; }; }")
 
+    page.click("summary[aria-label='More actions']")
+    page.evaluate("() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))")
     page.click(".bar__print")
     page.keyboard.press("Control+p")
 
@@ -203,7 +205,7 @@ def test_print_control_stays_hidden_without_a_bridge(browser, client: Client) ->
         page.goto(f"http://127.0.0.1:{client.port}/{pid}/view")
         page.wait_for_load_state("load")
 
-        assert page.is_hidden(".bar__print")
+        assert page.locator(".bar__print").evaluate("button => button.hidden")
     finally:
         page.close()
 
@@ -255,6 +257,7 @@ def test_imported_pergam_shows_its_origin_next_to_a_working_bridge(view, client:
     assert client.post_json(doc, "/import").status == 201
 
     frame = open_view(page, f"{base}/0123abcd/view")
+    page.click("[data-panel-toggle]")
 
     origin = page.locator(".bar__origin a")
     assert origin.is_visible()

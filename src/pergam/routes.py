@@ -8,25 +8,30 @@ import re
 import sys
 import threading
 from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse
 
-from pergam.access import CollaboratorError, Forbidden, parse_collaborators
-from pergam.api import index_json, pergam_json
-from pergam.cursor import CursorError, IndexCursor
+from pergam.access import Access, CollaboratorError, Forbidden, parse_collaborators
+from pergam.api import facets_json, index_json, pergam_json
+from pergam.cursor import CursorError, SortError, decode_cursor, parse_sort
 from pergam.diff import Section, TooLargeToDiff, check_size, diff_sections
 from pergam.diff_page import render_diff
+from pergam.error_page import render_error, varies_by_accept, wants_error_page
 from pergam.feed import CONTENT_TYPE as ATOM_CONTENT_TYPE
 from pergam.feed import render_feed
 from pergam.identity import PROXY_USER_HEADER, IdentityError, Writer, parse_author, single_proxy_user
 from pergam.ids import ID_RE
+from pergam.filters_ui import dialog_form, render_filters_page
 from pergam.index_page import render_index
 from pergam.lint import LINT_CONCURRENCY, LINT_MAX_BODY_BYTES, lint_html
 from pergam.limits import DEFAULT_MAX_BODY_MB, MIB
 from pergam.meta import MetaError, parse_meta_change
 from pergam.notes import NoteError, parse_note
+from pergam.pins import PinRefused
 from pergam.public_url import PublicAddress
 from pergam.search import QueryError, parse_query
+from pergam.states import ALL, StateError, legacy_archived, parse_state
 from pergam.store import ImportConflict, IndexFilters, NewPergam, PergamStore
 from pergam.tags import TagError, normalise_tag, parse_tags
 from pergam.taxonomy import DEFAULT_TYPES, normalise_type
@@ -47,6 +52,8 @@ NO_STORE = "no-store"
 IMMUTABLE = "public, max-age=31536000, immutable"
 DERIVED = "public, max-age=300"
 NOSNIFF = (("X-Content-Type-Options", "nosniff"),)
+LOAD_MORE_HEADER = "X-Pergam-Load-More"
+PAGE_HEADERS = (("Content-Security-Policy", "frame-ancestors 'self'"), ("X-Frame-Options", "SAMEORIGIN"))
 
 
 _LOG_ESCAPES = {code: f"\\x{code:02x}" for code in (*range(0x20), *range(0x7F, 0xA0))} | {ord("\\"): "\\\\"}
@@ -65,16 +72,39 @@ def _first(query: dict[str, list[str]], key: str) -> str | None:
     return query.get(key, [None])[0] or None
 
 
+MAX_FILTER_VALUES = 50
+
+
+class FilterError(ValueError):
+    pass
+
+
+def _values(query: dict[str, list[str]], key: str, normalise: Callable[[str], str]) -> tuple[str, ...]:
+    """Every value of a repeated `key`, normalised, blanks dropped, duplicates removed, first order kept."""
+    raw = query.get(key, [])
+    if len(raw) > MAX_FILTER_VALUES:
+        raise FilterError(f"at most {MAX_FILTER_VALUES} values of {key}")
+    return tuple(dict.fromkeys(value for value in map(normalise, raw) if value))
+
+
 def parse_filters(query: dict[str, list[str]]) -> IndexFilters:
-    """Index filters from a query string, shared by `/` and `/api/pergams`; raises `CursorError` or `QueryError`."""
+    """Index filters from a query string, shared by `/` and `/api/pergams`.
+
+    `type`, `author` and `tag` may repeat (any of the values). Raises `CursorError`,
+    `SortError`, `StateError`, `FilterError` or `QueryError`. An old `archived=1` without
+    a `state` reads as `state=all` (the page redirects to that URL first).
+    """
     token = _first(query, "cursor")
+    sort = parse_sort(_first(query, "sort"))
+    state = parse_state(_first(query, "state") or (ALL if legacy_archived(_first(query, "archived")) else None))
     return IndexFilters(
-        type=normalise_type(_first(query, "type") or "") or None,
-        author=_first(query, "author"),
-        tag=normalise_tag(_first(query, "tag") or "") or None,
+        types=_values(query, "type", normalise_type),
+        authors=_values(query, "author", str.strip),
+        tags=_values(query, "tag", normalise_tag),
         q=parse_query(_first(query, "q")),
-        archived=_first(query, "archived") in ("1", "true"),
-        cursor=IndexCursor.decode(token) if token else None,
+        state=state,
+        cursor=decode_cursor(token, sort) if token else None,
+        sort=sort,
     )
 
 
@@ -87,6 +117,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
     trust_proxy_user: bool = False
     frame: FramePolicy = FRAME_POLICY
     lint_slots = threading.BoundedSemaphore(LINT_CONCURRENCY)
+    vary_accept = False
+    page = False
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         line = escape_log(format % args)
@@ -100,6 +132,44 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         response, and a character outside Latin-1 would drop the connection.
         """
         super().send_response(code)
+
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
+        """The standard error response, with the standard library's body swapped for a page when a browser asks.
+
+        Only the body differs: status line, headers and logging stay the library's, so
+        API clients, `HEAD` and cache rules see no change (see `error_page.wants_error_page`).
+        Where the body depends on `Accept`, the response says so with `Vary: Accept`.
+        """
+        headers = getattr(self, "headers", None)
+        path = urlparse(getattr(self, "path", "")).path
+        if headers is None or not varies_by_accept(self.command, path):
+            super().send_error(code, message, explain)
+            return
+        self.vary_accept = self.page = True
+        try:
+            if wants_error_page(self.command, path, headers.get("Accept")):
+                shown = message if message is not None else self.responses.get(code, ("Error",))[0]
+                host = self.public.display if hasattr(self, "public") else None
+                self.error_message_format = render_error(code, shown, host).replace("%", "%%")
+            super().send_error(code, message, explain)
+        finally:
+            self.vary_accept = self.page = False
+            self.__dict__.pop("error_message_format", None)
+
+    def end_headers(self) -> None:
+        """Adds `Vary: Accept` where the error body depends on it, and `PAGE_HEADERS` to every page.
+
+        A page is any HTML this server renders around its own controls: the index, view
+        and diff pages (`_send_page`) and errors on their routes. Only this origin may
+        frame them, so another site cannot overlay and clickjack the write controls.
+        `/content` is not a page: it keeps the frame policy of `view_page.frame_policy`.
+        """
+        if self.vary_accept:
+            self.send_header("Vary", "Accept")
+        if self.page:
+            for name, value in PAGE_HEADERS:
+                self.send_header(name, value)
+        super().end_headers()
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
@@ -234,6 +304,8 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             "origin": result.origin.to_json() if result.origin else None,
             "view_url": self.public.view_url(pergam_id),
         }
+        if result.pin_refused:
+            body["pin_refused"] = result.pin_refused
         self._send_json(body, 201 if result.imported else 200)
 
     def do_GET(self) -> None:
@@ -241,6 +313,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path.strip("/")
 
         if path == "":
+            if "archived" in parse_qs(parsed.query, keep_blank_values=True):
+                self._redirect_archived(parsed.query)
+                return
             self._render_index(parse_qs(parsed.query))
             return
         if path == "feed.atom":
@@ -249,9 +324,18 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if path == "api/pergams":
             self._render_index_json(parse_qs(parsed.query))
             return
+        if path == "facets":
+            self._render_facets(parse_qs(parsed.query))
+            return
+        if path == "filters":
+            self._render_filters_page(parse_qs(parsed.query))
+            return
+        if path == "filters/form":
+            self._render_filters_form(parse_qs(parsed.query))
+            return
         static = STATIC_FILES.get(parsed.path)
         if static is not None:
-            cache_control = IMMUTABLE if static.versioned else DERIVED
+            cache_control = IMMUTABLE if static.immutable_for(_first(parse_qs(parsed.query), "v")) else DERIVED
             self._send(200, static.content_type, static.body, cache_control=cache_control, headers=NOSNIFF)
             return
         if path == "healthz":
@@ -313,6 +397,9 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         except Forbidden as exc:
             self.send_error(403, str(exc))
+            return
+        except PinRefused as exc:
+            self.send_error(409, str(exc))
             return
         if meta is None:
             self.send_error(404, "Pergam not found")
@@ -386,8 +473,24 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if meta is None or all(info.version != shown for info in versions):
             self.send_error(404, "Pergam not found")
             return
-        page = render_view(pergam_id, versions, meta, shown, self.frame)
-        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+        access = self.store.access(pergam_id)
+        page = render_view(pergam_id, versions, meta, shown, self.frame, access=access, editable=self._offers_edits(access))
+        self._send_page(page)
+
+    def _offers_edits(self, access: Access | None) -> bool:
+        """Whether the view page shows the pin, archive and tag controls, which `PATCH /{id}/meta`.
+
+        Without trusted identity anyone who reaches the server may already PATCH, so they
+        are shown. With it they are shown to the owner and the collaborators, and to a
+        request whose user is unknown, which the page then tells why the server refused.
+        """
+        if not self.trust_proxy_user or access is None:
+            return True
+        try:
+            user = single_proxy_user(self.headers.get_all(PROXY_USER_HEADER) or [])
+        except IdentityError:
+            return True
+        return access.may_edit(user)
 
     def _render_diff(self, pergam_id: str, version_range: str) -> None:
         """`v{a}..v{b}` in either order, `b` read as the newer side; 400 when malformed, 404 when unknown."""
@@ -395,13 +498,15 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         if not match:
             self.send_error(400, "Range must look like v2..v5")
             return
-        by_number = {info.version: info for info in self.store.versions(pergam_id)}
+        versions = self.store.versions(pergam_id)
+        by_number = {info.version: info for info in versions}
         old, new = (by_number.get(int(number)) for number in match.groups())
         if old is None or new is None:
             self.send_error(404, "Pergam or version not found")
             return
-        page = render_diff(pergam_id, old, new, self._diff(pergam_id, old.version, new.version, old.bytes, new.bytes))
-        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"), cache_control=DERIVED)
+        sections = self._diff(pergam_id, old.version, new.version, old.bytes, new.bytes)
+        page = render_diff(pergam_id, old, new, sections, versions)
+        self._send_page(page, cache_control=DERIVED)
 
     def _diff(self, pergam_id: str, old: int, new: int, *html_bytes: int) -> list[Section] | TooLargeToDiff:
         """The sections, or why the versions are too large to compare; oversized HTML is never read."""
@@ -481,12 +586,12 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         return data
 
     def _filters(self, query: dict[str, list[str]]) -> IndexFilters | None:
-        """Parsed filters, or None after answering 400 for a malformed cursor or an overlong `q`."""
+        """Parsed filters, or None after answering 400 for a malformed cursor or `sort`, or an overlong `q`."""
         try:
             return parse_filters(query)
         except CursorError:
             self.send_error(400, "Invalid cursor")
-        except QueryError as exc:
+        except (SortError, StateError, FilterError, QueryError) as exc:
             self.send_error(400, str(exc))
         return None
 
@@ -494,14 +599,36 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
         filters = self._filters(query)
         if filters is None:
             return
-        page = render_index(self.store.index(filters), filters, self.public.display)
-        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
+        load_more = self.headers.get(LOAD_MORE_HEADER) == "1"
+        page = render_index(self.store.index(filters, cards=True), filters, self.public.display, load_more)
+        self._send_page(page)
 
     def _render_index_json(self, query: dict[str, list[str]]) -> None:
         filters = self._filters(query)
         if filters is None:
             return
-        self._send_json(index_json(self.store.index(filters), self.public))
+        self._send_json(index_json(self.store.index(filters), self.public, filters.sort, filters.state))
+
+    def _render_facets(self, query: dict[str, list[str]]) -> None:
+        """`GET /facets`: the total and the counts for a set of filters, for the filter dialog's live preview."""
+        filters = self._filters(query)
+        if filters is None:
+            return
+        self._send_json(facets_json(self.store.facets(filters), filters, self.types))
+
+    def _render_filters_page(self, query: dict[str, list[str]]) -> None:
+        """`/filters`: the filter form as a page, what the Filters button opens without script."""
+        filters = self._filters(query)
+        if filters is None:
+            return
+        self._send_page(render_filters_page(self.store.facets(filters), filters, self.types, self.public.display))
+
+    def _render_filters_form(self, query: dict[str, list[str]]) -> None:
+        """`/filters/form`: the filter dialog's form, fetched by filters.js when the dialog first opens."""
+        filters = self._filters(query)
+        if filters is None:
+            return
+        self._send_page(dialog_form(self.store.facets(filters), filters, self.types))
 
     def _render_pergam_json(self, pergam_id: str) -> None:
         versions = self.store.versions(pergam_id)
@@ -511,14 +638,45 @@ class PergamHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_json(pergam_json(pergam_id, versions, meta, self.public))
 
+    def _redirect_archived(self, raw_query: str) -> None:
+        """`/?archived=1` is now `/?state=all` (and `archived=0` the default): a permanent redirect keeps old links.
+
+        An explicit `state` wins; every other parameter is kept, in its order. Like the
+        old code, only the first non-blank `archived` counts (`?archived=0&archived=1` stays active).
+        """
+        pairs = parse_qsl(raw_query, keep_blank_values=True)
+        first = next((value for key, value in pairs if key == "archived" and value), None)
+        wants_all = legacy_archived(first)
+        kept = [(key, value) for key, value in pairs if key != "archived"]
+        if wants_all and not any(key == "state" for key, _ in kept):
+            kept.append(("state", ALL))
+        self.send_response(301)
+        self.send_header("Location", "/" + (f"?{urlencode(kept)}" if kept else ""))
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", NO_STORE)
+        self.end_headers()
+
     def _render_feed(self, query: dict[str, list[str]]) -> None:
         tag = normalise_tag(_first(query, "tag") or "") or None
         author = (_first(query, "author") or "").strip() or None
-        body = render_feed(self.store.feed(tag, author), self.public, tag, author)
+        try:
+            state = parse_state(_first(query, "state"))
+        except StateError as exc:
+            self.send_error(400, str(exc))
+            return
+        body = render_feed(self.store.feed(tag, author, state), self.public, tag, author, state)
         self._send(200, ATOM_CONTENT_TYPE, body)
 
     def _send_json(self, body: object, status: int = 200) -> None:
         self._send(status, "application/json", json.dumps(body).encode("utf-8"))
+
+    def _send_page(self, page: str, cache_control: str = NO_STORE) -> None:
+        """A rendered HTML page, sent with `PAGE_HEADERS` (see `end_headers`)."""
+        self.page = True
+        try:
+            self._send(200, "text/html; charset=utf-8", page.encode("utf-8"), cache_control=cache_control)
+        finally:
+            self.page = False
 
     def _send(
         self,

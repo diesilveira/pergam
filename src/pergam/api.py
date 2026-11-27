@@ -8,13 +8,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from pergam.cursor import DEFAULT_SORT
 from pergam.meta import Meta
+from pergam.states import ACTIVE
 from pergam.public_url import PublicAddress
-from pergam.store import IndexData, IndexRow, VersionInfo
+from pergam.store import Facets, IndexData, IndexFilters, IndexRow, VersionInfo
 
 
 def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
-    return {
+    """`summary` is left out, not null, while the version's text has not been extracted."""
+    body = {
         "id": row.id,
         "version": row.version,
         "title": row.title,
@@ -26,16 +29,22 @@ def _row(row: IndexRow, public: PublicAddress) -> dict[str, Any]:
         "tags": row.tags,
         "archived": row.archived,
         "pinned": row.pinned,
+        "pinned_at": row.pinned_at.isoformat() if row.pinned_at else None,
         "view_url": public.view_url(row.id),
         "text_url": public.url(f"{row.id}/text"),
         "snippet": row.snippet.text() if row.snippet else None,
     }
+    if row.summary is not None:
+        body["summary"] = row.summary
+    return body
 
 
-def index_json(data: IndexData, public: PublicAddress) -> dict[str, Any]:
+def index_json(data: IndexData, public: PublicAddress, sort: str = DEFAULT_SORT, state: str = ACTIVE) -> dict[str, Any]:
     stats = data.stats
     return {
         "pergams": [_row(row, public) for row in data.rows],
+        "sort": sort,
+        "state": state,
         "matching": data.matching,
         "next_cursor": data.next_cursor.encode() if data.next_cursor else None,
         "archived_count": data.archived_count,
@@ -51,6 +60,35 @@ def index_json(data: IndexData, public: PublicAddress) -> dict[str, Any]:
             "bytes": stats.total_bytes,
             "new_pergams_7d": stats.new_pergams_7d,
             "new_versions_7d": stats.new_versions_7d,
+            "pinned": stats.total_pinned,
+            "max_pinned": stats.max_pinned,
+        },
+    }
+
+
+def facet_values(
+    counts: list[tuple[str, int]], selected: tuple[str, ...], first: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
+    """`[{value, count}]` for one facet: every known value, the selected ones at zero when no pergam has them.
+
+    `first` (the configured types) come first in their own order; the rest follow by count.
+    """
+    known = dict(counts)
+    extra = {value: 0 for value in (*first, *selected) if value not in known}
+    ordered = [value for value in first if value in known or value in extra]
+    ordered += [value for value, _ in counts if value not in ordered]
+    ordered += [value for value in extra if value not in ordered]
+    return [{"value": value, "count": known.get(value, 0)} for value in ordered]
+
+
+def facets_json(facets: Facets, filters: IndexFilters, types: tuple[str, ...]) -> dict[str, Any]:
+    return {
+        "total": facets.total,
+        "facets": {
+            "type": facet_values(facets.types, filters.types, types),
+            "author": facet_values(facets.authors, filters.authors),
+            "tag": facet_values(facets.tags, filters.tags),
+            "state": facets.states,
         },
     }
 
@@ -84,6 +122,7 @@ def pergam_json(pergam_id: str, versions: list[VersionInfo], meta: Meta, public:
         "tags": meta.tags,
         "archived": meta.archived,
         "pinned": meta.pinned,
+        "pinned_at": meta.pinned_at.isoformat() if meta.pinned_at else None,
         "origin": meta.origin.to_json() if meta.origin else None,
         "view_url": public.view_url(pergam_id),
         "text_url": public.url(f"{pergam_id}/text"),

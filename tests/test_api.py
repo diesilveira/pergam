@@ -7,7 +7,7 @@ import psycopg
 import pytest
 
 from pergam.store import save_text
-from support import Client, crawl, listed_order, patch_meta, seed
+from support import Client, as_listed, crawl, listed_order, patch_meta, seed
 
 
 def api_crawl(client: Client, query: str) -> list[str]:
@@ -41,7 +41,7 @@ def catalogue(client: Client) -> dict[str, str]:
 
 @pytest.mark.parametrize(
     "query",
-    ["", "?type=plan", "?author=bo@example.com", "?tag=OPS", "?q=budget", "?q=notes", "?archived=1", "?tag=ops&archived=1"],
+    ["", "?type=plan", "?author=bo@example.com", "?tag=OPS", "?q=budget", "?q=notes", "?state=all", "?tag=ops&state=all"],
 )
 def test_api_and_html_index_list_the_same_pergams(client: Client, catalogue: dict[str, str], query: str) -> None:
     html_ids = listed_order(client.get(f"/{query}").text)
@@ -51,13 +51,13 @@ def test_api_and_html_index_list_the_same_pergams(client: Client, catalogue: dic
     assert body["matching"] == len(html_ids)
 
 
-@pytest.mark.parametrize("query", ["", "?archived=1", "?tag=seeded&type=plan"])
+@pytest.mark.parametrize("query", ["", "?state=all", "?tag=seeded&type=plan"])
 def test_api_pages_like_the_html_index(client: Client, db: psycopg.Connection, query: str) -> None:
-    seed(db)
+    flags = seed(db)
 
     visited = api_crawl(client, query)
 
-    assert visited == crawl(client, f"/{query}")
+    assert as_listed(visited, flags) == crawl(client, f"/{query}")
     assert len(visited) == len(set(visited))
 
 
@@ -82,9 +82,11 @@ def test_api_index_row_shape(client: Client, catalogue: dict[str, str]) -> None:
         "tags": ["ops", "q3"],
         "archived": False,
         "pinned": False,
+        "pinned_at": None,
         "view_url": f"http://localhost:{port}/{catalogue['notes']}/view",
         "text_url": f"http://localhost:{port}/{catalogue['notes']}/text",
         "snippet": None,
+        "summary": "doc",
     }
 
 
@@ -134,6 +136,7 @@ def test_api_pergam_has_metadata_tags_and_versions(client: Client, catalogue: di
         "tags": ["ops", "q3"],
         "archived": False,
         "pinned": False,
+        "pinned_at": None,
         "origin": None,
         "view_url": f"http://localhost:{port}/{pid}/view",
         "text_url": f"http://localhost:{port}/{pid}/text",
@@ -157,25 +160,25 @@ def test_api_pergam_unknown_is_404(client: Client, path: str) -> None:
     assert client.get(path).status == 404
 
 
-@pytest.mark.parametrize("query", ["?q=needle", "?q=needle&archived=1"])
+@pytest.mark.parametrize("query", ["?q=needle", "?q=needle&state=all"])
 def test_search_results_page_like_the_index(client: Client, db: psycopg.Connection, query: str) -> None:
     flags = seed(db)
     ids = sorted(flags)
     save_text(db, [(pid, 1, "<p>a needle here</p>" if i % 7 else "<p>only hay</p>") for i, pid in enumerate(ids)])
     rows = db.execute(
         "SELECT l.id FROM pergams_latest l LEFT JOIN pergam_meta m USING (id)"
-        " ORDER BY COALESCE(m.pinned, false) DESC, l.created_at DESC, l.id DESC"
+        " ORDER BY COALESCE(m.pinned AND NOT m.archived, false) DESC, l.created_at DESC, l.id DESC"
     ).fetchall()
     with_needle = {pid for i, pid in enumerate(ids) if i % 7}
     expected = [
         pid
         for (pid,) in rows
         if pid in with_needle
-        and ("archived=1" in query or not flags[pid][1])
+        and ("state=all" in query or not flags[pid][1])
     ]
 
     visited = crawl(client, f"/{query}")
 
     assert len(expected) > 100
-    assert visited == expected
+    assert visited == as_listed(expected, flags)
     assert api_crawl(client, query) == expected
