@@ -29,7 +29,7 @@
   .fform__legend { float:left; padding:0; margin:0 8px 10px 0; font-size:.9rem; font-weight:600; }
   .fform__meta { display:flex; align-items:baseline; gap:8px; min-height:1.4rem; margin-bottom:10px; font-size:.78rem; color:var(--muted); }
   .fform__selected { margin-left:auto; }
-  .fform__clear { padding:0; border:0; background:transparent; color:var(--accent); font:inherit; cursor:pointer; }
+  .fform__clear { min-height:24px; padding:0 4px; border:0; background:transparent; color:var(--accent); font:inherit; cursor:pointer; }
   .fform__clear:hover { text-decoration:underline; }
   .fform__clear[hidden] { display:none; }
   .fform__values { clear:both; display:flex; flex-wrap:wrap; gap:8px; }
@@ -101,6 +101,8 @@
     .fform__head { padding:0 12px 0 20px; }
     .fform__close { width:44px; height:44px; }
     .fform__body { padding:20px; }
+    .fform__clear { min-height:44px; min-width:44px; }
+    .fform__more { height:44px; }
     .pill { height:40px; padding:0 14px; border-radius:20px; }
     .arow { min-height:44px; }
     .fform__foot { flex-basis:auto; padding:10px 20px calc(10px + env(safe-area-inset-bottom)); }
