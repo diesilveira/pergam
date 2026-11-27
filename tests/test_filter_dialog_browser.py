@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 
 import pytest
 
-from support import Client, in_ci, listed_order, patch_meta, unavailable
+from support import Client, in_ci, listed_order, patch_meta, seed, unavailable
 
 try:
     from playwright import sync_api
@@ -503,3 +503,20 @@ def test_a_reopen_after_reload_that_fails_leaves_no_dead_history_entry(browser, 
     assert not is_open(page)
     context.close()
 
+
+def test_the_button_on_a_later_page_opens_the_dialog(browser, crowded_site) -> None:
+    context, page = open_page(browser)
+    page.goto(crowded_site)
+    later = page.locator(".pager__next").get_attribute("href")
+    page.goto(crowded_site.rstrip("/") + later)
+
+    open_dialog(page)
+
+    assert "cursor=" in page.url
+    context.close()
+
+
+@pytest.fixture
+def crowded_site(client: Client, db) -> str:
+    seed(db)
+    return f"http://127.0.0.1:{client.port}/"

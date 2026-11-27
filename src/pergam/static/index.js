@@ -93,7 +93,7 @@
       if (link.getAttribute('aria-busy') === 'true') return;
       link.setAttribute('aria-busy', 'true');
       try {
-        const response = await fetch(link.href, { headers: { Accept: 'text/html' } });
+        const response = await fetch(link.href, { headers: { Accept: 'text/html', 'X-Pergam-Load-More': '1' } });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         append(new DOMParser().parseFromString(await response.text(), 'text/html'));
       } catch (error) {
