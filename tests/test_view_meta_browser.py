@@ -489,3 +489,26 @@ def test_pinning_a_pergam_archived_elsewhere_shows_the_server_reason(
     assert status_text(page) == f"{ARCHIVED_REASON}. Nothing was changed."
     assert page.get_by_role("button", name="Pin", exact=True).get_attribute("aria-pressed") == "false"
     assert db.execute("SELECT archived, pinned FROM pergam_meta WHERE id = %s", (pid,)).fetchone() == (True, False)
+
+
+@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 720}, {"width": 360, "height": 740}], ids=["wide", "phone"])
+def test_archive_from_the_menu_closes_it_and_keeps_focus_on_its_button(
+    open_page, client: Client, viewport: dict[str, int]
+) -> None:
+    pid = client.publish()["id"]
+    page = open_page(f"{base(client)}/{pid}/view", viewport=viewport)
+
+    page.get_by_label("More actions").focus()
+    page.keyboard.press("Enter")
+    in_menu(page, "Archive").focus()
+    page.keyboard.press("Enter")
+
+    assert status_text(page) == "Archived: the index hides it unless archived pergams are shown."
+    assert page.locator(".more .dropdown__menu").is_hidden()
+    assert page.evaluate("document.activeElement.getAttribute('aria-label')") == "More actions"
+    status = page.locator("[data-meta-status]").bounding_box()
+    point = page.evaluate(
+        "([x, y]) => document.elementFromPoint(x, y).closest('[data-meta-status]') !== null",
+        [status["x"] + status["width"] / 2, status["y"] + status["height"] / 2],
+    )
+    assert point

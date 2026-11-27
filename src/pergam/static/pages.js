@@ -81,6 +81,15 @@
     showCurrent();
   };
 
+  /* Close the dropdown `element` sits in and focus its button; false when it is in none. */
+  const closeMenuOf = (element) => {
+    const menu = element.closest('details.dropdown');
+    if (!menu) return false;
+    menu.open = false;
+    menu.querySelector('summary').focus();
+    return true;
+  };
+
   const setUpDropdowns = () => {
     const dropdowns = Array.from(document.querySelectorAll('details.dropdown'));
     if (!dropdowns.length) return;
@@ -228,6 +237,7 @@
         const wanted = button.getAttribute('aria-pressed') !== 'true';
         const wasPinned = pins.some((pin) => pin.getAttribute('aria-pressed') === 'true');
         const meta = await patch({ [flag]: wanted });
+        closeMenuOf(button);
         if (!meta) return;
         const unpinned = flag === 'archived' && wanted && wasPinned && !meta.pinned;
         say(unpinned ? ARCHIVED_UNPINNED : DONE[flag][wanted ? 0 : 1]);
